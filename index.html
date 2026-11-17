@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.1.0">
+<meta name="app-version" content="v0.1.1">
 <title>Góndola Comparador</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -41,6 +41,7 @@ header.top{position:sticky;top:0;z-index:5;background:var(--surface);border-bott
 .vhint{grid-column:1/-1;font-size:13px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 select,input,textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:10px;
   padding:9px 10px;min-height:44px;width:100%}
+input:disabled,select:disabled{opacity:.6}
 textarea{min-height:90px;font-size:13px;font-family:ui-monospace,Menlo,monospace}
 input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible,a:focus-visible{outline:3px solid var(--accent);outline-offset:1px}
 main{flex:1;padding:14px 16px calc(96px + env(safe-area-inset-bottom));display:grid;gap:14px;align-content:start}
@@ -143,7 +144,7 @@ nav.tabs a[aria-current="page"]::before{content:"";position:absolute;top:0;left:
 <body>
 <div class="app">
   <header class="top">
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small">comparador de precios</span><span class="ver"><button id="verBtn" class="vs-ver" type="button">v0.1.0</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small">comparador de precios</span><span class="ver"><button id="verBtn" class="vs-ver" type="button">v0.1.1</button></span></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
       <label for="vPay">Pago con<select id="vPay" data-chg="vpay"></select></label>
@@ -266,9 +267,9 @@ function seed() {
     ver: 1, demo: true,
     stores: [{ id: s1, name: 'Súper Norte · Palermo' }, { id: s2, name: 'Híper Sur · Avellaneda' }],
     pays: [
-      { id: 'p1', name: 'Banco Azul crédito', pct: 20, tope: 15000, usado: 13500, dias: [dow, (dow + 1) % 7], stores: [s1], modo: 'caja' },
-      { id: 'p2', name: 'Billetera Celeste', pct: 10, tope: null, usado: 0, dias: [], stores: [], modo: 'reintegro' },
-      { id: 'p3', name: 'Banco Rojo débito', pct: 25, tope: 10000, usado: 0, dias: [(dow + 2) % 7], stores: [s2], modo: 'reintegro' }
+      { id: 'p1', name: 'Banco Azul crédito', pct: 20, tope: 15000, usado: 13500, minimo: 10000, dias: [dow, (dow + 1) % 7], stores: [s1], modo: 'caja' },
+      { id: 'p2', name: 'Billetera Celeste', pct: 10, tope: null, usado: 0, minimo: 15000, dias: [], stores: [], modo: 'reintegro' },
+      { id: 'p3', name: 'Banco Rojo débito', pct: 25, tope: 10000, usado: 0, minimo: null, dias: [(dow + 2) % 7], stores: [s2], modo: 'reintegro' }
     ],
     prods: [
       { id: 'ac', name: 'Aceite de girasol', base: 'L' }, { id: 'ye', name: 'Yerba mate', base: 'kg' },
@@ -310,7 +311,19 @@ function load() {
   return seed();
 }
 function save() { try { localStorage.setItem(LS, JSON.stringify(S)); } catch (e) {} }
-S = load();
+/* Preparado para sincronizar: cada registro lleva "upd" (última modificación)
+   y los borrados quedan como marcas en S.tomb {c: colección, id, upd}. */
+const COLLS = ['stores', 'pays', 'prods', 'pres', 'prices'];
+const nowISO = () => new Date().toISOString();
+const touch = r => { if (r) r.upd = nowISO(); return r; };
+const tomb = (c, id) => { S.tomb.push({ c, id, upd: nowISO() }); };
+function migrate(d) {
+  const t = nowISO();
+  COLLS.forEach(c => (d[c] = d[c] || []).forEach(r => { r.upd = r.upd || t; }));
+  d.pays.forEach(p => { if (p.minimo === undefined) p.minimo = null; });
+  d.tomb = d.tomb || []; d.schema = 2; return d;
+}
+S = migrate(load());
 
 /* ============ estado de UI ============ */
 const defUnit = prod => baseOf(prod).def;
@@ -335,6 +348,7 @@ function renderVisit() {
   else if (d > 0) {
     h += `<span class="pill p-good">${pay.pct}% aplica hoy</span>`;
     if (pay.tope) { const rest = Math.max(0, pay.tope - (pay.usado || 0)); h += `<span class="pill ${rest < pay.tope * 0.2 ? 'p-warn' : 'p-neutral'}">Tope restante ${money(rest)}</span>`; }
+    if (pay.minimo) h += `<span class="pill p-neutral">Compra mínima ${money(pay.minimo)}</span>`;
     if (pay.modo === 'reintegro') h += `<span class="pill p-neutral">Reintegro posterior</span>`;
   } else h += `<span class="pill p-bad">No aplica hoy en esta tienda</span>`;
   $('#vHint').innerHTML = h;
@@ -412,16 +426,18 @@ function renderCargar() {
   const presList = S.pres.filter(x => x.prodId === F.prodId);
   const exHere = F.presId !== 'new' ? S.prices.find(x => x.presId === F.presId && x.storeId === S.visit.storeId) : null;
   const units = Object.keys(b.units);
-  h += `<div class="row"><label class="fl grow" for="fEan">Código de barras (opcional)<input id="fEan" data-f="ean" inputmode="numeric" value="${esc(F.ean)}" placeholder="Ej.: 7791234000017"></label><button type="button" class="btn ghost" style="align-self:end" data-act="scan">Escanear</button></div>
+  const lock = F.presId !== 'new' ? 'disabled' : '';
+  h += `<div class="row"><label class="fl grow" for="fEan">Código de barras (opcional)<input id="fEan" data-f="ean" inputmode="numeric" ${lock} value="${esc(F.ean)}" placeholder="Ej.: 7791234000017"></label><button type="button" class="btn ghost" style="align-self:end" data-act="scan" ${lock}>Escanear</button></div>
     <label class="fl" for="fPres">Presentación<select id="fPres" data-chg="fpres"><option value="new">Nueva presentación</option>${presList.map(x => `<option value="${x.id}" ${x.id === F.presId ? 'selected' : ''}>${esc(presLabel(x))}</option>`).join('')}</select></label>
-    ${exHere ? `<div class="note">Último precio acá: <b>${money(exHere.precio)}</b> ${exHere.promo?.t !== 'none' ? '<span class="tag">' + esc(promo(exHere).label) + '</span>' : ''} · ${ageTxt(exHere.fecha)}. Solo tipeá el precio nuevo.</div>` : ''}
-    <div class="grid2"><label class="fl" for="fMarca">Marca<input id="fMarca" data-f="marca" value="${esc(F.marca)}" autocomplete="off" list="dlMarcas"></label><label class="fl" for="fDesc">Variedad / detalle<input id="fDesc" data-f="desc" value="${esc(F.desc)}" autocomplete="off"></label></div>
+    ${exHere ? `<div class="note">Último precio acá: <b>${money(exHere.precio)}</b> ${exHere.promo?.t !== 'none' ? '<span class="tag">' + esc(promo(exHere).label) + '</span>' : ''} · ${ageTxt(exHere.fecha)}. Tipeá el precio nuevo: el anterior pasa al historial. Si fue un error de carga, <button type="button" class="btn sm ghost" data-act="editprice" data-id="${exHere.id}">Corregilo</button> sin guardar historial.</div>` : ''}
+    ${lock ? `<div class="small muted">Los datos de la presentación se cambian desde Datos, porque afectan sus precios en todas las tiendas. <button type="button" class="btn sm ghost" data-act="editpres" data-id="${F.presId}">Editar presentación</button></div>` : ''}
+    <div class="grid2"><label class="fl" for="fMarca">Marca<input id="fMarca" data-f="marca" ${lock} value="${esc(F.marca)}" autocomplete="off" list="dlMarcas"></label><label class="fl" for="fDesc">Variedad / detalle<input id="fDesc" data-f="desc" ${lock} value="${esc(F.desc)}" autocomplete="off"></label></div>
     <datalist id="dlMarcas">${[...new Set(S.pres.map(x => x.marca))].map(m => `<option value="${esc(m)}">`).join('')}</datalist>
     <div class="fl">Contenido
-      <div class="row"><input id="fCont" aria-label="Contenido" data-f="cont" inputmode="decimal" class="w-num" value="${esc(F.cont)}" placeholder="0">
-        <select id="fUnit" aria-label="Unidad" data-f="unit" class="w-unit">${units.map(u => `<option ${u === F.unit ? 'selected' : ''}>${u}</option>`).join('')}</select>
-        <span class="muted">×</span><input id="fPack" aria-label="Unidades en el pack" data-f="pack" inputmode="numeric" class="w-pack" value="${esc(F.pack)}"><span class="small muted">en pack</span></div>
-      ${b.chips.length ? `<div class="chips">${b.chips.map(([v, u]) => `<button type="button" class="chip" aria-pressed="${num(F.cont) === v && F.unit === u}" data-act="chipc" data-v="${v}" data-u="${u}">${nfx.format(v)} ${u}</button>`).join('')}</div>` : ''}
+      <div class="row"><input id="fCont" aria-label="Contenido" data-f="cont" inputmode="decimal" class="w-num" ${lock} value="${esc(F.cont)}" placeholder="0">
+        <select id="fUnit" aria-label="Unidad" data-f="unit" class="w-unit" ${lock}>${units.map(u => `<option ${u === F.unit ? 'selected' : ''}>${u}</option>`).join('')}</select>
+        <span class="muted">×</span><input id="fPack" aria-label="Unidades en el pack" data-f="pack" inputmode="numeric" class="w-pack" ${lock} value="${esc(F.pack)}"><span class="small muted">en pack</span></div>
+      ${b.chips.length && !lock ? `<div class="chips">${b.chips.map(([v, u]) => `<button type="button" class="chip" aria-pressed="${num(F.cont) === v && F.unit === u}" data-act="chipc" data-v="${v}" data-u="${u}">${nfx.format(v)} ${u}</button>`).join('')}</div>` : ''}
     </div>
     <label class="fl" for="fPrecio">Precio de góndola por unidad (sin promo)<input id="fPrecio" data-f="precio" inputmode="decimal" class="price-in" value="${esc(F.precio)}" placeholder="$ 0"></label>
     <div class="fl">Promoción de la tienda<div class="chips">${PTYPES.map(([t, l]) => `<button type="button" class="chip" aria-pressed="${F.promo.t === t}" data-act="ptype" data-t="${t}">${l}</button>`).join('')}</div></div>
@@ -443,7 +459,7 @@ function updatePreview() {
   const t = buildTemp();
   if (t.err) { box.innerHTML = `<span class="muted">${esc(t.err)}</span>`; return; }
   const pay = getPay(S.visit.payId), c = calc(t.price, pay, t.pres), u = baseOf(t.prod).short;
-  let h = `<div class="small muted">Pagando con ${esc(pay.name)}${c.d > 0 ? ` (${pay.pct}%)` : ''}${c.d > 0 && c.pr.on && !t.price.acum ? ' · no se suma a la promo' : ''}</div>`;
+  let h = `<div class="small muted">Pagando con ${esc(pay.name)}${c.d > 0 ? ` (${pay.pct}%${pay.minimo ? ', con compra mínima ' + money(pay.minimo) : ''})` : ''}${c.d > 0 && c.pr.on && !t.price.acum ? ' · no se suma a la promo' : ''}</div>`;
   const line = (lbl, s, best) => `<div class="pv-row"><span>${lbl}${best ? ' <span class="pill p-good">Conviene</span>' : ''}</span><span class="big">${money(s.per)}<small>/${u}</small></span></div>`;
   h += line(c.pr.on && c.pr.N === 1 ? `Con ${esc(c.pr.label)}` : 'Llevando 1', c.one, c.many && c.best.N === 1);
   if (c.many) h += line(`Llevando ${c.pr.N} (${esc(c.pr.label)})`, c.many, c.best.N > 1);
@@ -477,7 +493,7 @@ function renderComparar() {
     const s = i === 0 ? 's-good' : diff <= 5 ? 's-warn' : 's-bad';
     const isHere = p.storeId === here;
     const alt = c.many ? (c.best.N > 1 ? `Si llevás 1: ${money(c.one.per)}/${u}` : `Llevando ${c.pr.N} con la promo: ${money(c.many.per)}/${u} (no conviene)`) : '';
-    const payTxt = c.d > 0 && c.best.payOn ? `${esc(c.pay.name)} ${c.pay.pct}%` : c.d > 0 ? `${esc(c.pay.name)} no se suma a la promo` : 'sin descuento de pago';
+    const payTxt = c.d > 0 && c.best.payOn ? `${esc(c.pay.name)} ${c.pay.pct}%${c.pay.minimo ? ` <b>(requiere compra mínima ${money(c.pay.minimo)})</b>` : ''}` : c.d > 0 ? `${esc(c.pay.name)} no se suma a la promo` : 'sin descuento de pago';
     return `<article class="item ${s} ${isHere ? 'here' : ''}">
       <div><div class="it-title">${esc(presLabel(pres))}</div>
         <div class="it-meta"><span class="store">${esc(getStore(p.storeId).name)}${isHere ? ' · acá' : ''}</span><span class="pill ${ageCls(p.fecha)}">${ageTxt(p.fecha)}</span>${c.pr.on ? `<span class="tag">${esc(c.pr.label)}</span>` : ''}</div></div>
@@ -485,7 +501,7 @@ function renderComparar() {
         ${c.best.N > 1 ? `<span class="pill p-warn">Llevando ${c.best.N}</span>` : `<span class="pill p-neutral">Llevando 1</span>`}
         <span class="small" style="font-weight:700;color:var(--${i === 0 ? 'good' : diff <= 5 ? 'warn' : 'bad'})">${i === 0 ? 'Mejor' : '+' + nf0.format(diff) + '%'}</span></div>
       <div class="it-sub">Góndola ${money(p.precio)} · ${payTxt}${alt ? ' · ' + alt : ''}${p.hist?.length ? ` · antes ${money(p.hist[p.hist.length - 1].precio)} (${ageTxt(p.hist[p.hist.length - 1].fecha)})` : ''}</div>
-      ${isHere ? `<div class="it-actions"><button class="btn sm" data-act="addcart" data-id="${p.id}" data-q="${c.best.N}">+ Carrito (${c.best.N})</button></div>` : ''}
+      <div class="it-actions"><button class="btn sm ghost" data-act="editprice" data-id="${p.id}">Corregir</button>${isHere ? `<button class="btn sm" data-act="addcart" data-id="${p.id}" data-q="${c.best.N}">+ Carrito (${c.best.N})</button>` : ''}</div>
     </article>`;
   }).join('') + `</div>`;
   const herePres = new Set(S.prices.filter(p => p.storeId === here).map(p => p.presId));
@@ -515,9 +531,12 @@ function cartCalc() {
   }
   const raw = base * d;
   const rest = pay.id !== 'none' && pay.tope ? Math.max(0, pay.tope - (pay.usado || 0)) : Infinity;
-  const desc = Math.min(raw, rest);
   const neto = lista - promoSave;
-  return { items, lista, promoSave, base, d, raw, desc, rest, capped: raw > rest + 0.5, pay, neto, caja: neto - (pay.modo === 'reintegro' ? 0 : desc), final: neto - desc };
+  // Monto mínimo: se mide sobre el total del ticket después de las promos de la tienda
+  const minimo = d > 0 && pay.minimo ? pay.minimo : 0;
+  const faltaMin = minimo && neto < minimo ? minimo - neto : 0;
+  const desc = faltaMin ? 0 : Math.min(raw, rest);
+  return { items, lista, promoSave, base, d, raw, desc, rest, capped: !faltaMin && raw > rest + 0.5, pay, neto, minimo, faltaMin, caja: neto - (pay.modo === 'reintegro' ? 0 : desc), final: neto - desc };
 }
 function renderCarrito() {
   const el = $('#view-carrito'), k = cartCalc(), store = getStore(S.visit.storeId);
@@ -526,6 +545,12 @@ function renderCarrito() {
   let h = `<div class="tiles"><div class="tile main"><span class="lbl">Pagás en caja</span><span class="val">${money(k.caja)}</span></div>
     <div class="tile"><span class="lbl">Ahorro total</span><span class="val" style="color:var(--good)">${money(ahorro)}</span></div>
     <div class="tile"><span class="lbl">Costo final</span><span class="val">${money(k.final)}</span></div></div>`;
+  if (k.minimo) {
+    const pct = Math.min(100, k.neto / k.minimo * 100);
+    h += `<div class="card"><div class="pv-row"><h3>Compra mínima ${esc(k.pay.name)}</h3><span class="small">${money(k.neto)} de ${money(k.minimo)}</span></div>
+      <div class="bar ${k.faltaMin ? 'full' : ''}"><i style="width:${pct}%"></i></div>
+      <div class="small">${k.faltaMin ? `<b style="color:var(--bad)">Te faltan ${money(k.faltaMin)} para el mínimo.</b> Hasta llegar, el ${k.pay.pct}% no se aplica (serían ${money(Math.min(k.raw, k.rest))}).` : '<span style="color:var(--good);font-weight:700">Mínimo alcanzado:</span> el descuento se aplica.'}</div></div>`;
+  }
   if (k.pay.id !== 'none' && k.pay.tope && k.d > 0) {
     const used = (k.pay.usado || 0) + k.desc, pct = Math.min(100, used / k.pay.tope * 100);
     h += `<div class="card"><div class="pv-row"><h3>Tope ${esc(k.pay.name)}</h3><span class="small">${money(used)} de ${money(k.pay.tope)}</span></div>
@@ -543,49 +568,126 @@ function renderCarrito() {
     <tr><td>Subtotal a precio de góndola</td><td>${money(k.lista)}</td></tr>
     <tr><td>Ahorro por promos de la tienda</td><td>− ${money(k.promoSave)}</td></tr>
     <tr><td>Base para el descuento de pago<br><span class="small muted">sin productos en promo, salvo los acumulables</span></td><td>${money(k.base)}</td></tr>
-    <tr><td>${esc(k.pay.name)} ${k.d > 0 ? k.pay.pct + '%' : '(no aplica)'}${k.capped ? ' · con tope' : ''}${k.pay.modo === 'reintegro' && k.desc ? '<br><span class="small muted">llega como reintegro posterior</span>' : ''}</td><td>− ${money(k.desc)}</td></tr>
+    <tr><td>${esc(k.pay.name)} ${k.d > 0 ? k.pay.pct + '%' : '(no aplica)'}${k.capped ? ' · con tope' : ''}${k.faltaMin ? ' · falta el mínimo' : ''}${k.pay.modo === 'reintegro' && k.desc ? '<br><span class="small muted">llega como reintegro posterior</span>' : ''}</td><td>− ${money(k.desc)}</td></tr>
     <tr class="total"><td>Costo final</td><td>${money(k.final)}</td></tr></table></div>
     <div class="btns"><button class="btn" data-act="closevisit" data-confirm="1">Cerrar visita (sumar al tope usado)</button><button class="btn danger" data-act="clearcart" data-confirm="1">Vaciar</button></div>`;
   el.innerHTML = h;
 }
 
 /* ============ vista DATOS ============ */
+const OPEN = new Set(['pays']);
+let ED = null; // edición en curso: { kind, id, d: datos del formulario, confirm }
+const SEC_OF = { prod: 'prods', pres: 'pres', price: 'prices' };
+const sec = (id, title, body) => `<details class="sec" data-sec="${id}" ${OPEN.has(id) ? 'open' : ''}><summary>${title}</summary><div class="body">${body}</div></details>`;
+const edBtns = label => `<div class="btns"><button class="btn sm primary" data-act="edsave">${label || 'Guardar cambios'}</button><button class="btn sm ghost" data-act="edcancel">Cancelar</button></div>`;
+const isEd = (k, id) => ED && ED.kind === k && ED.id === id;
+const editBtn = (k, id) => `<button class="btn sm" data-act="editstart" data-k="${k}" data-id="${id}">Editar</button>`;
+function edData(k, id) {
+  if (k === 'prod') { const p = getProd(id); return BASES[p.base] ? { name: p.name, base: p.base, custom: '' } : { name: p.name, base: 'otro', custom: p.base }; }
+  if (k === 'pres') { const x = getPres(id); return { prodId: x.prodId, marca: x.marca, desc: x.desc || '', cont: nfx.format(x.cont), unit: x.unit, pack: String(x.pack || 1), ean: x.ean || '' }; }
+  const p = getPrice(id);
+  return { precio: nfx.format(p.precio), promo: { ...p.promo }, acum: !!p.acum, fecha: p.fecha, modo: 'fix', orig: p.fecha };
+}
+function prodForm(p) {
+  const n = S.pres.filter(x => x.prodId === p.id).length, d = ED.d;
+  return `<div class="paybox" id="edform"><h3>Editar producto comparable</h3>
+    <label class="fl" for="ed-name">Nombre<input id="ed-name" data-ed="name" value="${esc(d.name)}"></label>
+    <label class="fl" for="ed-base">Se compara por<select id="ed-base" data-ed="base" ${n ? 'disabled' : ''}>${[['kg', 'Kilo (kg)'], ['L', 'Litro (L)'], ['un', 'Unidad'], ['m', 'Metro'], ['otro', 'Otra unidad…']].map(([v, l]) => `<option value="${v}" ${d.base === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+    ${d.base === 'otro' ? `<label class="fl" for="ed-custom">Otra unidad<input id="ed-custom" data-ed="custom" value="${esc(d.custom)}" ${n ? 'disabled' : ''}></label>` : ''}
+    ${n ? `<div class="small muted">La unidad no se puede cambiar: tiene ${n} presentaciones cargadas en ${esc(baseOf(p).short)}. Para cambiarla, mové esas presentaciones a otro producto o borralas.</div>` : ''}
+    ${edBtns()}</div>`;
+}
+function presForm(x) {
+  const d = ED.d, base = getProd(x.prodId).base, b = baseOf(getProd(x.prodId));
+  const ps = S.prices.filter(p => p.presId === x.id), nst = new Set(ps.map(p => p.storeId)).size;
+  return `<div class="paybox" id="edform"><h3>Editar presentación</h3>
+    <label class="fl" for="ed-prod">Producto comparable<select id="ed-prod" data-ed="prodId">${S.prods.filter(p => p.base === base).map(p => `<option value="${p.id}" ${p.id === d.prodId ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></label>
+    <div class="grid2"><label class="fl" for="ed-marca">Marca<input id="ed-marca" data-ed="marca" value="${esc(d.marca)}"></label><label class="fl" for="ed-desc">Variedad / detalle<input id="ed-desc" data-ed="desc" value="${esc(d.desc)}"></label></div>
+    <div class="fl">Contenido<div class="row"><input id="ed-cont" aria-label="Contenido" data-ed="cont" inputmode="decimal" class="w-num" value="${esc(d.cont)}">
+      <select id="ed-unit" aria-label="Unidad" data-ed="unit" class="w-unit">${Object.keys(b.units).map(u => `<option ${u === d.unit ? 'selected' : ''}>${u}</option>`).join('')}</select>
+      <span class="muted">×</span><input id="ed-pack" aria-label="Unidades en el pack" data-ed="pack" inputmode="numeric" class="w-pack" value="${esc(d.pack)}"><span class="small muted">en pack</span></div></div>
+    <label class="fl" for="ed-ean">Código de barras<input id="ed-ean" data-ed="ean" inputmode="numeric" value="${esc(d.ean)}"></label>
+    <div class="small muted">Solo se puede mover a productos que se comparan por ${esc(b.short)}. Tiene ${ps.length} precio${ps.length === 1 ? '' : 's'} en ${nst} tienda${nst === 1 ? '' : 's'}.</div>
+    ${ED.confirm ? `<div class="note" style="border:2px solid var(--warn)"><b>Ojo:</b> cambiar el contenido cambia el precio por ${esc(b.short)} de ${ps.length} precio${ps.length === 1 ? '' : 's'} en ${nst} tienda${nst === 1 ? '' : 's'}. Si en realidad cambió el envase (otra presentación), conviene cancelar y cargarla como nueva.</div>` : ''}
+    ${edBtns(ED.confirm ? 'Confirmar el cambio' : 'Guardar cambios')}</div>`;
+}
+function promoEd(r) {
+  const f = (k, l, ph = '') => `<label class="fl" for="edp-${k}">${l}<input id="edp-${k}" data-edp="${k}" inputmode="decimal" value="${esc(r[k] ?? '')}" placeholder="${ph}"></label>`;
+  const fields = { fixed: f('v', 'Precio de oferta', '$ 0'), pct: f('v', '% de descuento'), nth: f('n', 'Unidad con descuento (Nº)') + f('v', '% de descuento'), nxm: f('n', 'Llevás') + f('m', 'Pagás'), nfor: f('n', 'Cantidad') + f('v', 'Precio del combo', '$ 0') }[r.t] || '';
+  return `<label class="fl" for="ed-ptype">Promoción<select id="ed-ptype" data-edsel="ptype">${PTYPES.map(([t, l]) => `<option value="${t}" ${r.t === t ? 'selected' : ''}>${l}</option>`).join('')}</select></label>${fields ? `<div class="grid2">${fields}</div>` : ''}`;
+}
+function priceForm(p) {
+  const d = ED.d;
+  return `<div class="paybox" id="edform"><h3>Editar precio · ${esc(presLabel(getPres(p.presId)))}</h3>
+    <div class="small muted">${esc(getStore(p.storeId)?.name || '')}. Para pasarlo a otra tienda, cargalo allá.</div>
+    <div class="fl">Qué estás haciendo<div class="chips"><button class="chip" aria-pressed="${d.modo === 'fix'}" data-act="edmode" data-v="fix">Corregir un error</button><button class="chip" aria-pressed="${d.modo === 'new'}" data-act="edmode" data-v="new">Registrar un precio nuevo</button></div>
+      <span class="small muted" style="font-weight:500">${d.modo === 'fix' ? 'Pisa el dato actual sin dejarlo en el historial.' : `El precio actual (${money(p.precio)}, ${ageTxt(p.fecha)}) pasa al historial.`}</span></div>
+    <label class="fl" for="ed-precio">Precio de góndola por unidad<input id="ed-precio" data-ed="precio" inputmode="decimal" class="price-in" value="${esc(d.precio)}"></label>
+    ${promoEd(d.promo)}
+    ${d.promo.t !== 'none' ? `<label class="switch" for="ed-acum"><input type="checkbox" id="ed-acum" data-ed="acum" ${d.acum ? 'checked' : ''}> La promo se acumula con el descuento del medio de pago</label>` : ''}
+    <label class="fl" for="ed-fecha">Fecha del precio<input type="date" id="ed-fecha" data-ed="fecha" value="${esc(d.fecha)}" max="${todayISO()}"></label>
+    ${p.hist?.length ? `<div class="small muted">Historial: ${p.hist.slice().reverse().map(h => `${money(h.precio)} (${ageTxt(h.fecha)})`).join(' · ')} <button class="btn sm ghost" data-act="clearhist" data-id="${p.id}" data-confirm="1">Borrar historial</button></div>` : ''}
+    ${edBtns()}</div>`;
+}
 function renderDatos() {
-  const el = $('#view-datos'); const dow = DOW;
+  const el = $('#view-datos');
   let h = S.demo ? `<div class="note">Estás viendo <b>datos de ejemplo</b> (tiendas, marcas y precios inventados). Podés editarlos o borrarlos desde "Respaldo".</div>` : '';
-  h += `<details class="sec" open><summary>Medios de pago y beneficios (${S.pays.length})</summary><div class="body">
-    ${S.pays.map(p => `<div class="paybox">
+  h += sec('pays', `Medios de pago y beneficios (${S.pays.length})`, S.pays.map(p => `<div class="paybox">
       <div class="grid2"><label class="fl" for="pn-${p.id}">Nombre<input id="pn-${p.id}" data-pay="${p.id}" data-pk="name" value="${esc(p.name)}"></label>
       <label class="fl" for="pp-${p.id}">% de descuento<input id="pp-${p.id}" data-pay="${p.id}" data-pk="pct" inputmode="decimal" value="${p.pct}"></label>
+      <label class="fl" for="pm-${p.id}">Compra mínima ($, vacío = sin mínimo)<input id="pm-${p.id}" data-pay="${p.id}" data-pk="minimo" inputmode="decimal" value="${p.minimo ?? ''}"></label>
       <label class="fl" for="pt-${p.id}">Tope ($, vacío = sin tope)<input id="pt-${p.id}" data-pay="${p.id}" data-pk="tope" inputmode="decimal" value="${p.tope ?? ''}"></label>
       <label class="fl" for="pu-${p.id}">Ya usado del tope<input id="pu-${p.id}" data-pay="${p.id}" data-pk="usado" inputmode="decimal" value="${p.usado || 0}"></label></div>
-      <div class="fl">Días (ninguno = todos)<div class="chips">${dow.map((d, i) => `<button class="chip" aria-pressed="${p.dias?.includes(i)}" data-act="paydia" data-id="${p.id}" data-v="${i}">${d}</button>`).join('')}</div></div>
-      <div class="fl">Tiendas (ninguna = todas)<div class="chips">${S.stores.map(s => `<button class="chip" aria-pressed="${p.stores?.includes(s.id)}" data-act="paystore" data-id="${p.id}" data-v="${s.id}">${esc(s.name)}</button>`).join('')}</div></div>
+      <div class="fl">Días (ninguno = todos)<div class="chips">${DOW.map((d, i) => `<button class="chip" aria-pressed="${!!p.dias?.includes(i)}" data-act="paydia" data-id="${p.id}" data-v="${i}">${d}</button>`).join('')}</div></div>
+      <div class="fl">Tiendas (ninguna = todas)<div class="chips">${S.stores.map(s => `<button class="chip" aria-pressed="${!!p.stores?.includes(s.id)}" data-act="paystore" data-id="${p.id}" data-v="${s.id}">${esc(s.name)}</button>`).join('')}</div></div>
       <div class="fl">Cómo se aplica<div class="chips"><button class="chip" aria-pressed="${p.modo !== 'reintegro'}" data-act="paymodo" data-id="${p.id}" data-v="caja">En caja</button><button class="chip" aria-pressed="${p.modo === 'reintegro'}" data-act="paymodo" data-id="${p.id}" data-v="reintegro">Reintegro posterior</button></div></div>
-      <div class="btns"><button class="btn sm ghost" data-act="payreset" data-id="${p.id}">Reiniciar tope usado</button><button class="btn sm danger" data-act="delpay" data-id="${p.id}" data-confirm="1">Eliminar</button></div></div>`).join('')}
-    <button class="btn" data-act="addpay">+ Agregar medio de pago</button></div></details>`;
-  h += `<details class="sec"><summary>Tiendas (${S.stores.length})</summary><div class="body">
-    ${S.stores.map(s => `<div class="drow"><span>${esc(s.name)}</span><span class="small muted">${S.prices.filter(p => p.storeId === s.id).length} precios</span>${S.stores.length > 1 ? `<button class="btn sm danger" data-act="delstore" data-id="${s.id}" data-confirm="1">Eliminar</button>` : ''}</div>`).join('')}
-    <div class="row"><input id="newStore" aria-label="Nueva tienda" placeholder="Cadena · sucursal"><button class="btn" data-act="addstore">Agregar</button></div></div></details>`;
-  h += `<details class="sec"><summary>Productos comparables (${S.prods.length})</summary><div class="body">
-    ${S.prods.map(p => `<div class="drow"><span><b>${esc(p.name)}</b> <span class="muted">por ${baseOf(p).short}</span></span><span class="small muted">${S.pres.filter(x => x.prodId === p.id).length} present.</span><button class="btn sm danger" data-act="delprod" data-id="${p.id}" data-confirm="1">Eliminar</button></div>`).join('')}
-    ${newProdForm('createprod2')}</div></details>`;
-  h += `<details class="sec"><summary>Precios cargados (${S.prices.length})</summary><div class="body">
-    ${S.prods.map(prod => { const ps = S.prices.filter(p => getPres(p.presId)?.prodId === prod.id); return ps.length ? `<h3>${esc(prod.name)}</h3>` + ps.map(p => `<div class="drow"><span>${esc(presLabel(getPres(p.presId)))}<br><span class="small muted">${esc(getStore(p.storeId)?.name || '')} · ${money(p.precio)} ${p.promo?.t !== 'none' ? '· ' + esc(promo(p).label) : ''}${p.acum ? ' · acumula' : ''}</span></span><span class="pill ${ageCls(p.fecha)}">${ageTxt(p.fecha)}</span><button class="btn sm danger" aria-label="Eliminar precio" data-act="delprice" data-id="${p.id}" data-confirm="1">×</button></div>`).join('') : ''; }).join('')}
-    </div></details>`;
-  h += `<details class="sec"><summary>Cómo calcula</summary><div class="body small">
+      <div class="small muted">Los cambios se guardan al tipear y recalculan al instante todas las comparaciones y el carrito.</div>
+      <div class="btns"><button class="btn sm ghost" data-act="payreset" data-id="${p.id}">Reiniciar tope usado</button><button class="btn sm danger" data-act="delpay" data-id="${p.id}" data-confirm="1">Eliminar</button></div></div>`).join('') + `<button class="btn" data-act="addpay">+ Agregar medio de pago</button>`);
+  h += sec('stores', `Tiendas (${S.stores.length})`, S.stores.map(s => `<div class="drow"><input aria-label="Nombre de la tienda" data-store="${s.id}" value="${esc(s.name)}"><span class="small muted" style="white-space:nowrap">${S.prices.filter(p => p.storeId === s.id).length} precios</span>${S.stores.length > 1 ? `<button class="btn sm danger" data-act="delstore" data-id="${s.id}" data-confirm="1">Eliminar</button>` : ''}</div>`).join('')
+    + `<div class="small muted">El nombre se corrige tocándolo. Eliminar una tienda borra sus precios.</div><div class="row"><input id="newStore" aria-label="Nueva tienda" placeholder="Cadena · sucursal"><button class="btn" data-act="addstore">Agregar</button></div>`);
+  h += sec('prods', `Productos comparables (${S.prods.length})`, S.prods.map(p => isEd('prod', p.id) ? prodForm(p) : `<div class="drow"><span><b>${esc(p.name)}</b> <span class="muted">por ${esc(baseOf(p).short)}</span><br><span class="small muted">${S.pres.filter(x => x.prodId === p.id).length} presentaciones</span></span><span class="btns">${editBtn('prod', p.id)}<button class="btn sm danger" data-act="delprod" data-id="${p.id}" data-confirm="1">Eliminar</button></span></div>`).join('') + newProdForm('createprod2'));
+  h += sec('pres', `Presentaciones (${S.pres.length})`, S.prods.map(prod => { const xs = S.pres.filter(x => x.prodId === prod.id); return xs.length ? `<h3>${esc(prod.name)}</h3>` + xs.map(x => isEd('pres', x.id) ? presForm(x) : `<div class="drow"><span>${esc(presLabel(x))}<br><span class="small muted">${x.ean ? 'EAN ' + esc(x.ean) + ' · ' : ''}${S.prices.filter(p => p.presId === x.id).length} precios</span></span><span class="btns">${editBtn('pres', x.id)}<button class="btn sm danger" aria-label="Eliminar presentación" data-act="delpres" data-id="${x.id}" data-confirm="1">×</button></span></div>`).join('') : ''; }).join('') || '<span class="muted">Todavía no hay presentaciones.</span>');
+  h += sec('prices', `Precios cargados (${S.prices.length})`, S.prods.map(prod => { const ps = S.prices.filter(p => getPres(p.presId)?.prodId === prod.id); return ps.length ? `<h3>${esc(prod.name)}</h3>` + ps.map(p => isEd('price', p.id) ? priceForm(p) : `<div class="drow"><span>${esc(presLabel(getPres(p.presId)))}<br><span class="small muted">${esc(getStore(p.storeId)?.name || '')} · ${money(p.precio)} ${p.promo?.t !== 'none' ? '· ' + esc(promo(p).label) : ''}${p.acum ? ' · acumula' : ''}</span></span><span class="pill ${ageCls(p.fecha)}">${ageTxt(p.fecha)}</span><span class="btns">${editBtn('price', p.id)}<button class="btn sm danger" aria-label="Eliminar precio" data-act="delprice" data-id="${p.id}" data-confirm="1">×</button></span></div>`).join('') : ''; }).join('') || '<span class="muted">Todavía no hay precios.</span>');
+  h += sec('calc', 'Cómo calcula', `<div class="small" style="display:grid;gap:10px">
     <p style="margin:0">Cada promo se traduce a una sola forma: <b>llevando N unidades, pagás un total T</b>. El precio comparable es <b>T ÷ (N × contenido)</b>, en la unidad del producto (kg, L, metro…).</p>
     <table class="calc-ex"><tr><th>Promo</th><th>N</th><th>Total T</th></tr>
       <tr><td>Oferta $X</td><td>1</td><td>X</td></tr><tr><td>% off</td><td>1</td><td>P × (1 − d)</td></tr>
       <tr><td>2ª al 70%</td><td>2</td><td>P + 0,3 P</td></tr><tr><td>3x2</td><td>3</td><td>2 P</td></tr><tr><td>2 por $X</td><td>2</td><td>X</td></tr></table>
-    <p style="margin:0">El descuento del medio de pago <b>no se suma</b> a la promo salvo que marques "acumula". Si no llegás a N unidades, la promo no se activa y aplica el descuento de pago: por eso cada precio muestra "llevando 1" y "llevando N". El tope se controla en el Carrito, porque depende del total de la compra.</p></div></details>`;
-  h += `<details class="sec"><summary>Respaldo</summary><div class="body">
-    <div class="btns"><button class="btn sm" data-act="copyjson">Copiar respaldo</button><label class="btn sm" for="fileImp" style="display:inline-flex;align-items:center">Importar archivo<input type="file" id="fileImp" accept=".json,application/json" style="display:none"></label></div>
+    <p style="margin:0">El descuento del medio de pago <b>no se suma</b> a la promo salvo que marques "acumula". Si no llegás a N unidades, la promo no se activa y aplica el descuento de pago: por eso cada precio muestra "llevando 1" y "llevando N". La compra mínima y el tope se controlan en el Carrito, porque dependen del total de la compra.</p></div>`);
+  h += sec('backup', 'Respaldo', `<div class="btns"><button class="btn sm" data-act="copyjson">Copiar respaldo</button><label class="btn sm" for="fileImp" style="display:inline-flex;align-items:center">Importar archivo<input type="file" id="fileImp" accept=".json,application/json" style="display:none"></label></div>
     <textarea id="jsonBox" aria-label="Respaldo en JSON" placeholder="Pegá acá un respaldo y tocá Importar"></textarea>
     <div class="btns"><button class="btn sm" data-act="importjson">Importar texto pegado</button><button class="btn sm ghost" data-act="reseed" data-confirm="1">Restaurar ejemplo</button><button class="btn sm danger" data-act="wipe" data-confirm="1">Borrar todo</button></div>
-    <div class="small muted">En esta vista previa los datos quedan en este navegador. Publicada en GitHub Pages funciona igual y sin conexión; la sincronización con Google Sheets queda para la fase 3.</div></div></details>`;
+    <div class="small muted">Los datos quedan en este celular y funcionan sin conexión. La sincronización con Google Sheets llega en una próxima versión.</div>`);
   el.innerHTML = h;
 }
+function edSave() {
+  const d = ED.d;
+  if (ED.kind === 'prod') {
+    const p = getProd(ED.id), name = (d.name || '').trim(); if (!name) return toast('El nombre no puede quedar vacío');
+    const base = d.base === 'otro' ? (d.custom || '').trim() : d.base; if (!base) return toast('Indicá la unidad de comparación');
+    if (base !== p.base && S.pres.some(x => x.prodId === p.id)) return toast('No se puede cambiar la unidad: tiene presentaciones cargadas');
+    p.name = name; p.base = base; touch(p);
+  } else if (ED.kind === 'pres') {
+    const x = getPres(ED.id), cont = num(d.cont), pack = Math.round(num(d.pack));
+    if (!(cont > 0)) return toast('El contenido tiene que ser mayor a 0');
+    if (!(pack >= 1)) return toast('El pack tiene que ser 1 o más');
+    const ean = (d.ean || '').trim();
+    if (ean && S.pres.some(o => o.ean === ean && o.id !== x.id)) return toast('Ese código de barras ya pertenece a otra presentación');
+    const nx = { ...x, prodId: d.prodId, marca: (d.marca || '').trim() || 'Sin marca', desc: (d.desc || '').trim(), cont, unit: d.unit, pack, ean };
+    if (Math.abs(contentOf(nx) - contentOf(x)) > 1e-9 && S.prices.some(p => p.presId === x.id) && !ED.confirm) { ED.confirm = true; renderDatos(); return; }
+    Object.assign(x, nx); touch(x);
+  } else {
+    const p = getPrice(ED.id), precio = num(d.precio); if (!(precio > 0)) return toast('Ingresá un precio válido');
+    const pr = normPromo(d.promo); if (pr.err) return toast(pr.err);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d.fecha || '')) return toast('Revisá la fecha');
+    if (d.fecha > todayISO()) return toast('La fecha no puede ser futura');
+    if (d.modo === 'new') p.hist = [...(p.hist || []), { precio: p.precio, fecha: p.fecha }].slice(-12);
+    Object.assign(p, { precio, promo: pr.p, acum: pr.p.t !== 'none' && !!d.acum, fecha: d.fecha }); touch(p);
+  }
+  save(); ED = null; render(); toast('Cambios guardados');
+}
+function startEdit(k, id) { ED = { kind: k, id, d: edData(k, id), confirm: false }; OPEN.add(SEC_OF[k]); }
+const scrollForm = () => setTimeout(() => $('#edform')?.scrollIntoView({ block: 'center' }), 150);
 
 /* ============ navegación ============ */
 const VIEWS = ['cargar', 'comparar', 'carrito', 'datos'];
@@ -608,11 +710,13 @@ const ACT = {
   save: () => {
     const t = buildTemp(); if (t.err) return toast(t.err);
     let pres = F.presId !== 'new' ? getPres(F.presId) : S.pres.find(x => x.prodId === t.pres.prodId && x.marca.toLowerCase() === t.pres.marca.toLowerCase() && (x.desc || '').toLowerCase() === t.pres.desc.toLowerCase() && x.cont === t.pres.cont && x.unit === t.pres.unit && x.pack === t.pres.pack);
-    if (!pres) { pres = { ...t.pres, id: uid() }; S.pres.push(pres); } else Object.assign(pres, { ...t.pres, id: pres.id, ean: t.pres.ean || pres.ean });
+    if (t.pres.ean && S.pres.some(x => x.ean === t.pres.ean && x.id !== pres?.id)) return toast('Ese código de barras ya pertenece a otra presentación');
+    if (!pres) { pres = touch({ ...t.pres, id: uid() }); S.pres.push(pres); }
+    else if (F.presId === 'new' && !pres.ean && t.pres.ean) { pres.ean = t.pres.ean; touch(pres); }
     let price = S.prices.find(x => x.presId === pres.id && x.storeId === S.visit.storeId);
     const np = { ...t.price, presId: pres.id };
-    if (price) { const hist = [...(price.hist || []), { precio: price.precio, fecha: price.fecha }].slice(-12); Object.assign(price, np, { id: price.id, hist }); }
-    else { price = { ...np, id: uid(), hist: [] }; S.prices.push(price); }
+    if (price) { const hist = [...(price.hist || []), { precio: price.precio, fecha: price.fecha }].slice(-12); Object.assign(price, np, { id: price.id, hist }); touch(price); }
+    else { price = touch({ ...np, id: uid(), hist: [] }); S.prices.push(price); }
     save(); lastSaved = price.id; CMP.prodId = pres.prodId; resetForm(pres.prodId); render(); window.scrollTo(0, 0);
   },
   dismiss: () => { lastSaved = null; renderCargar(); $('#fEan')?.focus(); },
@@ -622,34 +726,48 @@ const ACT = {
   addcart: el => { const id = el.dataset.id, q = +el.dataset.q || 1; const it = S.cart.find(x => x.priceId === id); if (it) it.qty += q; else S.cart.push({ priceId: id, qty: q }); save(); renderVisit(); toast(`Agregado al carrito (${q})`); },
   qty: el => { const it = S.cart.find(x => x.priceId === el.dataset.id); if (!it) return; it.qty += +el.dataset.d; if (it.qty <= 0) S.cart = S.cart.filter(x => x !== it); save(); render(); },
   clearcart: () => { S.cart = S.cart.filter(it => getPrice(it.priceId)?.storeId !== S.visit.storeId); save(); render(); },
-  closevisit: () => { const k = cartCalc(); if (k.pay.id !== 'none' && k.desc > 0) { const p = S.pays.find(x => x.id === k.pay.id); p.usado = (p.usado || 0) + k.desc; } ACT.clearcart(); toast('Visita cerrada. Se sumó el descuento al tope usado.'); },
+  closevisit: () => { const k = cartCalc(); if (k.pay.id !== 'none' && k.desc > 0) { const p = touch(S.pays.find(x => x.id === k.pay.id)); p.usado = (p.usado || 0) + k.desc; } ACT.clearcart(); toast('Visita cerrada. Se sumó el descuento al tope usado.'); },
   loadpres: el => { const pres = getPres(el.dataset.id); resetForm(pres.prodId); fillFromPres(pres); lastSaved = null; go('cargar'); setTimeout(() => $('#fPrecio')?.focus(), 50); },
   loadnew: el => { resetForm(el.dataset.id); lastSaved = null; go('cargar'); },
   createprod: () => createProd(true), createprod2: () => createProd(false),
   scan: () => scan(),
-  addpay: () => { S.pays.push({ id: uid(), name: 'Nuevo medio', pct: 10, tope: null, usado: 0, dias: [], stores: [], modo: 'caja' }); save(); render(); },
-  delpay: el => { S.pays = S.pays.filter(p => p.id !== el.dataset.id); if (S.visit.payId === el.dataset.id) S.visit.payId = 'none'; save(); render(); },
-  payreset: el => { S.pays.find(p => p.id === el.dataset.id).usado = 0; save(); render(); },
-  paydia: el => { const p = S.pays.find(x => x.id === el.dataset.id), v = +el.dataset.v; p.dias = p.dias?.includes(v) ? p.dias.filter(x => x !== v) : [...(p.dias || []), v].sort(); save(); render(); },
-  paystore: el => { const p = S.pays.find(x => x.id === el.dataset.id), v = el.dataset.v; p.stores = p.stores?.includes(v) ? p.stores.filter(x => x !== v) : [...(p.stores || []), v]; save(); render(); },
-  paymodo: el => { S.pays.find(x => x.id === el.dataset.id).modo = el.dataset.v; save(); render(); },
-  addstore: () => { const v = $('#newStore').value.trim(); if (!v) return toast('Escribí el nombre de la tienda'); S.stores.push({ id: uid(), name: v }); save(); render(); },
-  delstore: el => { const id = el.dataset.id; S.stores = S.stores.filter(s => s.id !== id); S.prices = S.prices.filter(p => p.storeId !== id); S.pays.forEach(p => p.stores = (p.stores || []).filter(x => x !== id)); save(); render(); },
-  delprod: el => { const id = el.dataset.id; const pr = new Set(S.pres.filter(x => x.prodId === id).map(x => x.id)); S.prods = S.prods.filter(p => p.id !== id); S.pres = S.pres.filter(x => !pr.has(x.id)); S.prices = S.prices.filter(p => !pr.has(p.presId)); if (F.prodId === id) resetForm(S.prods[0]?.id ?? '__new'); save(); render(); },
-  delprice: el => { S.prices = S.prices.filter(p => p.id !== el.dataset.id); S.cart = S.cart.filter(x => x.priceId !== el.dataset.id); save(); render(); },
+  addpay: () => { S.pays.push(touch({ id: uid(), name: 'Nuevo medio', pct: 10, tope: null, usado: 0, minimo: null, dias: [], stores: [], modo: 'caja' })); save(); render(); },
+  delpay: el => { S.pays = S.pays.filter(p => p.id !== el.dataset.id); tomb('pays', el.dataset.id); if (S.visit.payId === el.dataset.id) S.visit.payId = 'none'; save(); render(); },
+  payreset: el => { touch(S.pays.find(p => p.id === el.dataset.id)).usado = 0; save(); render(); },
+  paydia: el => { const p = touch(S.pays.find(x => x.id === el.dataset.id)), v = +el.dataset.v; p.dias = p.dias?.includes(v) ? p.dias.filter(x => x !== v) : [...(p.dias || []), v].sort(); save(); render(); },
+  paystore: el => { const p = touch(S.pays.find(x => x.id === el.dataset.id)), v = el.dataset.v; p.stores = p.stores?.includes(v) ? p.stores.filter(x => x !== v) : [...(p.stores || []), v]; save(); render(); },
+  paymodo: el => { touch(S.pays.find(x => x.id === el.dataset.id)).modo = el.dataset.v; save(); render(); },
+  addstore: () => { const v = $('#newStore').value.trim(); if (!v) return toast('Escribí el nombre de la tienda'); S.stores.push(touch({ id: uid(), name: v })); save(); render(); },
+  delstore: el => { const id = el.dataset.id; S.stores = S.stores.filter(s => s.id !== id); tomb('stores', id); dropPrices(p => p.storeId === id); S.pays.forEach(p => { if ((p.stores || []).includes(id)) { p.stores = p.stores.filter(x => x !== id); touch(p); } }); save(); render(); },
+  delprod: el => { const id = el.dataset.id; const pr = new Set(S.pres.filter(x => x.prodId === id).map(x => x.id)); S.prods = S.prods.filter(p => p.id !== id); tomb('prods', id); pr.forEach(x => tomb('pres', x)); S.pres = S.pres.filter(x => !pr.has(x.id)); dropPrices(p => pr.has(p.presId)); if (F.prodId === id) resetForm(S.prods[0]?.id ?? '__new'); save(); render(); },
+  delpres: el => { const id = el.dataset.id; S.pres = S.pres.filter(x => x.id !== id); tomb('pres', id); dropPrices(p => p.presId === id); if (F.presId === id) resetForm(F.prodId); save(); render(); },
+  delprice: el => { dropPrices(p => p.id === el.dataset.id); save(); render(); },
+  editstart: el => { startEdit(el.dataset.k, el.dataset.id); renderDatos(); scrollForm(); },
+  editprice: el => { startEdit('price', el.dataset.id); go('datos'); scrollForm(); },
+  editpres: el => { startEdit('pres', el.dataset.id); go('datos'); scrollForm(); },
+  edcancel: () => { ED = null; renderDatos(); },
+  edsave: () => edSave(),
+  edmode: el => { ED.d.modo = el.dataset.v; ED.d.fecha = el.dataset.v === 'new' ? todayISO() : ED.d.orig; renderDatos(); },
+  clearhist: el => { const p = getPrice(el.dataset.id); p.hist = []; touch(p); save(); renderDatos(); },
   copyjson: () => { const txt = JSON.stringify(S); const box = $('#jsonBox'); box.value = txt; try { navigator.clipboard.writeText(txt).then(() => toast('Respaldo copiado'), () => { box.select(); toast('Seleccioná y copiá el texto del cuadro'); }); } catch (e) { box.select(); toast('Seleccioná y copiá el texto del cuadro'); } },
   importjson: () => importData($('#jsonBox').value),
-  reseed: () => { S = seed(); resetForm(S.prods[0].id); CMP.prodId = S.prods[0].id; save(); render(); toast('Datos de ejemplo restaurados'); },
-  wipe: () => { S = { ver: 1, demo: false, stores: [{ id: uid(), name: 'Mi súper' }], pays: [], prods: [], pres: [], prices: [], visit: { storeId: null, payId: 'none' }, cart: [] }; S.visit.storeId = S.stores[0].id; resetForm('__new'); save(); render(); toast('Datos borrados'); }
+  reseed: () => { S = migrate(seed()); resetForm(S.prods[0].id); CMP.prodId = S.prods[0].id; save(); render(); toast('Datos de ejemplo restaurados'); },
+  wipe: () => { S = migrate({ ver: 1, demo: false, stores: [{ id: uid(), name: 'Mi súper' }], pays: [], prods: [], pres: [], prices: [], visit: { storeId: null, payId: 'none' }, cart: [] }); S.visit.storeId = S.stores[0].id; resetForm('__new'); save(); render(); toast('Datos borrados'); }
 };
+function dropPrices(fn) {
+  const ids = new Set(S.prices.filter(fn).map(p => p.id));
+  ids.forEach(id => tomb('prices', id));
+  S.prices = S.prices.filter(p => !ids.has(p.id)); S.cart = S.cart.filter(x => !ids.has(x.priceId));
+  if (ED && ED.kind === 'price' && ids.has(ED.id)) ED = null;
+}
 function createProd(toForm) {
   const name = (NP.name || '').trim(); if (!name) return toast('Poné un nombre genérico');
   const base = NP.base === 'otro' ? (NP.custom || '').trim() : NP.base; if (!base) return toast('Indicá la unidad de comparación');
-  const p = { id: uid(), name, base }; S.prods.push(p); NP = { name: '', base: 'kg', custom: '' }; save();
+  const p = touch({ id: uid(), name, base }); S.prods.push(p); NP = { name: '', base: 'kg', custom: '' }; save();
   if (toForm) resetForm(p.id); render(); toast('Producto creado');
 }
 function importData(txt) {
-  try { const d = JSON.parse(txt); if (!d.stores || !d.prices || !d.prods) throw 0; S = d; S.demo = !!d.demo; resetForm(S.prods[0]?.id ?? '__new'); save(); render(); toast('Respaldo importado'); }
+  try { const d = JSON.parse(txt); if (!d.stores || !d.prices || !d.prods) throw 0; S = migrate(d); ED = null; S.demo = !!d.demo; resetForm(S.prods[0]?.id ?? '__new'); save(); render(); toast('Respaldo importado'); }
   catch (e) { toast('Ese texto no es un respaldo válido de Góndola'); }
 }
 async function scan() {
@@ -689,15 +807,22 @@ document.addEventListener('input', e => {
   if (t.dataset.f) { F[t.dataset.f] = t.type === 'checkbox' ? t.checked : t.value; if (t.dataset.f === 'ean') onEan(); updatePreview(); }
   else if (t.dataset.pf) { F.promo[t.dataset.pf] = t.value; updatePreview(); }
   else if (t.dataset.np) { NP[t.dataset.np] = t.value; }
+  else if (t.dataset.ed && ED) { ED.d[t.dataset.ed] = t.type === 'checkbox' ? t.checked : t.value; }
+  else if (t.dataset.edp && ED) { ED.d.promo[t.dataset.edp] = t.value; }
+  else if (t.dataset.store) { const st = getStore(t.dataset.store); st.name = t.value; touch(st); save(); renderVisit(); }
   else if (t.dataset.pay) {
     const p = S.pays.find(x => x.id === t.dataset.pay), k = t.dataset.pk;
-    if (k === 'name') p.name = t.value; else if (k === 'tope') { const v = num(t.value); p.tope = v > 0 ? v : null; } else { const v = num(t.value); p[k] = isNaN(v) ? 0 : v; }
-    save(); renderVisit();
+    if (k === 'name') p.name = t.value; else if (k === 'tope' || k === 'minimo') { const v = num(t.value); p[k] = v > 0 ? v : null; } else { const v = num(t.value); p[k] = isNaN(v) ? 0 : v; }
+    touch(p); save(); renderVisit();
   }
 });
+document.addEventListener('toggle', e => { const d = e.target; if (d.dataset && d.dataset.sec) d.open ? OPEN.add(d.dataset.sec) : OPEN.delete(d.dataset.sec); }, true);
 document.addEventListener('change', e => {
   const t = e.target, a = t.dataset.chg;
   if (t.id === 'fileImp' && t.files[0]) { t.files[0].text().then(importData); return; }
+  if (t.dataset.edsel === 'ptype' && ED) { const v = t.value; ED.d.promo = v === 'nth' ? { t: v, n: 2, v: 50 } : v === 'nxm' ? { t: v, n: 3, m: 2 } : v === 'nfor' ? { t: v, n: 2 } : { t: v }; renderDatos(); return; }
+  if (t.dataset.ed === 'base' && ED) { renderDatos(); return; }
+  if (t.dataset.store && !t.value.trim()) { toast('La tienda necesita un nombre'); t.value = getStore(t.dataset.store).name = 'Tienda sin nombre'; save(); renderVisit(); return; }
   if (a === 'vstore') { S.visit.storeId = t.value; save(); lastSaved = null; render(); }
   else if (a === 'vpay') { S.visit.payId = t.value; save(); render(); }
   else if (a === 'fprod') { resetForm(t.value); lastSaved = null; renderCargar(); }
