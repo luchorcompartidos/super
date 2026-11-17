@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.1.2">
+<meta name="app-version" content="v0.1.3">
 <title>Góndola Comparador</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -137,6 +137,13 @@ nav.tabs a[aria-current="page"]::before{content:"";position:absolute;top:0;left:
 .scan video{width:100%;max-height:80vh;object-fit:cover}
 .scan button{position:absolute;bottom:calc(24px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%)}
 .result{border:2px solid var(--good);background:var(--good-bg)}
+.cdlg{border:1px solid var(--line);border-radius:16px;padding:16px;max-width:min(520px,94vw);width:100%;max-height:88vh;background:var(--surface);color:var(--ink)}
+.cdlg::backdrop{background:rgba(0,0,0,.5)}
+.cdlg .clist{display:grid;gap:12px;max-height:58vh;overflow:auto;margin:10px 0}
+.copt{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.copt button{text-align:left;border:2px solid var(--line);border-radius:12px;padding:10px;background:var(--bg);color:var(--ink);font:500 13px var(--font-b);cursor:pointer;display:grid;gap:4px;align-content:start}
+.copt button b{font-size:12px;color:var(--muted)}
+.copt button[aria-pressed="true"]{border-color:var(--accent);background:var(--surface);box-shadow:0 0 0 2px var(--accent) inset}
 @media (max-width:380px){.tiles{grid-template-columns:1fr 1fr}.tile.main{grid-column:1/-1}}
 @media (prefers-reduced-motion:no-preference){.chip,.btn{transition:background .12s,color .12s}}
 </style>
@@ -144,7 +151,7 @@ nav.tabs a[aria-current="page"]::before{content:"";position:absolute;top:0;left:
 <body>
 <div class="app">
   <header class="top">
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button> <button id="verBtn" class="vs-ver" type="button">v0.1.2</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button> <button id="verBtn" class="vs-ver" type="button">v0.1.3</button></span></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
       <label for="vPay">Pago con<select id="vPay" data-chg="vpay"></select></label>
@@ -170,6 +177,7 @@ nav.tabs a[aria-current="page"]::before{content:"";position:absolute;top:0;left:
 </nav>
 
 <div class="toast" id="toast" role="status" hidden></div>
+<dialog class="cdlg" id="confDlg" aria-labelledby="confTitle"></dialog>
 <div class="scan" id="scanOv" hidden><video id="scanVideo" playsinline muted></video><button class="btn primary" id="scanClose">Cerrar cámara</button></div>
 
 <script>
@@ -715,60 +723,147 @@ async function callSync(body) {
   if (!j.ok) throw new Error(j.error || 'error del script');
   return j;
 }
-function syncReady() {
-  if (!SYNC.url || !SYNC.key) { toast('Configurá la URL y la clave en Datos → Sincronización'); return false; }
-  if (!/^https:\/\/script\.google\.com\/.+\/exec$/.test(SYNC.url)) { toast('La URL tiene que ser la de la aplicación web y terminar en /exec'); return false; }
-  if (navigator.onLine === false) { toast('Sin conexión. Tus datos siguen guardados en el celular; sincronizá cuando tengas señal.', 4000); return false; }
+function syncReady(auto) {
+  const say = m => { if (!auto) toast(m, 4000); return false; };
+  if (!SYNC.url || !SYNC.key) return say('Configurá la URL y la clave en Datos → Sincronización');
+  if (!/^https:\/\/script\.google\.com\/.+\/exec$/.test(SYNC.url)) return say('La URL tiene que ser la de la aplicación web y terminar en /exec');
+  if (navigator.onLine === false) return say('Sin conexión. Tus datos siguen guardados en el celular; sincronizá cuando tengas señal.');
   return true;
 }
+const autoOn = () => SYNC.auto !== false && !!(SYNC.url && SYNC.key);
 async function syncTest() {
   if (!syncReady()) return;
   try { const j = await callSync({ action: 'ping' }); SYNC.planilla = j.planilla; saveSync(); toast('Conexión correcta con la planilla "' + j.planilla + '"'); render(); }
   catch (e) { toast('No se pudo conectar: ' + e.message + '.', 5000); }
 }
-async function syncNow() {
-  if (syncing || !syncReady()) return;
+/* Sincronizar: 1) leer la planilla, 2) detectar conflictos y preguntar, 3) enviar y recibir todo */
+const SFIELDS = { stores: ['name'], pays: ['name', 'pct', 'minimo', 'tope', 'usado', 'dias', 'stores', 'modo'], prods: ['name', 'base'], pres: ['prodId', 'marca', 'desc', 'cont', 'unit', 'pack', 'ean'], prices: ['presId', 'storeId', 'precio', 'promo', 'acum', 'fecha', 'hist'] };
+const ENT = { stores: 'Tienda', pays: 'Medio de pago', prods: 'Producto', pres: 'Presentación', prices: 'Precio' };
+const sameRec = (c, a, b) => SFIELDS[c].every(f => JSON.stringify(a[f] ?? null) === JSON.stringify(b[f] ?? null));
+let CONF = null;
+function findConflicts(pj, last) {
+  const out = [];
+  if (!last) return out;
+  COLLS.forEach(c => {
+    const srv = new Map((pj.data[c] || []).map(x => [x.id, norm(c, x)]));
+    const stomb = new Map((pj.tombs || []).filter(t => t.c === c && t.upd > last).map(t => [t.id, t.upd]));
+    S[c].filter(r => (r.upd || '') > last).forEach(r => {
+      const sv = srv.get(r.id);
+      if (sv && (sv.upd || '') > last && !sameRec(c, r, sv)) out.push({ c, id: r.id, mine: r, theirs: sv, pick: null });
+      else if (!sv && stomb.has(r.id)) out.push({ c, id: r.id, mine: r, theirs: null, theirsDel: stomb.get(r.id), pick: null });
+    });
+    S.tomb.filter(t => t.c === c && t.upd > last).forEach(t => {
+      const sv = srv.get(t.id);
+      if (sv && (sv.upd || '') > last) out.push({ c, id: t.id, mine: null, mineDel: t.upd, theirs: sv, pick: null });
+    });
+  });
+  return out;
+}
+async function syncNow(auto) {
+  if (syncing) return;
+  if (!syncReady(auto)) return;
   syncing = true; renderSyncBtn();
+  let keepOpen = false;
+  try {
+    const pj = await callSync({ action: 'pull' });
+    const conf = findConflicts(pj, SYNC.last || '');
+    if (conf.length) {
+      SYNC.conflicts = conf.length; saveSync();
+      if (auto) { toast(`Hay ${conf.length} conflicto${conf.length === 1 ? '' : 's'} con la planilla: tocá ⚠ arriba para elegir qué versión queda.`, 5000); return; }
+      CONF = { list: conf }; keepOpen = true; openConf(); return;
+    }
+    await pushSync(auto);
+  } catch (e) {
+    const m = /desconocida/.test(e.message) ? 'el script de la planilla es de una versión anterior: actualizalo (ver apps-script/LEEME.md)' : e.message;
+    toast((auto ? 'No se pudo sincronizar automáticamente: ' : 'No se pudo sincronizar: ') + m + '. Tus datos siguen guardados en el celular.', 5500);
+  } finally { if (!keepOpen) { syncing = false; render(); } }
+}
+async function pushSync(auto) {
   const t0 = nowISO(), last = SYNC.last || '';
   const data = {}; COLLS.forEach(c => { data[c] = S[c].filter(r => !last || (r.upd || '') > last); });
   const tombs = S.tomb.filter(t => !last || t.upd > last);
   const sent = COLLS.reduce((a, c) => a + data[c].length, 0) + tombs.length;
-  try {
-    const j = await callSync({ action: 'sync', data, tombs });
-    COLLS.forEach(c => {
-      const local = S[c].filter(r => (r.upd || '') > t0); // cambios hechos mientras se sincronizaba
-      const m = new Map((j.data[c] || []).map(x => [x.id, norm(c, x)]));
-      local.forEach(r => m.set(r.id, r));
-      S[c] = [...m.values()];
-    });
-    S.tomb = S.tomb.filter(t => t.upd > t0);
-    S.cart = S.cart.filter(it => getPrice(it.priceId));
-    if (!getStore(S.visit.storeId)) S.visit.storeId = S.stores[0]?.id;
-    if (S.visit.payId !== 'none' && !S.pays.some(p => p.id === S.visit.payId)) S.visit.payId = 'none';
-    if (ED && !(ED.kind === 'price' ? getPrice(ED.id) : ED.kind === 'pres' ? getPres(ED.id) : getProd(ED.id))) ED = null;
-    if (!S.stores.length) S.stores.push(touch({ id: uid(), name: 'Mi súper' })), S.visit.storeId = S.stores[0].id;
-    SYNC.last = t0; SYNC.planilla = j.planilla; SYNC.lastOk = nowISO(); saveSync(); save();
-    const n = COLLS.reduce((a, c) => a + S[c].length, 0);
-    toast(`Sincronizado con "${j.planilla}": enviaste ${sent} cambio${sent === 1 ? '' : 's'}, la planilla tiene ${n} registros.`, 4000);
-  } catch (e) {
-    toast('No se pudo sincronizar: ' + e.message + '. Tus datos siguen guardados en el celular.', 5000);
-  } finally { syncing = false; render(); }
+  const j = await callSync({ action: 'sync', data, tombs });
+  COLLS.forEach(c => {
+    const local = S[c].filter(r => (r.upd || '') > t0); // cambios hechos mientras se sincronizaba
+    const m = new Map((j.data[c] || []).map(x => [x.id, norm(c, x)]));
+    local.forEach(r => m.set(r.id, r));
+    S[c] = [...m.values()];
+  });
+  S.tomb = S.tomb.filter(t => t.upd > t0);
+  S.cart = S.cart.filter(it => getPrice(it.priceId));
+  if (!S.stores.length) { S.stores.push(touch({ id: uid(), name: 'Mi súper' })); }
+  if (!getStore(S.visit.storeId)) S.visit.storeId = S.stores[0].id;
+  if (S.visit.payId !== 'none' && !S.pays.some(p => p.id === S.visit.payId)) S.visit.payId = 'none';
+  if (ED && !(ED.kind === 'price' ? getPrice(ED.id) : ED.kind === 'pres' ? getPres(ED.id) : getProd(ED.id))) ED = null;
+  SYNC.last = t0; SYNC.planilla = j.planilla; SYNC.lastOk = nowISO(); SYNC.conflicts = 0; saveSync(); save();
+  const n = COLLS.reduce((a, c) => a + S[c].length, 0);
+  toast(auto ? `Sincronizado automáticamente (${sent} cambio${sent === 1 ? '' : 's'} enviado${sent === 1 ? '' : 's'}).` : `Sincronizado con "${j.planilla}": enviaste ${sent} cambio${sent === 1 ? '' : 's'}, la planilla tiene ${n} registros.`, 3500);
 }
+function recName(c, r) {
+  if (!r) return '';
+  if (c === 'prices') { const pr = getPres(r.presId); return `${pr ? presLabel(pr) : 'Presentación ' + r.presId} · ${getStore(r.storeId)?.name || r.storeId}`; }
+  if (c === 'pres') return presLabel({ ...r, cont: r.cont });
+  return r.name;
+}
+function recSummary(c, r) {
+  if (c === 'stores') return esc(r.name);
+  if (c === 'pays') return `${esc(r.name)} · ${r.pct}%${r.minimo ? ' · mín ' + money(r.minimo) : ''}${r.tope ? ' · tope ' + money(r.tope) : ''} · usado ${money(r.usado || 0)}${r.dias?.length ? ' · ' + r.dias.map(d => DOW[d]).join(' ') : ''}`;
+  if (c === 'prods') return `${esc(r.name)} · por ${esc(r.base)}`;
+  if (c === 'pres') return `${esc(presLabel(r))}${r.ean ? ' · EAN ' + esc(r.ean) : ''}`;
+  const pl = promo({ precio: r.precio, promo: r.promo }).label;
+  return `<span class="big" style="font-size:20px">${money(r.precio)}</span>${pl ? ' <span class="tag">' + esc(pl) + '</span>' : ''}${r.acum ? ' · acumula' : ''} · del ${esc(r.fecha)}`;
+}
+function renderConf() {
+  const d = $('#confDlg'), L = CONF.list, ok = L.every(x => x.pick);
+  const opt = (x, i, side) => {
+    const r = side === 'mine' ? x.mine : x.theirs, del = side === 'mine' ? x.mineDel : x.theirsDel;
+    return `<button type="button" data-act="cpick" data-i="${i}" data-v="${side}" aria-pressed="${x.pick === side}"><b>${side === 'mine' ? 'Este celular' : 'Planilla'}</b>${r ? recSummary(x.c, r) : '<span style="color:var(--bad);font-weight:700">Borrado</span>'}<span class="small muted">${agoTxt(r ? r.upd : del)}</span></button>`;
+  };
+  d.innerHTML = `<h2 id="confTitle">Conflictos con la planilla (${L.length})</h2>
+    <div class="small muted">Estos registros cambiaron en este celular y también en la planilla desde la última sincronización. Elegí qué versión queda en cada uno.</div>
+    <div class="btns" style="margin-top:8px"><button class="btn sm" data-act="cpickall" data-v="mine">Todo de este celular</button><button class="btn sm" data-act="cpickall" data-v="theirs">Todo de la planilla</button></div>
+    <div class="clist">${L.map((x, i) => `<div><div class="small" style="font-weight:700;margin-bottom:4px">${ENT[x.c]}: ${esc(recName(x.c, x.mine || x.theirs))}</div><div class="copt">${opt(x, i, 'mine')}${opt(x, i, 'theirs')}</div></div>`).join('')}</div>
+    <div class="btns" style="justify-content:flex-end"><button class="btn ghost" data-act="ccancel">Decidir después</button><button class="btn primary" data-act="capply" ${ok ? '' : 'disabled'}>${ok ? 'Aplicar y sincronizar' : `Faltan ${L.filter(x => !x.pick).length}`}</button></div>`;
+}
+function openConf() { renderConf(); const d = $('#confDlg'); try { if (!d.open) d.showModal(); } catch (e) { d.setAttribute('open', ''); } }
+async function applyConf() {
+  const now = nowISO();
+  CONF.list.forEach(x => {
+    if (x.pick === 'theirs') {
+      S.tomb = S.tomb.filter(t => !(t.c === x.c && t.id === x.id));
+      S[x.c] = S[x.c].filter(r => r.id !== x.id);
+      if (x.theirs) S[x.c].push(x.theirs);
+    } else {
+      if (x.mine) x.mine.upd = now;
+      else { const t = S.tomb.find(t => t.c === x.c && t.id === x.id); if (t) t.upd = now; }
+    }
+  });
+  if (ED) ED = null;
+  save(); $('#confDlg').close(); CONF = null;
+  try { await pushSync(false); }
+  catch (e) { toast('No se pudo sincronizar: ' + e.message + '. Tus elecciones quedaron guardadas en el celular.', 5000); }
+  finally { syncing = false; render(); }
+}
+
 function agoTxt(iso) { if (!iso) return 'nunca'; const m = Math.round((Date.now() - new Date(iso)) / 60000); return m < 1 ? 'recién' : m < 60 ? `hace ${m} min` : m < 1440 ? `hace ${Math.round(m / 60)} h` : `hace ${Math.round(m / 1440)} d`; }
 function renderSyncBtn() {
   const b = $('#syncBtn'); if (!b) return;
   const on = !!(SYNC.url && SYNC.key); b.hidden = !on; if (!on) return;
   const p = pendientes();
-  b.textContent = syncing ? '⟳ …' : p ? `⟳ ${p}` : '⟳';
+  b.textContent = syncing ? '⟳ …' : SYNC.conflicts ? `⚠ ${SYNC.conflicts}` : p ? `⟳ ${p}` : '⟳';
   b.title = syncing ? 'Sincronizando…' : `Sincronizar con Google Sheets · última: ${agoTxt(SYNC.lastOk)}${p ? ` · ${p} cambio${p === 1 ? '' : 's'} sin enviar` : ''}`;
-  b.classList.toggle('new', p > 0);
+  b.classList.toggle('new', p > 0 || !!SYNC.conflicts);
+  if (SYNC.conflicts) b.title = `Hay ${SYNC.conflicts} conflicto${SYNC.conflicts === 1 ? '' : 's'} para revisar: tocá para elegir qué versión queda`;
 }
 function syncSection() {
   const p = pendientes(), on = !!(SYNC.url && SYNC.key);
   return sec('sync', `Sincronización con Google Sheets ${on ? `· ${agoTxt(SYNC.lastOk)}` : ''}`, `
-    <div class="small muted">La app sigue funcionando sin conexión. Al sincronizar se envían los cambios de este celular y se recibe la planilla completa; si un registro cambió en los dos lados, gana el cambio más reciente.</div>
+    <div class="small muted">La app sigue funcionando sin conexión. Al sincronizar se envían los cambios de este celular y se recibe la planilla completa. Si un mismo registro cambió acá y en la planilla, te muestra las dos versiones y elegís cuál queda.</div>
     <label class="fl" for="syUrl">URL de la aplicación web (termina en /exec)<input id="syUrl" data-sync="url" inputmode="url" autocomplete="off" value="${esc(SYNC.url)}" placeholder="https://script.google.com/macros/s/…/exec"></label>
     <label class="fl" for="syKey">Clave (la misma que pusiste en el script)<input id="syKey" data-sync="key" type="password" autocomplete="off" value="${esc(SYNC.key)}"></label>
+    <label class="switch" for="syAuto"><input type="checkbox" id="syAuto" data-syncauto="1" ${SYNC.auto !== false ? 'checked' : ''}> Sincronizar automáticamente al cerrar la visita, al recuperar la señal y al abrir la app con cambios pendientes</label>
+    ${SYNC.conflicts ? `<div class="note" style="border:2px solid var(--warn)"><b>Hay ${SYNC.conflicts} conflicto${SYNC.conflicts === 1 ? '' : 's'} sin resolver.</b> Tocá Sincronizar ahora para elegir qué versión queda.</div>` : ''}
     <div class="btns"><button class="btn sm" data-act="synctest">Probar conexión</button><button class="btn sm primary" data-act="sync" ${syncing ? 'disabled' : ''}>${syncing ? 'Sincronizando…' : 'Sincronizar ahora'}</button></div>
     <div class="small">${SYNC.planilla ? `Planilla: <b>${esc(SYNC.planilla)}</b> · ` : ''}Última sincronización: <b>${agoTxt(SYNC.lastOk)}</b> · ${p ? `<span class="pill p-warn">${p} cambio${p === 1 ? '' : 's'} sin enviar</span>` : '<span class="pill p-good">Todo enviado</span>'}</div>
     ${S.demo && !SYNC.last ? '<div class="note"><b>Antes de la primera sincronización:</b> si no querés los datos de ejemplo en tu planilla, borralos en Respaldo → Borrar todo.</div>' : ''}
@@ -818,7 +913,7 @@ const ACT = {
   addcart: el => { const id = el.dataset.id, q = +el.dataset.q || 1; const it = S.cart.find(x => x.priceId === id); if (it) it.qty += q; else S.cart.push({ priceId: id, qty: q }); save(); renderVisit(); toast(`Agregado al carrito (${q})`); },
   qty: el => { const it = S.cart.find(x => x.priceId === el.dataset.id); if (!it) return; it.qty += +el.dataset.d; if (it.qty <= 0) S.cart = S.cart.filter(x => x !== it); save(); render(); },
   clearcart: () => { S.cart = S.cart.filter(it => getPrice(it.priceId)?.storeId !== S.visit.storeId); save(); render(); },
-  closevisit: () => { const k = cartCalc(); if (k.pay.id !== 'none' && k.desc > 0) { const p = touch(S.pays.find(x => x.id === k.pay.id)); p.usado = (p.usado || 0) + k.desc; } ACT.clearcart(); toast('Visita cerrada. Se sumó el descuento al tope usado.'); },
+  closevisit: () => { const k = cartCalc(); if (k.pay.id !== 'none' && k.desc > 0) { const p = touch(S.pays.find(x => x.id === k.pay.id)); p.usado = (p.usado || 0) + k.desc; } ACT.clearcart(); toast('Visita cerrada. Se sumó el descuento al tope usado.'); if (autoOn()) setTimeout(() => syncNow(true), 600); },
   loadpres: el => { const pres = getPres(el.dataset.id); resetForm(pres.prodId); fillFromPres(pres); lastSaved = null; go('cargar'); setTimeout(() => $('#fPrecio')?.focus(), 50); },
   loadnew: el => { resetForm(el.dataset.id); lastSaved = null; go('cargar'); },
   createprod: () => createProd(true), createprod2: () => createProd(false),
@@ -839,7 +934,11 @@ const ACT = {
   editpres: el => { startEdit('pres', el.dataset.id); go('datos'); scrollForm(); },
   edcancel: () => { ED = null; renderDatos(); },
   edsave: () => edSave(),
-  sync: () => syncNow(),
+  sync: () => syncNow(false),
+  cpick: el => { CONF.list[+el.dataset.i].pick = el.dataset.v; renderConf(); },
+  cpickall: el => { CONF.list.forEach(x => x.pick = el.dataset.v); renderConf(); },
+  capply: () => applyConf(),
+  ccancel: () => $('#confDlg').close(),
   synctest: () => syncTest(),
   edmode: el => { ED.d.modo = el.dataset.v; ED.d.fecha = el.dataset.v === 'new' ? todayISO() : ED.d.orig; renderDatos(); },
   clearhist: el => { const p = getPrice(el.dataset.id); p.hist = []; touch(p); save(); renderDatos(); },
@@ -903,6 +1002,7 @@ document.addEventListener('input', e => {
   else if (t.dataset.np) { NP[t.dataset.np] = t.value; }
   else if (t.dataset.ed && ED) { ED.d[t.dataset.ed] = t.type === 'checkbox' ? t.checked : t.value; }
   else if (t.dataset.edp && ED) { ED.d.promo[t.dataset.edp] = t.value; }
+  else if (t.dataset.syncauto) { SYNC.auto = t.checked; saveSync(); }
   else if (t.dataset.sync) { SYNC[t.dataset.sync] = t.value.trim(); if (t.dataset.sync === 'url') { SYNC.last = ''; SYNC.lastOk = ''; SYNC.planilla = ''; } saveSync(); renderSyncBtn(); }
   else if (t.dataset.store) { const st = getStore(t.dataset.store); st.name = t.value; touch(st); save(); renderVisit(); }
   else if (t.dataset.pay) {
@@ -924,7 +1024,11 @@ document.addEventListener('change', e => {
   else if (a === 'fpres') { if (t.value === 'new') resetForm(F.prodId); else fillFromPres(getPres(t.value)); renderCargar(); if (t.value !== 'new') $('#fPrecio')?.focus(); }
 });
 
+$('#confDlg').addEventListener('close', () => { if (CONF) { SYNC.conflicts = CONF.list.length; saveSync(); CONF = null; syncing = false; render(); } });
+window.addEventListener('online', () => { if (autoOn() && pendientes()) syncNow(true); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && autoOn() && pendientes() && (!SYNC.lastOk || Date.now() - new Date(SYNC.lastOk) > 5 * 60000)) syncNow(true); });
 render();
+if (autoOn() && pendientes()) setTimeout(() => syncNow(true), 1500);
 try { if (S.demo && !sessionStorage.getItem('gondola.hi')) { sessionStorage.setItem('gondola.hi', '1'); toast('Cargué datos de ejemplo para que veas cómo funciona.', 3500); } } catch (e) {}
 </script>
 <!-- ===== Versión (estándar caja de apps) — bloque autónomo =====

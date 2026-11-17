@@ -1,5 +1,5 @@
 /**
- * Góndola · sincronización con Google Sheets
+ * Góndola · sincronización con Google Sheets (script v0.1.3: agrega la acción "pull" para detectar conflictos)
  * Repo: https://github.com/luchorcompartidos/super
  *
  * Instalación (una sola vez):
@@ -39,7 +39,13 @@ function doPost(e) {
   try { req = JSON.parse(e.postData.contents); } catch (err) { return json_({ ok: false, error: 'Pedido inválido' }); }
   if (req.token !== CLAVE) return json_({ ok: false, error: 'Clave incorrecta' });
   const ss = SpreadsheetApp.getActive();
-  if (req.action === 'ping') return json_({ ok: true, planilla: ss.getName() });
+  if (req.action === 'ping') return json_({ ok: true, planilla: ss.getName(), script: '0.1.3' });
+  if (req.action === 'pull') {
+    // Solo lectura: la app compara y te pregunta qué hacer con los conflictos antes de enviar.
+    const out = {};
+    Object.keys(TABS).forEach(c => { out[c] = leer_(ss, TABS[c], FIELDS[c]); });
+    return json_({ ok: true, data: out, tombs: leer_(ss, TOMBS_TAB, TOMB_FIELDS), planilla: ss.getName() });
+  }
   if (req.action !== 'sync') return json_({ ok: false, error: 'Acción desconocida' });
 
   const lock = LockService.getScriptLock();

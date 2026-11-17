@@ -13,8 +13,17 @@
 
 - La app sigue funcionando sin conexión. Al sincronizar manda lo que cambió desde la última vez
   y recibe la planilla completa.
-- Si un mismo registro cambió en los dos lados, gana el cambio más reciente.
+- Si un mismo registro cambió en los dos lados desde la última sincronización, la app te muestra
+  las dos versiones y elegís cuál queda. En la sincronización automática no se decide nada solo:
+  queda el aviso ⚠ para que lo revises.
+- Sincronización automática (se puede apagar): al cerrar la visita, al recuperar la señal y al abrir la app con cambios pendientes.
 - Podés corregir datos en la planilla: al editar una fila se actualiza su columna `upd`
   y la app toma el cambio en la próxima sincronización. Si borrás una fila, se borra en la app.
 - Las columnas `dias`, `stores`, `promo` e `hist` guardan listas en formato JSON; conviene editarlas desde la app.
 - La clave protege el acceso: no la compartas. Cualquiera con la URL **y** la clave puede leer y escribir la planilla.
+
+## Actualizar el script
+
+Cuando cambie `Codigo.gs` (por ejemplo, de la versión 0.1.2 a la 0.1.3): pegá el código nuevo, conservá tu CLAVE,
+guardá y en **Implementar → Gestionar implementaciones → editar (lápiz) → Versión: Nueva versión → Implementar**.
+La URL /exec no cambia.
