@@ -1,0 +1,48 @@
+name: Tag y Release automáticos
+
+# Esquema de versiones (en cada push a main):
+#   - Normal:                      v0.1 -> v0.2 -> v0.3 ...
+#   - "[patch]" en el mensaje:     v0.3 -> v0.3.1 -> v0.3.2 (el siguiente normal pasa a v0.4)
+#   - "[major]" en el mensaje:     v0.9 -> v1.0
+#   - "[skip release]" en el mensaje: no crea tag ni Release
+# Después de v0.9 sigue v0.10 (estándar semántico), salvo que uses [major].
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: ${{ !contains(github.event.head_commit.message, '[skip release]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Calcular siguiente versión y crear tag + Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MSG: ${{ github.event.head_commit.message }}
+        run: |
+          last=$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+(\.[0-9]+)?$' | sort -V | tail -1)
+          if [ -z "$last" ]; then
+            next="v0.1"
+          else
+            IFS=. read -r X Y Z <<< "${last#v}"
+            if   grep -q '\[major\]' <<< "$MSG"; then next="v$((X+1)).0"
+            elif grep -q '\[patch\]' <<< "$MSG"; then next="v$X.$Y.$(( ${Z:-0} + 1 ))"
+            else next="v$X.$((Y+1))"
+            fi
+          fi
+          subject=$(git log -1 --pretty=%s)
+          echo "Última: ${last:-ninguna} -> Nueva: $next"
+          git tag "$next"
+          git push origin "$next"
+          gh release create "$next" --title "$next" --notes "Deploy automático: $subject (commit ${GITHUB_SHA::7})"
