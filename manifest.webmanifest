@@ -1,0 +1,17 @@
+{
+  "name": "Góndola · comparador de precios",
+  "short_name": "Góndola",
+  "description": "Compará en la góndola el precio real por kg, litro o unidad, con promos y descuentos por medio de pago.",
+  "lang": "es-AR",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#132033",
+  "theme_color": "#132033",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
