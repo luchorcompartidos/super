@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.1.5">
+<meta name="app-version" content="v0.1.6">
 <title>Góndola Comparador</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#132033">
@@ -147,6 +147,9 @@ nav.tabs a[aria-current="page"]::before{content:"";position:absolute;top:0;left:
 .scan .scan-tip{position:absolute;top:calc(28% - 10px);left:0;right:0;text-align:center;color:#fff;font-weight:700;margin:0;padding:0 16px}
 .scan button{position:absolute;bottom:calc(24px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%)}
 .result{border:2px solid var(--good);background:var(--good-bg)}
+.sortbar{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.chip.sm{min-height:32px;padding:5px 10px;font-size:13px}
+.search{background:var(--surface)}
 .cdlg{border:1px solid var(--line);border-radius:16px;padding:16px;max-width:min(520px,94vw);width:100%;max-height:88vh;background:var(--surface);color:var(--ink)}
 .cdlg::backdrop{background:rgba(0,0,0,.5)}
 .cdlg .clist{display:grid;gap:12px;max-height:58vh;overflow:auto;margin:10px 0}
@@ -161,7 +164,7 @@ nav.tabs a[aria-current="page"]::before{content:"";position:absolute;top:0;left:
 <body>
 <div class="app">
   <header class="top">
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button> <button id="verBtn" class="vs-ver" type="button">v0.1.5</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button> <button id="verBtn" class="vs-ver" type="button">v0.1.6</button></span></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
       <label for="vPay">Pago con<select id="vPay" data-chg="vpay"></select></label>
@@ -358,8 +361,11 @@ let lastSaved = null;
 /* ============ contexto de la visita ============ */
 function renderVisit() {
   if (!getStore(S.visit.storeId)) S.visit.storeId = S.stores[0]?.id;
-  $('#vStore').innerHTML = S.stores.map(s => `<option value="${s.id}" ${s.id === S.visit.storeId ? 'selected' : ''}>${esc(s.name)}</option>`).join('');
-  $('#vPay').innerHTML = [NOPAY, ...S.pays].map(p => `<option value="${p.id}" ${p.id === S.visit.payId ? 'selected' : ''}>${esc(p.name)}${p.pct ? ' · ' + p.pct + '%' : ''}</option>`).join('');
+  const curSt = getStore(S.visit.storeId);
+  $('#vStore').innerHTML = [curSt, ...[...S.stores].filter(s => s !== curSt).sort((a, b) => a.name.localeCompare(b.name, 'es'))].filter(Boolean).map(s => `<option value="${s.id}" ${s.id === S.visit.storeId ? 'selected' : ''}>${esc(s.name)}</option>`).join('');
+  const byName = (a, b) => a.name.localeCompare(b.name, 'es');
+  const payOk = S.pays.filter(p => payRate(p, S.visit.storeId) > 0).sort(byName), payNo = S.pays.filter(p => !payOk.includes(p)).sort(byName);
+  $('#vPay').innerHTML = [...payOk, NOPAY, ...payNo].map(p => `<option value="${p.id}" ${p.id === S.visit.payId ? 'selected' : ''}>${esc(p.name)}${p.pct ? ' · ' + p.pct + '%' : ''}${payNo.includes(p) ? ' (no aplica hoy acá)' : ''}</option>`).join('');
   const pay = getPay(S.visit.payId), d = payRate(pay, S.visit.storeId);
   let h = (navigator.onLine === false ? `<span class="pill p-warn" title="Todo sigue funcionando; los cambios se sincronizan cuando vuelva la señal">Sin señal · funciona igual</span>` : '') + `<span class="muted">${DOW[new Date().getDay()]} ${new Date().toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}</span>`;
   if (pay.id === 'none') h += `<span class="pill p-neutral">Precio de lista</span>`;
@@ -436,7 +442,7 @@ function renderCargar() {
   const prod = getProd(F.prodId), b = baseOf(prod);
   h += `<div class="card"><div class="small muted">Cargando en <b>${esc(store?.name || '—')}</b> · ${esc(pay.name)}</div>
     <label class="fl" for="fProd">Producto a comparar
-      <select id="fProd" data-chg="fprod">${S.prods.map(p => `<option value="${p.id}" ${p.id === F.prodId ? 'selected' : ''}>${esc(p.name)} (por ${baseOf(p).short})</option>`).join('')}<option value="__new" ${F.prodId === '__new' ? 'selected' : ''}>+ Nuevo producto…</option></select></label>`;
+      <select id="fProd" data-chg="fprod">${sortList('selProd', S.prods).map(p => `<option value="${p.id}" ${p.id === F.prodId ? 'selected' : ''}>${esc(p.name)} (por ${baseOf(p).short})</option>`).join('')}<option value="__new" ${F.prodId === '__new' ? 'selected' : ''}>+ Nuevo producto…</option></select></label>${S.prods.length > 1 ? sortBar('selProd') : ''}`;
   if (F.prodId === '__new' || !prod) {
     h += newProdForm('createprod') + `</div>`;
     el.innerHTML = h; return;
@@ -446,11 +452,11 @@ function renderCargar() {
   const units = Object.keys(b.units);
   const lock = F.presId !== 'new' ? 'disabled' : '';
   h += `<div class="row"><label class="fl grow" for="fEan">Código de barras (opcional)<input id="fEan" data-f="ean" inputmode="numeric" ${lock} value="${esc(F.ean)}" placeholder="Ej.: 7791234000017"></label><button type="button" class="btn ghost" style="align-self:end" data-act="scan" ${lock}>Escanear</button></div>
-    <label class="fl" for="fPres">Presentación<select id="fPres" data-chg="fpres"><option value="new">Nueva presentación</option>${presList.map(x => `<option value="${x.id}" ${x.id === F.presId ? 'selected' : ''}>${esc(presLabel(x))}</option>`).join('')}</select></label>
+    <label class="fl" for="fPres">Presentación<select id="fPres" data-chg="fpres"><option value="new">Nueva presentación</option>${sortList('selPres', presList).map(x => `<option value="${x.id}" ${x.id === F.presId ? 'selected' : ''}>${esc(presLabel(x))}</option>`).join('')}</select></label>${presList.length > 1 ? sortBar('selPres') : ''}
     ${exHere ? `<div class="note">Último precio acá: <b>${money(exHere.precio)}</b> ${exHere.promo?.t !== 'none' ? '<span class="tag">' + esc(promo(exHere).label) + '</span>' : ''} · ${ageTxt(exHere.fecha)}. Tipeá el precio nuevo: el anterior pasa al historial. Si fue un error de carga, <button type="button" class="btn sm ghost" data-act="editprice" data-id="${exHere.id}">Corregilo</button> sin guardar historial.</div>` : ''}
     ${lock ? `<div class="small muted">Los datos de la presentación se cambian desde Datos, porque afectan sus precios en todas las tiendas. <button type="button" class="btn sm ghost" data-act="editpres" data-id="${F.presId}">Editar presentación</button></div>` : ''}
     <div class="grid2"><label class="fl" for="fMarca">Marca<input id="fMarca" data-f="marca" ${lock} value="${esc(F.marca)}" autocomplete="off" list="dlMarcas"></label><label class="fl" for="fDesc">Variedad / detalle<input id="fDesc" data-f="desc" ${lock} value="${esc(F.desc)}" autocomplete="off"></label></div>
-    <datalist id="dlMarcas">${[...new Set(S.pres.map(x => x.marca))].map(m => `<option value="${esc(m)}">`).join('')}</datalist>
+    <datalist id="dlMarcas">${(() => { const c = {}; S.pres.forEach(x => { c[x.marca] = (c[x.marca] || 0) + 1 + nPricesPres(x); }); return Object.keys(c).sort((a, b) => c[b] - c[a] || a.localeCompare(b, 'es')); })().map(m => `<option value="${esc(m)}">`).join('')}</datalist>
     <div class="fl">Contenido
       <div class="row"><input id="fCont" aria-label="Contenido" data-f="cont" inputmode="decimal" class="w-num" ${lock} value="${esc(F.cont)}" placeholder="0">
         <select id="fUnit" aria-label="Unidad" data-f="unit" class="w-unit" ${lock}>${units.map(u => `<option ${u === F.unit ? 'selected' : ''}>${u}</option>`).join('')}</select>
@@ -494,7 +500,7 @@ function renderComparar() {
   const prod = getProd(CMP.prodId);
   if (!prod) { el.innerHTML = `<div class="card">Todavía no hay productos. Creá uno en Cargar.</div>`; return; }
   const u = baseOf(prod).short, here = S.visit.storeId, rows = rowsFor(prod.id, CMP.mode);
-  let h = `<div class="chips" role="group" aria-label="Producto">${S.prods.map(p => `<button class="chip" aria-pressed="${p.id === prod.id}" data-act="cprod" data-id="${p.id}">${esc(p.name)}</button>`).join('')}</div>
+  let h = `<div class="chips" role="group" aria-label="Producto">${sortList('selProd', S.prods).map(p => `<button class="chip" aria-pressed="${p.id === prod.id}" data-act="cprod" data-id="${p.id}">${esc(p.name)}</button>`).join('')}</div>
     <div class="row small"><span class="muted">Descuento de pago:</span><div class="chips"><button class="chip" aria-pressed="${CMP.mode === 'visit'}" data-act="cmode" data-m="visit">El de mi visita</button><button class="chip" aria-pressed="${CMP.mode === 'best'}" data-act="cmode" data-m="best">El mejor en cada tienda</button></div></div>`;
   const top = rows[0], bestHere = rows.find(r => r.p.storeId === here);
   if (!rows.length) h += `<div class="verdict none"><b class="head">Sin precios todavía</b><span>Cargá el primero para ${esc(prod.name)}.</span></div>`;
@@ -506,9 +512,10 @@ function renderComparar() {
       <span>${esc(presLabel(top.pres))} a ${money(top.c.best.per)}/${u}${top.c.best.N > 1 ? ` llevando ${top.c.best.N}` : ''} · precio de ${ageTxt(top.p.fecha)}.</span>
       <span class="small">Lo mejor acá: ${esc(presLabel(bestHere.pres))} a ${money(bestHere.c.best.per)}/${u}${bestHere.c.best.N > 1 ? ` llevando ${bestHere.c.best.N}` : ''}.${pct < 5 ? ' Diferencia chica: puede no justificar el viaje.' : ''}</span></div>`;
   }
-  h += `<div class="list">` + rows.map((r, i) => {
+  if (rows.length > 1) h += sortBar('cmp');
+  h += `<div class="list">` + sortList('cmp', rows).map(r => {
     const { p, pres, c } = r, diff = (c.best.per / top.c.best.per - 1) * 100;
-    const s = i === 0 ? 's-good' : diff <= 5 ? 's-warn' : 's-bad';
+    const s = r === top ? 's-good' : diff <= 5 ? 's-warn' : 's-bad';
     const isHere = p.storeId === here;
     const alt = c.many ? (c.best.N > 1 ? `Si llevás 1: ${money(c.one.per)}/${u}` : `Llevando ${c.pr.N} con la promo: ${money(c.many.per)}/${u} (no conviene)`) : '';
     const payTxt = c.d > 0 && c.best.payOn ? `${esc(c.pay.name)} ${c.pay.pct}%${c.pay.minimo ? ` <b>(requiere compra mínima ${money(c.pay.minimo)})</b>` : ''}` : c.d > 0 ? `${esc(c.pay.name)} no se suma a la promo` : 'sin descuento de pago';
@@ -517,7 +524,7 @@ function renderComparar() {
         <div class="it-meta"><span class="store">${esc(getStore(p.storeId).name)}${isHere ? ' · acá' : ''}</span><span class="pill ${ageCls(p.fecha)}">${ageTxt(p.fecha)}</span>${c.pr.on ? `<span class="tag">${esc(c.pr.label)}</span>` : ''}</div></div>
       <div class="it-price"><div class="big">${money(c.best.per)}<small>/${u}</small></div>
         ${c.best.N > 1 ? `<span class="pill p-warn">Llevando ${c.best.N}</span>` : `<span class="pill p-neutral">Llevando 1</span>`}
-        <span class="small" style="font-weight:700;color:var(--${i === 0 ? 'good' : diff <= 5 ? 'warn' : 'bad'})">${i === 0 ? 'Mejor' : '+' + nf0.format(diff) + '%'}</span></div>
+        <span class="small" style="font-weight:700;color:var(--${r === top ? 'good' : diff <= 5 ? 'warn' : 'bad'})">${r === top ? 'Mejor' : '+' + nf0.format(diff) + '%'}</span></div>
       <div class="it-sub">Góndola ${money(p.precio)} · ${payTxt}${alt ? ' · ' + alt : ''}${p.hist?.length ? ` · antes ${money(p.hist[p.hist.length - 1].precio)} (${ageTxt(p.hist[p.hist.length - 1].fecha)})` : ''}</div>
       <div class="it-actions"><button class="btn sm ghost" data-act="editprice" data-id="${p.id}">Corregir</button>${isHere ? `<button class="btn sm" data-act="addcart" data-id="${p.id}" data-q="${c.best.N}">+ Carrito (${c.best.N})</button>` : ''}</div>
     </article>`;
@@ -575,7 +582,8 @@ function renderCarrito() {
       <div class="bar ${k.capped ? 'full' : ''}"><i style="width:${pct}%"></i></div>
       <div class="small ${k.capped ? '' : 'muted'}">${k.capped ? `<b style="color:var(--bad)">Tope alcanzado:</b> el ${k.pay.pct}% daría ${money(k.raw)} pero solo recibís ${money(k.desc)}. Lo que agregues ya no tiene descuento bancario.` : `Te quedan ${money(k.rest - k.desc)} de descuento disponible.`}</div></div>`;
   }
-  h += `<div class="list">` + k.items.map(x => `<article class="item">
+  if (k.items.length > 1) h += sortBar('cart');
+  h += `<div class="list">` + sortList('cart', k.items.map((x, idx) => ({ ...x, idx }))).map(x => `<article class="item">
       <div><div class="it-title">${esc(presLabel(getPres(x.p.presId)))}</div>
       <div class="it-meta">${x.pr.on ? `<span class="tag">${esc(x.pr.label)}</span>` : ''}<span class="small muted">${money(x.p.precio)} c/u</span></div></div>
       <div class="it-price"><div class="big" style="font-size:22px">${money(x.sub)}</div>${x.pr.on && x.pr.N > 1 ? `<span class="small muted">${x.groups} promo${x.groups === 1 ? '' : 's'}${x.rem ? ` + ${x.rem} suelta${x.rem === 1 ? '' : 's'}` : ''}</span>` : ''}</div>
@@ -651,7 +659,7 @@ function renderDatos() {
   const el = $('#view-datos');
   let h = S.demo ? `<div class="note">Estás viendo <b>datos de ejemplo</b> (tiendas, marcas y precios inventados). Podés editarlos o borrarlos desde "Respaldo".</div>` : '';
   h += syncSection();
-  h += sec('pays', `Medios de pago y beneficios (${S.pays.length})`, S.pays.map(p => `<div class="paybox">
+  h += sec('pays', `Medios de pago y beneficios (${S.pays.length})`, (S.pays.length > 1 ? sortBar('dPays') : '') + sortList('dPays', S.pays).map(p => `<div class="paybox">
       <div class="grid2"><label class="fl" for="pn-${p.id}">Nombre<input id="pn-${p.id}" data-pay="${p.id}" data-pk="name" value="${esc(p.name)}"></label>
       <label class="fl" for="pp-${p.id}">% de descuento<input id="pp-${p.id}" data-pay="${p.id}" data-pk="pct" inputmode="decimal" value="${p.pct}"></label>
       <label class="fl" for="pm-${p.id}">Compra mínima ($, vacío = sin mínimo)<input id="pm-${p.id}" data-pay="${p.id}" data-pk="minimo" inputmode="decimal" value="${p.minimo ?? ''}"></label>
@@ -662,11 +670,11 @@ function renderDatos() {
       <div class="fl">Cómo se aplica<div class="chips"><button class="chip" aria-pressed="${p.modo !== 'reintegro'}" data-act="paymodo" data-id="${p.id}" data-v="caja">En caja</button><button class="chip" aria-pressed="${p.modo === 'reintegro'}" data-act="paymodo" data-id="${p.id}" data-v="reintegro">Reintegro posterior</button></div></div>
       <div class="small muted">Los cambios se guardan al tipear y recalculan al instante todas las comparaciones y el carrito.</div>
       <div class="btns"><button class="btn sm ghost" data-act="payreset" data-id="${p.id}">Reiniciar tope usado</button><button class="btn sm danger" data-act="delpay" data-id="${p.id}" data-confirm="1">Eliminar</button></div></div>`).join('') + `<button class="btn" data-act="addpay">+ Agregar medio de pago</button>`);
-  h += sec('stores', `Tiendas (${S.stores.length})`, S.stores.map(s => `<div class="drow"><input aria-label="Nombre de la tienda" data-store="${s.id}" value="${esc(s.name)}"><span class="small muted" style="white-space:nowrap">${S.prices.filter(p => p.storeId === s.id).length} precios</span>${S.stores.length > 1 ? `<button class="btn sm danger" data-act="delstore" data-id="${s.id}" data-confirm="1">Eliminar</button>` : ''}</div>`).join('')
+  h += sec('stores', `Tiendas (${S.stores.length})`, (S.stores.length > 1 ? sortBar('dStores') : '') + sortList('dStores', S.stores).map(s => `<div class="drow"><input aria-label="Nombre de la tienda" data-store="${s.id}" value="${esc(s.name)}"><span class="small muted" style="white-space:nowrap">${S.prices.filter(p => p.storeId === s.id).length} precios</span>${S.stores.length > 1 ? `<button class="btn sm danger" data-act="delstore" data-id="${s.id}" data-confirm="1">Eliminar</button>` : ''}</div>`).join('')
     + `<div class="small muted">El nombre se corrige tocándolo. Eliminar una tienda borra sus precios.</div><div class="row"><input id="newStore" aria-label="Nueva tienda" placeholder="Cadena · sucursal"><button class="btn" data-act="addstore">Agregar</button></div>`);
-  h += sec('prods', `Productos comparables (${S.prods.length})`, S.prods.map(p => isEd('prod', p.id) ? prodForm(p) : `<div class="drow"><span><b>${esc(p.name)}</b> <span class="muted">por ${esc(baseOf(p).short)}</span><br><span class="small muted">${S.pres.filter(x => x.prodId === p.id).length} presentaciones</span></span><span class="btns">${editBtn('prod', p.id)}<button class="btn sm danger" data-act="delprod" data-id="${p.id}" data-confirm="1">Eliminar</button></span></div>`).join('') + newProdForm('createprod2'));
-  h += sec('pres', `Presentaciones (${S.pres.length})`, S.prods.map(prod => { const xs = S.pres.filter(x => x.prodId === prod.id); return xs.length ? `<h3>${esc(prod.name)}</h3>` + xs.map(x => isEd('pres', x.id) ? presForm(x) : `<div class="drow"><span>${esc(presLabel(x))}<br><span class="small muted">${x.ean ? 'EAN ' + esc(x.ean) + ' · ' : ''}${S.prices.filter(p => p.presId === x.id).length} precios</span></span><span class="btns">${editBtn('pres', x.id)}<button class="btn sm danger" aria-label="Eliminar presentación" data-act="delpres" data-id="${x.id}" data-confirm="1">×</button></span></div>`).join('') : ''; }).join('') || '<span class="muted">Todavía no hay presentaciones.</span>');
-  h += sec('prices', `Precios cargados (${S.prices.length})`, S.prods.map(prod => { const ps = S.prices.filter(p => getPres(p.presId)?.prodId === prod.id); return ps.length ? `<h3>${esc(prod.name)}</h3>` + ps.map(p => isEd('price', p.id) ? priceForm(p) : `<div class="drow"><span>${esc(presLabel(getPres(p.presId)))}<br><span class="small muted">${esc(getStore(p.storeId)?.name || '')} · ${money(p.precio)} ${p.promo?.t !== 'none' ? '· ' + esc(promo(p).label) : ''}${p.acum ? ' · acumula' : ''}</span></span><span class="pill ${ageCls(p.fecha)}">${ageTxt(p.fecha)}</span><span class="btns">${editBtn('price', p.id)}<button class="btn sm danger" aria-label="Eliminar precio" data-act="delprice" data-id="${p.id}" data-confirm="1">×</button></span></div>`).join('') : ''; }).join('') || '<span class="muted">Todavía no hay precios.</span>');
+  h += sec('prods', `Productos comparables (${S.prods.length})`, (S.prods.length > 1 ? sortBar('dProds') : '') + sortList('dProds', S.prods).map(p => isEd('prod', p.id) ? prodForm(p) : `<div class="drow"><span><b>${esc(p.name)}</b> <span class="muted">por ${esc(baseOf(p).short)}</span><br><span class="small muted">${S.pres.filter(x => x.prodId === p.id).length} presentaciones</span></span><span class="btns">${editBtn('prod', p.id)}<button class="btn sm danger" data-act="delprod" data-id="${p.id}" data-confirm="1">Eliminar</button></span></div>`).join('') + newProdForm('createprod2'));
+  h += sec('pres', `Presentaciones (${S.pres.length})`, searchBox('pres', 'Buscar marca, producto o código de barras') + sortBar('dPres') + `<div id="list-pres" style="display:grid;gap:10px">${presListHTML()}</div>`);
+  h += sec('prices', `Precios cargados (${S.prices.length})`, searchBox('prices', 'Buscar presentación, tienda o producto') + sortBar('dPrices') + `<div id="list-prices" style="display:grid;gap:10px">${priceListHTML()}</div>`);
   h += sec('calc', 'Cómo calcula', `<div class="small" style="display:grid;gap:10px">
     <p style="margin:0">Cada promo se traduce a una sola forma: <b>llevando N unidades, pagás un total T</b>. El precio comparable es <b>T ÷ (N × contenido)</b>, en la unidad del producto (kg, L, metro…).</p>
     <table class="calc-ex"><tr><th>Promo</th><th>N</th><th>Total T</th></tr>
@@ -886,6 +894,60 @@ function syncSection() {
     <div class="small muted">La URL y la clave quedan solo en este celular (no van en el respaldo).</div>`);
 }
 
+/* ============ ordenamiento y búsqueda ============
+   Cada listado recuerda en el celular el orden elegido; tocar el orden activo invierte el sentido. */
+const SORT_LS = 'gondola.sort';
+let SORT = {}; try { SORT = JSON.parse(localStorage.getItem(SORT_LS) || '{}'); } catch (e) {}
+const Q = { pres: '', prices: '' };
+const fold = s => String(s ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+const matchAll = (q, txt) => { const t = fold(txt); return q.split(/\s+/).every(w => t.includes(w)); }; // todas las palabras, en cualquier orden
+const lastUsePres = x => S.prices.reduce((m, p) => p.presId === x.id && (p.upd || '') > m ? p.upd : m, x.upd || '');
+const lastUseProd = pr => S.pres.filter(x => x.prodId === pr.id).reduce((m, x) => { const u = lastUsePres(x); return u > m ? u : m; }, pr.upd || '');
+const nPricesPres = x => S.prices.filter(p => p.presId === x.id).length;
+const SORTS = {
+  selProd: { def: 'rec', o: { rec: ['Recientes', lastUseProd, -1], az: ['A-Z', p => p.name, 1] } },
+  selPres: { def: 'rec', o: { rec: ['Recientes', lastUsePres, -1], az: ['A-Z', presLabel, 1], cont: ['Contenido', contentOf, 1] } },
+  cmp: { def: 'best', o: { best: ['Mejor precio', r => r.c.best.per, 1], gond: ['Precio góndola', r => r.p.precio, 1], age: ['Más viejos', r => r.p.fecha, 1], store: ['Tienda', r => getStore(r.p.storeId)?.name || '', 1], marca: ['Marca', r => presLabel(r.pres), 1] } },
+  cart: { def: 'add', o: { add: ['Agregado', x => x.idx, 1], sub: ['Subtotal', x => x.sub, -1], name: ['Nombre', x => presLabel(getPres(x.p.presId)), 1] } },
+  dStores: { def: 'az', o: { az: ['A-Z', s => s.name, 1], add: ['Orden de carga', s => S.stores.indexOf(s), 1] } },
+  dPays: { def: 'az', o: { az: ['A-Z', p => p.name, 1], add: ['Orden de carga', p => S.pays.indexOf(p), 1] } },
+  dProds: { def: 'az', o: { az: ['A-Z', p => p.name, 1], npres: ['Presentaciones', p => S.pres.filter(x => x.prodId === p.id).length, -1], mod: ['Modificados', p => p.upd || '', -1] } },
+  dPres: { def: 'az', o: { az: ['Marca A-Z', presLabel, 1], cont: ['Contenido', contentOf, 1], np: ['Cant. de precios', nPricesPres, -1] } },
+  dPrices: { def: 'age', o: { age: ['Más viejos', p => p.fecha, 1], precio: ['Precio', p => p.precio, 1], store: ['Tienda', p => getStore(p.storeId)?.name || '', 1], pres: ['Presentación', p => presLabel(getPres(p.presId)), 1] } }
+};
+function sortState(k) { const d = SORTS[k], s = SORT[k]; return s && d.o[s.by] ? s : { by: d.def, dir: d.o[d.def][2] }; }
+function sortList(k, arr) {
+  const { by, dir } = sortState(k), f = SORTS[k].o[by][1];
+  return arr.map((x, i) => [x, f(x), i]).sort((a, b) => {
+    const r = typeof a[1] === 'string' || typeof b[1] === 'string'
+      ? String(a[1]).localeCompare(String(b[1]), 'es', { sensitivity: 'base', numeric: true }) : (a[1] - b[1]);
+    return r * dir || a[2] - b[2];
+  }).map(x => x[0]);
+}
+function sortBar(k) {
+  const { by, dir } = sortState(k);
+  return `<div class="sortbar" role="group" aria-label="Ordenar"><span class="small muted">Ordenar:</span>${Object.entries(SORTS[k].o).map(([b, [l]]) => `<button type="button" class="chip sm" aria-pressed="${b === by}" data-act="sort" data-k="${k}" data-by="${b}" title="${b === by ? 'Tocá de nuevo para invertir' : 'Ordenar por ' + l}">${l}${b === by ? (dir > 0 ? ' ↑' : ' ↓') : ''}</button>`).join('')}</div>`;
+}
+const searchBox = (k, ph) => `<input type="search" class="search" data-q="${k}" value="${esc(Q[k])}" placeholder="${ph}" aria-label="${ph}" autocomplete="off">`;
+function presListHTML() {
+  const q = fold(Q.pres);
+  const h = [...S.prods].sort((a, b) => a.name.localeCompare(b.name, 'es')).map(prod => {
+    let xs = S.pres.filter(x => x.prodId === prod.id);
+    if (q) xs = xs.filter(x => isEd('pres', x.id) || matchAll(q, `${presLabel(x)} ${x.ean || ''} ${prod.name}`));
+    return xs.length ? `<h3>${esc(prod.name)}</h3>` + sortList('dPres', xs).map(x => isEd('pres', x.id) ? presForm(x) : `<div class="drow"><span>${esc(presLabel(x))}<br><span class="small muted">${x.ean ? 'EAN ' + esc(x.ean) + ' · ' : ''}${nPricesPres(x)} precios</span></span><span class="btns">${editBtn('pres', x.id)}<button class="btn sm danger" aria-label="Eliminar presentación" data-act="delpres" data-id="${x.id}" data-confirm="1">×</button></span></div>`).join('') : '';
+  }).join('');
+  return h || `<span class="muted">${q ? 'Ninguna presentación coincide con la búsqueda.' : 'Todavía no hay presentaciones.'}</span>`;
+}
+function priceListHTML() {
+  const q = fold(Q.prices);
+  const h = [...S.prods].sort((a, b) => a.name.localeCompare(b.name, 'es')).map(prod => {
+    let ps = S.prices.filter(p => getPres(p.presId)?.prodId === prod.id);
+    if (q) ps = ps.filter(p => isEd('price', p.id) || matchAll(q, `${presLabel(getPres(p.presId))} ${getStore(p.storeId)?.name || ''} ${prod.name} ${getPres(p.presId).ean || ''}`));
+    return ps.length ? `<h3>${esc(prod.name)}</h3>` + sortList('dPrices', ps).map(p => isEd('price', p.id) ? priceForm(p) : `<div class="drow"><span>${esc(presLabel(getPres(p.presId)))}<br><span class="small muted">${esc(getStore(p.storeId)?.name || '')} · ${money(p.precio)} ${p.promo?.t !== 'none' ? '· ' + esc(promo(p).label) : ''}${p.acum ? ' · acumula' : ''}</span></span><span class="pill ${ageCls(p.fecha)}">${ageTxt(p.fecha)}</span><span class="btns">${editBtn('price', p.id)}<button class="btn sm danger" aria-label="Eliminar precio" data-act="delprice" data-id="${p.id}" data-confirm="1">×</button></span></div>`).join('') : '';
+  }).join('');
+  return h || `<span class="muted">${q ? 'Ningún precio coincide con la búsqueda.' : 'Todavía no hay precios.'}</span>`;
+}
+
 /* ============ navegación ============ */
 const VIEWS = ['cargar', 'comparar', 'carrito', 'datos'];
 const R = { cargar: renderCargar, comparar: renderComparar, carrito: renderCarrito, datos: renderDatos };
@@ -945,6 +1007,7 @@ const ACT = {
   edcancel: () => { ED = null; renderDatos(); },
   edsave: () => edSave(),
   sync: () => syncNow(false),
+  sort: el => { const k = el.dataset.k, by = el.dataset.by, st = sortState(k); SORT[k] = st.by === by ? { by, dir: -st.dir } : { by, dir: SORTS[k].o[by][2] }; try { localStorage.setItem(SORT_LS, JSON.stringify(SORT)); } catch (e) {} render(); },
   cpick: el => { CONF.list[+el.dataset.i].pick = el.dataset.v; renderConf(); },
   cpickall: el => { CONF.list.forEach(x => x.pick = el.dataset.v); renderConf(); },
   capply: () => applyConf(),
@@ -1061,6 +1124,7 @@ document.addEventListener('input', e => {
   else if (t.dataset.np) { NP[t.dataset.np] = t.value; }
   else if (t.dataset.ed && ED) { ED.d[t.dataset.ed] = t.type === 'checkbox' ? t.checked : t.value; }
   else if (t.dataset.edp && ED) { ED.d.promo[t.dataset.edp] = t.value; }
+  else if (t.dataset.q) { Q[t.dataset.q] = t.value; const c = $('#list-' + t.dataset.q); if (c) c.innerHTML = t.dataset.q === 'pres' ? presListHTML() : priceListHTML(); }
   else if (t.dataset.syncauto) { SYNC.auto = t.checked; saveSync(); }
   else if (t.dataset.sync) { SYNC[t.dataset.sync] = t.value.trim(); if (t.dataset.sync === 'url') { SYNC.last = ''; SYNC.lastOk = ''; SYNC.planilla = ''; } saveSync(); renderSyncBtn(); }
   else if (t.dataset.store) { const st = getStore(t.dataset.store); st.name = t.value; touch(st); save(); renderVisit(); }
