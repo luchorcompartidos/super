@@ -7,4 +7,4 @@ con promos de la tienda (oferta, % off, 2ª al X%, N x M, N por $) y descuentos 
 - Publicada con GitHub Pages desde `main`.
 - Versiones según el estándar de la caja de apps (`luchorcompartidos/home/ESTANDAR-VERSIONES.md`):
   el tipo de Release va en el mensaje del commit: `[major]`, `[minor]`, `[patch]` o `[skip release]`.
-- Los datos quedan en el navegador del celular (localStorage). Sincronización con Google Sheets: fase 3.
+- Sincronización opcional con Google Sheets mediante Apps Script: ver `apps-script/LEEME.md`.

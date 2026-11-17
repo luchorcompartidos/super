@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.1.1">
+<meta name="app-version" content="v0.1.2">
 <title>Góndola Comparador</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -144,7 +144,7 @@ nav.tabs a[aria-current="page"]::before{content:"";position:absolute;top:0;left:
 <body>
 <div class="app">
   <header class="top">
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small">comparador de precios</span><span class="ver"><button id="verBtn" class="vs-ver" type="button">v0.1.1</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button> <button id="verBtn" class="vs-ver" type="button">v0.1.2</button></span></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
       <label for="vPay">Pago con<select id="vPay" data-chg="vpay"></select></label>
@@ -632,6 +632,7 @@ function priceForm(p) {
 function renderDatos() {
   const el = $('#view-datos');
   let h = S.demo ? `<div class="note">Estás viendo <b>datos de ejemplo</b> (tiendas, marcas y precios inventados). Podés editarlos o borrarlos desde "Respaldo".</div>` : '';
+  h += syncSection();
   h += sec('pays', `Medios de pago y beneficios (${S.pays.length})`, S.pays.map(p => `<div class="paybox">
       <div class="grid2"><label class="fl" for="pn-${p.id}">Nombre<input id="pn-${p.id}" data-pay="${p.id}" data-pk="name" value="${esc(p.name)}"></label>
       <label class="fl" for="pp-${p.id}">% de descuento<input id="pp-${p.id}" data-pay="${p.id}" data-pk="pct" inputmode="decimal" value="${p.pct}"></label>
@@ -657,7 +658,7 @@ function renderDatos() {
   h += sec('backup', 'Respaldo', `<div class="btns"><button class="btn sm" data-act="copyjson">Copiar respaldo</button><label class="btn sm" for="fileImp" style="display:inline-flex;align-items:center">Importar archivo<input type="file" id="fileImp" accept=".json,application/json" style="display:none"></label></div>
     <textarea id="jsonBox" aria-label="Respaldo en JSON" placeholder="Pegá acá un respaldo y tocá Importar"></textarea>
     <div class="btns"><button class="btn sm" data-act="importjson">Importar texto pegado</button><button class="btn sm ghost" data-act="reseed" data-confirm="1">Restaurar ejemplo</button><button class="btn sm danger" data-act="wipe" data-confirm="1">Borrar todo</button></div>
-    <div class="small muted">Los datos quedan en este celular y funcionan sin conexión. La sincronización con Google Sheets llega en una próxima versión.</div>`);
+    <div class="small muted">Los datos quedan en este celular y funcionan sin conexión. "Borrar todo" y "Restaurar ejemplo" solo afectan a este celular: con la sincronización activa, la próxima vez vuelven los datos de la planilla.</div>`);
   el.innerHTML = h;
 }
 function edSave() {
@@ -689,12 +690,103 @@ function edSave() {
 function startEdit(k, id) { ED = { kind: k, id, d: edData(k, id), confirm: false }; OPEN.add(SEC_OF[k]); }
 const scrollForm = () => setTimeout(() => $('#edform')?.scrollIntoView({ block: 'center' }), 150);
 
+/* ============ sincronización con Google Sheets ============ */
+const SYNC_LS = 'gondola.sync';
+let SYNC = { url: '', key: '', last: '', planilla: '' };
+try { Object.assign(SYNC, JSON.parse(localStorage.getItem(SYNC_LS) || '{}')); } catch (e) {}
+const saveSync = () => { try { localStorage.setItem(SYNC_LS, JSON.stringify(SYNC)); } catch (e) {} };
+let syncing = false;
+const NUMF = { pays: ['pct', 'tope', 'usado', 'minimo'], pres: ['cont', 'pack'], prices: ['precio'] };
+const NULLF = ['tope', 'minimo'];
+const JSONF = { pays: ['dias', 'stores'], prices: ['promo', 'hist'] };
+function norm(c, r) {
+  const o = { ...r };
+  (NUMF[c] || []).forEach(k => { const v = num(o[k]); o[k] = isNaN(v) ? (NULLF.includes(k) ? null : 0) : (NULLF.includes(k) && v <= 0 ? null : v); });
+  (JSONF[c] || []).forEach(k => { const def = k === 'promo' ? { t: 'none' } : []; try { o[k] = typeof o[k] === 'string' ? (o[k] ? JSON.parse(o[k]) : def) : (o[k] ?? def); } catch (e) { o[k] = def; } });
+  if (c === 'prices') o.acum = o.acum === true || /^(true|verdadero|si|sí)$/i.test(String(o.acum));
+  if (c === 'pres') o.pack = Math.max(1, Math.round(o.pack || 1));
+  if (c === 'pays' && !o.modo) o.modo = 'caja';
+  return o;
+}
+const pendientes = () => COLLS.reduce((a, c) => a + S[c].filter(r => !SYNC.last || (r.upd || '') > SYNC.last).length, 0) + S.tomb.filter(t => !SYNC.last || t.upd > SYNC.last).length;
+async function callSync(body) {
+  const r = await fetch(SYNC.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ token: SYNC.key, ...body }) });
+  let j; try { j = await r.json(); } catch (e) { throw new Error('la URL no respondió como el script de Góndola'); }
+  if (!j.ok) throw new Error(j.error || 'error del script');
+  return j;
+}
+function syncReady() {
+  if (!SYNC.url || !SYNC.key) { toast('Configurá la URL y la clave en Datos → Sincronización'); return false; }
+  if (!/^https:\/\/script\.google\.com\/.+\/exec$/.test(SYNC.url)) { toast('La URL tiene que ser la de la aplicación web y terminar en /exec'); return false; }
+  if (navigator.onLine === false) { toast('Sin conexión. Tus datos siguen guardados en el celular; sincronizá cuando tengas señal.', 4000); return false; }
+  return true;
+}
+async function syncTest() {
+  if (!syncReady()) return;
+  try { const j = await callSync({ action: 'ping' }); SYNC.planilla = j.planilla; saveSync(); toast('Conexión correcta con la planilla "' + j.planilla + '"'); render(); }
+  catch (e) { toast('No se pudo conectar: ' + e.message + '.', 5000); }
+}
+async function syncNow() {
+  if (syncing || !syncReady()) return;
+  syncing = true; renderSyncBtn();
+  const t0 = nowISO(), last = SYNC.last || '';
+  const data = {}; COLLS.forEach(c => { data[c] = S[c].filter(r => !last || (r.upd || '') > last); });
+  const tombs = S.tomb.filter(t => !last || t.upd > last);
+  const sent = COLLS.reduce((a, c) => a + data[c].length, 0) + tombs.length;
+  try {
+    const j = await callSync({ action: 'sync', data, tombs });
+    COLLS.forEach(c => {
+      const local = S[c].filter(r => (r.upd || '') > t0); // cambios hechos mientras se sincronizaba
+      const m = new Map((j.data[c] || []).map(x => [x.id, norm(c, x)]));
+      local.forEach(r => m.set(r.id, r));
+      S[c] = [...m.values()];
+    });
+    S.tomb = S.tomb.filter(t => t.upd > t0);
+    S.cart = S.cart.filter(it => getPrice(it.priceId));
+    if (!getStore(S.visit.storeId)) S.visit.storeId = S.stores[0]?.id;
+    if (S.visit.payId !== 'none' && !S.pays.some(p => p.id === S.visit.payId)) S.visit.payId = 'none';
+    if (ED && !(ED.kind === 'price' ? getPrice(ED.id) : ED.kind === 'pres' ? getPres(ED.id) : getProd(ED.id))) ED = null;
+    if (!S.stores.length) S.stores.push(touch({ id: uid(), name: 'Mi súper' })), S.visit.storeId = S.stores[0].id;
+    SYNC.last = t0; SYNC.planilla = j.planilla; SYNC.lastOk = nowISO(); saveSync(); save();
+    const n = COLLS.reduce((a, c) => a + S[c].length, 0);
+    toast(`Sincronizado con "${j.planilla}": enviaste ${sent} cambio${sent === 1 ? '' : 's'}, la planilla tiene ${n} registros.`, 4000);
+  } catch (e) {
+    toast('No se pudo sincronizar: ' + e.message + '. Tus datos siguen guardados en el celular.', 5000);
+  } finally { syncing = false; render(); }
+}
+function agoTxt(iso) { if (!iso) return 'nunca'; const m = Math.round((Date.now() - new Date(iso)) / 60000); return m < 1 ? 'recién' : m < 60 ? `hace ${m} min` : m < 1440 ? `hace ${Math.round(m / 60)} h` : `hace ${Math.round(m / 1440)} d`; }
+function renderSyncBtn() {
+  const b = $('#syncBtn'); if (!b) return;
+  const on = !!(SYNC.url && SYNC.key); b.hidden = !on; if (!on) return;
+  const p = pendientes();
+  b.textContent = syncing ? '⟳ …' : p ? `⟳ ${p}` : '⟳';
+  b.title = syncing ? 'Sincronizando…' : `Sincronizar con Google Sheets · última: ${agoTxt(SYNC.lastOk)}${p ? ` · ${p} cambio${p === 1 ? '' : 's'} sin enviar` : ''}`;
+  b.classList.toggle('new', p > 0);
+}
+function syncSection() {
+  const p = pendientes(), on = !!(SYNC.url && SYNC.key);
+  return sec('sync', `Sincronización con Google Sheets ${on ? `· ${agoTxt(SYNC.lastOk)}` : ''}`, `
+    <div class="small muted">La app sigue funcionando sin conexión. Al sincronizar se envían los cambios de este celular y se recibe la planilla completa; si un registro cambió en los dos lados, gana el cambio más reciente.</div>
+    <label class="fl" for="syUrl">URL de la aplicación web (termina en /exec)<input id="syUrl" data-sync="url" inputmode="url" autocomplete="off" value="${esc(SYNC.url)}" placeholder="https://script.google.com/macros/s/…/exec"></label>
+    <label class="fl" for="syKey">Clave (la misma que pusiste en el script)<input id="syKey" data-sync="key" type="password" autocomplete="off" value="${esc(SYNC.key)}"></label>
+    <div class="btns"><button class="btn sm" data-act="synctest">Probar conexión</button><button class="btn sm primary" data-act="sync" ${syncing ? 'disabled' : ''}>${syncing ? 'Sincronizando…' : 'Sincronizar ahora'}</button></div>
+    <div class="small">${SYNC.planilla ? `Planilla: <b>${esc(SYNC.planilla)}</b> · ` : ''}Última sincronización: <b>${agoTxt(SYNC.lastOk)}</b> · ${p ? `<span class="pill p-warn">${p} cambio${p === 1 ? '' : 's'} sin enviar</span>` : '<span class="pill p-good">Todo enviado</span>'}</div>
+    ${S.demo && !SYNC.last ? '<div class="note"><b>Antes de la primera sincronización:</b> si no querés los datos de ejemplo en tu planilla, borralos en Respaldo → Borrar todo.</div>' : ''}
+    <details><summary class="small" style="cursor:pointer;font-weight:700">Cómo instalarlo (una sola vez)</summary><ol class="small" style="margin:8px 0 0;padding-left:20px;display:grid;gap:4px">
+      <li>Creá una planilla nueva en Google Sheets.</li>
+      <li>Extensiones → Apps Script: pegá el código de <a href="https://github.com/luchorcompartidos/super/blob/main/apps-script/Codigo.gs" target="_blank" rel="noopener">apps-script/Codigo.gs</a> y cambiá la CLAVE.</li>
+      <li>Ejecutá la función <b>preparar</b> y aceptá los permisos.</li>
+      <li>Implementar → Nueva implementación → Aplicación web. Ejecutar como: Yo. Acceso: Cualquier usuario.</li>
+      <li>Pegá acá la URL /exec y la clave, y tocá Probar conexión.</li></ol></details>
+    <div class="small muted">La URL y la clave quedan solo en este celular (no van en el respaldo).</div>`);
+}
+
 /* ============ navegación ============ */
 const VIEWS = ['cargar', 'comparar', 'carrito', 'datos'];
 const R = { cargar: renderCargar, comparar: renderComparar, carrito: renderCarrito, datos: renderDatos };
 const cur = () => { const v = location.hash.slice(1); return VIEWS.includes(v) ? v : 'cargar'; };
 function render() {
-  renderVisit(); const v = cur();
+  renderVisit(); renderSyncBtn(); const v = cur();
   VIEWS.forEach(x => { $('#view-' + x).hidden = x !== v; });
   document.querySelectorAll('nav.tabs a').forEach(a => a.setAttribute('aria-current', a.dataset.tab === v ? 'page' : 'false'));
   R[v]();
@@ -747,6 +839,8 @@ const ACT = {
   editpres: el => { startEdit('pres', el.dataset.id); go('datos'); scrollForm(); },
   edcancel: () => { ED = null; renderDatos(); },
   edsave: () => edSave(),
+  sync: () => syncNow(),
+  synctest: () => syncTest(),
   edmode: el => { ED.d.modo = el.dataset.v; ED.d.fecha = el.dataset.v === 'new' ? todayISO() : ED.d.orig; renderDatos(); },
   clearhist: el => { const p = getPrice(el.dataset.id); p.hist = []; touch(p); save(); renderDatos(); },
   copyjson: () => { const txt = JSON.stringify(S); const box = $('#jsonBox'); box.value = txt; try { navigator.clipboard.writeText(txt).then(() => toast('Respaldo copiado'), () => { box.select(); toast('Seleccioná y copiá el texto del cuadro'); }); } catch (e) { box.select(); toast('Seleccioná y copiá el texto del cuadro'); } },
@@ -809,6 +903,7 @@ document.addEventListener('input', e => {
   else if (t.dataset.np) { NP[t.dataset.np] = t.value; }
   else if (t.dataset.ed && ED) { ED.d[t.dataset.ed] = t.type === 'checkbox' ? t.checked : t.value; }
   else if (t.dataset.edp && ED) { ED.d.promo[t.dataset.edp] = t.value; }
+  else if (t.dataset.sync) { SYNC[t.dataset.sync] = t.value.trim(); if (t.dataset.sync === 'url') { SYNC.last = ''; SYNC.lastOk = ''; SYNC.planilla = ''; } saveSync(); renderSyncBtn(); }
   else if (t.dataset.store) { const st = getStore(t.dataset.store); st.name = t.value; touch(st); save(); renderVisit(); }
   else if (t.dataset.pay) {
     const p = S.pays.find(x => x.id === t.dataset.pay), k = t.dataset.pk;
