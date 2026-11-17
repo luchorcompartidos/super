@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.1.4">
+<meta name="app-version" content="v0.1.5">
 <title>Góndola Comparador</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#132033">
@@ -142,7 +142,9 @@ nav.tabs a[aria-current="page"]::before{content:"";position:absolute;top:0;left:
 .toast[hidden]{display:none}
 .scan{position:fixed;inset:0;background:#000;z-index:30;display:grid;place-items:center}
 .scan[hidden]{display:none}
-.scan video{width:100%;max-height:80vh;object-fit:cover}
+.scan video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.scan .guide{position:absolute;left:8%;right:8%;top:40%;height:20%;border:3px solid var(--tag);border-radius:12px;box-shadow:0 0 0 100vmax rgba(0,0,0,.4)}
+.scan .scan-tip{position:absolute;top:calc(28% - 10px);left:0;right:0;text-align:center;color:#fff;font-weight:700;margin:0;padding:0 16px}
 .scan button{position:absolute;bottom:calc(24px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%)}
 .result{border:2px solid var(--good);background:var(--good-bg)}
 .cdlg{border:1px solid var(--line);border-radius:16px;padding:16px;max-width:min(520px,94vw);width:100%;max-height:88vh;background:var(--surface);color:var(--ink)}
@@ -159,7 +161,7 @@ nav.tabs a[aria-current="page"]::before{content:"";position:absolute;top:0;left:
 <body>
 <div class="app">
   <header class="top">
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button> <button id="verBtn" class="vs-ver" type="button">v0.1.4</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button> <button id="verBtn" class="vs-ver" type="button">v0.1.5</button></span></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
       <label for="vPay">Pago con<select id="vPay" data-chg="vpay"></select></label>
@@ -186,7 +188,7 @@ nav.tabs a[aria-current="page"]::before{content:"";position:absolute;top:0;left:
 
 <div class="toast" id="toast" role="status" hidden></div>
 <dialog class="cdlg" id="confDlg" aria-labelledby="confTitle"></dialog>
-<div class="scan" id="scanOv" hidden><video id="scanVideo" playsinline muted></video><button class="btn primary" id="scanClose">Cerrar cámara</button></div>
+<div class="scan" id="scanOv" hidden><video id="scanVideo" playsinline muted autoplay></video><div class="guide" aria-hidden="true"></div><p class="scan-tip">Apuntá al código de barras dentro del recuadro</p><button class="btn primary" id="scanClose">Cerrar cámara</button></div>
 
 <script>
 "use strict";
@@ -971,19 +973,68 @@ function importData(txt) {
   try { const d = JSON.parse(txt); if (!d.stores || !d.prices || !d.prods) throw 0; S = migrate(d); ED = null; S.demo = !!d.demo; resetForm(S.prods[0]?.id ?? '__new'); save(); render(); toast('Respaldo importado'); }
   catch (e) { toast('Ese texto no es un respaldo válido de Góndola'); }
 }
+/* Lector de códigos: usa el lector nativo (Android/Chrome) o, si no existe (iPhone), la librería ZXing.
+   La librería se descarga una vez y queda guardada en el celular para usarla sin señal. */
+const ZX_URLS = ['https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js', 'https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js'];
+let zxP = null;
+function loadZXing() {
+  if (window.ZXing) return Promise.resolve(window.ZXing);
+  if (zxP) return zxP;
+  zxP = (async () => {
+    for (const u of ZX_URLS) {
+      try {
+        await new Promise((ok, ko) => { const s = document.createElement('script'); s.src = u; s.async = true; s.crossOrigin = 'anonymous'; s.onload = ok; s.onerror = ko; document.head.appendChild(s); });
+        if (window.ZXing) return window.ZXing;
+      } catch (e) {}
+    }
+    zxP = null; throw new Error('lector no disponible');
+  })();
+  return zxP;
+}
+async function makeDetector() {
+  if ('BarcodeDetector' in window) {
+    try {
+      const d = new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e'] });
+      return { detect: async v => { const r = await d.detect(v); return r[0]?.rawValue || null; } };
+    } catch (e) {}
+  }
+  const Z = await loadZXing();
+  const hints = new Map();
+  hints.set(Z.DecodeHintType.POSSIBLE_FORMATS, [Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.EAN_8, Z.BarcodeFormat.UPC_A, Z.BarcodeFormat.UPC_E]);
+  hints.set(Z.DecodeHintType.TRY_HARDER, true);
+  const reader = new Z.MultiFormatReader(); reader.setHints(hints);
+  const cv = document.createElement('canvas'), ctx = cv.getContext('2d', { willReadFrequently: true });
+  return {
+    detect: async v => {
+      const vw = v.videoWidth, vh = v.videoHeight; if (!vw) return null;
+      // Se analiza la franja central (donde está el recuadro guía)
+      const w = Math.min(vw, 960), sc = w / vw, h = Math.round(vh * 0.5 * sc);
+      cv.width = w; cv.height = h; ctx.drawImage(v, 0, vh * 0.25, vw, vh * 0.5, 0, 0, w, h);
+      const px = ctx.getImageData(0, 0, w, h).data, lum = new Uint8ClampedArray(w * h);
+      for (let i = 0, j = 0; i < lum.length; i++, j += 4) lum[i] = (px[j] * 306 + px[j + 1] * 601 + px[j + 2] * 117) >> 10;
+      try { return reader.decodeWithState(new Z.BinaryBitmap(new Z.HybridBinarizer(new Z.RGBLuminanceSource(lum, w, h)))).getText(); }
+      catch (e) { return null; }
+    }
+  };
+}
 async function scan() {
-  if (!('BarcodeDetector' in window)) return toast('Este navegador no trae lector de códigos. En la versión publicada se suma una librería (necesaria en iPhone). Por ahora tipeá el código.', 5000);
+  if (!navigator.mediaDevices?.getUserMedia) return toast('Este navegador no permite usar la cámara. Tipeá el código.', 4500);
+  let det;
+  try { det = await makeDetector(); }
+  catch (e) { return toast('No se pudo cargar el lector de códigos: la primera vez necesita conexión. Por ahora tipeá el código.', 5500); }
   let stream;
-  try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }); }
-  catch (e) { return toast('No se pudo abrir la cámara: en esta vista previa está bloqueada. Funciona al publicar la app en GitHub Pages. Por ahora tipeá el código.', 5500); }
-  const ov = $('#scanOv'), v = $('#scanVideo'); v.srcObject = stream; ov.hidden = false; try { await v.play(); } catch (e) {}
-  const det = new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e'] }); let alive = true;
-  const stop = () => { alive = false; stream.getTracks().forEach(t => t.stop()); ov.hidden = true; };
+  try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }); }
+  catch (e) { return toast(e && e.name === 'NotAllowedError' ? 'No hay permiso para usar la cámara. Habilitalo en los ajustes del navegador para este sitio.' : 'No se pudo abrir la cámara (en la vista previa de Claude está bloqueada; publicada funciona). Por ahora tipeá el código.', 6000); }
+  const ov = $('#scanOv'), v = $('#scanVideo'); v.srcObject = stream; ov.hidden = false;
+  try { await v.play(); } catch (e) {}
+  let alive = true;
+  const stop = () => { alive = false; stream.getTracks().forEach(t => t.stop()); v.srcObject = null; ov.hidden = true; };
   $('#scanClose').onclick = stop;
   const loop = async () => {
     if (!alive) return;
-    try { const r = await det.detect(v); if (r.length) { stop(); F.ean = r[0].rawValue; onEan(true); return; } } catch (e) {}
-    setTimeout(loop, 180);
+    let code = null; try { code = await det.detect(v); } catch (e) {}
+    if (code && alive) { stop(); try { navigator.vibrate?.(60); } catch (e) {} F.ean = code; onEan(true); return; }
+    setTimeout(loop, 120);
   };
   loop();
 }
@@ -1048,6 +1099,8 @@ try {
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && autoOn() && pendientes() && (!SYNC.lastOk || Date.now() - new Date(SYNC.lastOk) > 5 * 60000)) syncNow(true); });
 render();
 if (autoOn() && pendientes()) setTimeout(() => syncNow(true), 1500);
+// En iPhone (sin lector nativo) se descarga el lector una vez para que después funcione sin señal
+if (!('BarcodeDetector' in window) && navigator.onLine !== false && location.protocol === 'https:') setTimeout(() => loadZXing().catch(() => {}), 4000);
 try { if (S.demo && !sessionStorage.getItem('gondola.hi')) { sessionStorage.setItem('gondola.hi', '1'); toast('Cargué datos de ejemplo para que veas cómo funciona.', 3500); } } catch (e) {}
 </script>
 <!-- ===== Versión (estándar caja de apps) — bloque autónomo =====

@@ -3,7 +3,7 @@
      (el aviso "Hay una versión nueva, recargá" indica cuándo recargar).
    - GitHub (versiones) y Google Apps Script (sincronización) van siempre por la red. */
 const SHELL = 'gondola-shell-v1';
-const RUNTIME = 'gondola-runtime-v1';
+const RUNTIME = 'gondola-runtime-v1'; // tipografías y lector de códigos (ZXing)
 const PRECACHE = ['./', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
@@ -31,7 +31,7 @@ self.addEventListener('fetch', e => {
   }
   // Archivos propios, tipografías y librerías: primero el celular, si no la red (y se guarda)
   const own = url.origin === location.origin;
-  const cdn = /fonts\.(googleapis|gstatic)\.com$|cdn\.jsdelivr\.net$|cdnjs\.cloudflare\.com$/.test(url.hostname);
+  const cdn = /fonts\.(googleapis|gstatic)\.com$|cdn\.jsdelivr\.net$|unpkg\.com$|cdnjs\.cloudflare\.com$/.test(url.hostname);
   if (!own && !cdn) return;
   e.respondWith(caches.match(req, { ignoreSearch: own }).then(hit => hit || fetch(req).then(r => {
     if (r.ok || r.type === 'opaque') { const cp = r.clone(); caches.open(own ? SHELL : RUNTIME).then(c => c.put(req, cp)); }
