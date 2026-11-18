@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.1.6">
+<meta name="app-version" content="v0.2.0">
 <title>Góndola Comparador</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#132033">
@@ -148,6 +148,27 @@ nav.tabs a[aria-current="page"]::before{content:"";position:absolute;top:0;left:
 .scan button{position:absolute;bottom:calc(24px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%)}
 .result{border:2px solid var(--good);background:var(--good-bg)}
 .sortbar{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.dgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.tile-d{background:var(--surface);border:1px solid var(--line);border-radius:14px;display:grid;overflow:hidden;align-content:start}
+.tile-d.wide{grid-column:1/-1}
+.tile-main{border:0;background:transparent;color:var(--ink);font:inherit;text-align:left;cursor:pointer;padding:14px;display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center}
+.tile-main:focus-visible{outline:3px solid var(--accent);outline-offset:-3px}
+.tile-main .ti{width:38px;height:38px;border-radius:10px;background:var(--bg);display:grid;place-items:center;color:var(--accent)}
+.tile-main .ti svg{width:22px;height:22px}
+.tile-main .tt{font-weight:700;font-size:16px}
+.tile-main .tc{grid-column:1/-1;font-family:var(--font-d);font-weight:700;font-size:34px;line-height:1;font-variant-numeric:tabular-nums}
+.tile-main .tl{grid-column:1/-1;font-size:13px;color:var(--muted)}
+.tile-alert{border:0;border-top:1px solid var(--line);background:var(--warn-bg);color:var(--warn);font:700 13px var(--font-b);padding:9px 14px;text-align:left;cursor:pointer}
+.dnav{display:grid;gap:8px}
+.dnav > .btn{justify-self:start}
+.dtabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
+.dtabs::-webkit-scrollbar{display:none}
+.dtabs .chip{white-space:nowrap;flex:none}
+.dtabs .chip[aria-pressed="true"] .muted{color:inherit;opacity:.75}
+.dhead{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.dhead h2{display:flex;gap:8px;align-items:center}
+.dhead h2 svg{width:22px;height:22px;color:var(--accent);flex:none}
+.dbody{gap:10px}
 .chip.sm{min-height:32px;padding:5px 10px;font-size:13px}
 .search{background:var(--surface)}
 .cdlg{border:1px solid var(--line);border-radius:16px;padding:16px;max-width:min(520px,94vw);width:100%;max-height:88vh;background:var(--surface);color:var(--ink)}
@@ -164,7 +185,7 @@ nav.tabs a[aria-current="page"]::before{content:"";position:absolute;top:0;left:
 <body>
 <div class="app">
   <header class="top">
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button> <button id="verBtn" class="vs-ver" type="button">v0.1.6</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button> <button id="verBtn" class="vs-ver" type="button">v0.2.0</button></span></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
       <label for="vPay">Pago con<select id="vPay" data-chg="vpay"></select></label>
@@ -601,7 +622,7 @@ function renderCarrito() {
 }
 
 /* ============ vista DATOS ============ */
-const OPEN = new Set(['pays']);
+const OPEN = new Set(['sync']);
 let ED = null; // edición en curso: { kind, id, d: datos del formulario, confirm }
 const SEC_OF = { prod: 'prods', pres: 'pres', price: 'prices' };
 const sec = (id, title, body) => `<details class="sec" data-sec="${id}" ${OPEN.has(id) ? 'open' : ''}><summary>${title}</summary><div class="body">${body}</div></details>`;
@@ -657,9 +678,10 @@ function priceForm(p) {
 }
 function renderDatos() {
   const el = $('#view-datos');
-  let h = S.demo ? `<div class="note">Estás viendo <b>datos de ejemplo</b> (tiendas, marcas y precios inventados). Podés editarlos o borrarlos desde "Respaldo".</div>` : '';
-  h += syncSection();
-  h += sec('pays', `Medios de pago y beneficios (${S.pays.length})`, (S.pays.length > 1 ? sortBar('dPays') : '') + sortList('dPays', S.pays).map(p => `<div class="paybox">
+  const demo = S.demo ? `<div class="note">Estás viendo <b>datos de ejemplo</b> (tiendas, marcas y precios inventados). Podés editarlos, o borrarlos desde Ajustes → Respaldo.</div>` : '';
+  const B = {};
+  B.sync = syncSection();
+  B.pays = ((S.pays.length > 1 ? sortBar('dPays') : '') + sortList('dPays', S.pays).map(p => `<div class="paybox" id="pay-${p.id}">
       <div class="grid2"><label class="fl" for="pn-${p.id}">Nombre<input id="pn-${p.id}" data-pay="${p.id}" data-pk="name" value="${esc(p.name)}"></label>
       <label class="fl" for="pp-${p.id}">% de descuento<input id="pp-${p.id}" data-pay="${p.id}" data-pk="pct" inputmode="decimal" value="${p.pct}"></label>
       <label class="fl" for="pm-${p.id}">Compra mínima ($, vacío = sin mínimo)<input id="pm-${p.id}" data-pay="${p.id}" data-pk="minimo" inputmode="decimal" value="${p.minimo ?? ''}"></label>
@@ -669,23 +691,23 @@ function renderDatos() {
       <div class="fl">Tiendas (ninguna = todas)<div class="chips">${S.stores.map(s => `<button class="chip" aria-pressed="${!!p.stores?.includes(s.id)}" data-act="paystore" data-id="${p.id}" data-v="${s.id}">${esc(s.name)}</button>`).join('')}</div></div>
       <div class="fl">Cómo se aplica<div class="chips"><button class="chip" aria-pressed="${p.modo !== 'reintegro'}" data-act="paymodo" data-id="${p.id}" data-v="caja">En caja</button><button class="chip" aria-pressed="${p.modo === 'reintegro'}" data-act="paymodo" data-id="${p.id}" data-v="reintegro">Reintegro posterior</button></div></div>
       <div class="small muted">Los cambios se guardan al tipear y recalculan al instante todas las comparaciones y el carrito.</div>
-      <div class="btns"><button class="btn sm ghost" data-act="payreset" data-id="${p.id}">Reiniciar tope usado</button><button class="btn sm danger" data-act="delpay" data-id="${p.id}" data-confirm="1">Eliminar</button></div></div>`).join('') + `<button class="btn" data-act="addpay">+ Agregar medio de pago</button>`);
-  h += sec('stores', `Tiendas (${S.stores.length})`, (S.stores.length > 1 ? sortBar('dStores') : '') + sortList('dStores', S.stores).map(s => `<div class="drow"><input aria-label="Nombre de la tienda" data-store="${s.id}" value="${esc(s.name)}"><span class="small muted" style="white-space:nowrap">${S.prices.filter(p => p.storeId === s.id).length} precios</span>${S.stores.length > 1 ? `<button class="btn sm danger" data-act="delstore" data-id="${s.id}" data-confirm="1">Eliminar</button>` : ''}</div>`).join('')
-    + `<div class="small muted">El nombre se corrige tocándolo. Eliminar una tienda borra sus precios.</div><div class="row"><input id="newStore" aria-label="Nueva tienda" placeholder="Cadena · sucursal"><button class="btn" data-act="addstore">Agregar</button></div>`);
-  h += sec('prods', `Productos comparables (${S.prods.length})`, (S.prods.length > 1 ? sortBar('dProds') : '') + sortList('dProds', S.prods).map(p => isEd('prod', p.id) ? prodForm(p) : `<div class="drow"><span><b>${esc(p.name)}</b> <span class="muted">por ${esc(baseOf(p).short)}</span><br><span class="small muted">${S.pres.filter(x => x.prodId === p.id).length} presentaciones</span></span><span class="btns">${editBtn('prod', p.id)}<button class="btn sm danger" data-act="delprod" data-id="${p.id}" data-confirm="1">Eliminar</button></span></div>`).join('') + newProdForm('createprod2'));
-  h += sec('pres', `Presentaciones (${S.pres.length})`, searchBox('pres', 'Buscar marca, producto o código de barras') + sortBar('dPres') + `<div id="list-pres" style="display:grid;gap:10px">${presListHTML()}</div>`);
-  h += sec('prices', `Precios cargados (${S.prices.length})`, searchBox('prices', 'Buscar presentación, tienda o producto') + sortBar('dPrices') + `<div id="list-prices" style="display:grid;gap:10px">${priceListHTML()}</div>`);
-  h += sec('calc', 'Cómo calcula', `<div class="small" style="display:grid;gap:10px">
+      <div class="btns"><button class="btn sm ghost" data-act="payreset" data-id="${p.id}">Reiniciar tope usado</button><button class="btn sm danger" data-act="delpay" data-id="${p.id}" data-confirm="1">Eliminar</button></div></div>`).join('') || '<span class="muted">Todavía no hay medios de pago.</span>');
+  B.stores = ((S.stores.length > 1 ? sortBar('dStores') : '') + sortList('dStores', S.stores).map(s => `<div class="drow"><input aria-label="Nombre de la tienda" data-store="${s.id}" value="${esc(s.name)}"><span class="small muted" style="white-space:nowrap">${S.prices.filter(p => p.storeId === s.id).length} precios</span>${S.stores.length > 1 ? `<button class="btn sm danger" data-act="delstore" data-id="${s.id}" data-confirm="1">Eliminar</button>` : ''}</div>`).join('')
+    + `<div class="small muted">El nombre se corrige tocándolo. Eliminar una tienda borra sus precios.</div>`);
+  B.prods = ((S.prods.length > 1 ? sortBar('dProds') : '') + sortList('dProds', S.prods).map(p => isEd('prod', p.id) ? prodForm(p) : `<div class="drow"><span><b>${esc(p.name)}</b> <span class="muted">por ${esc(baseOf(p).short)}</span><br><span class="small muted">${S.pres.filter(x => x.prodId === p.id).length} presentaciones</span></span><span class="btns">${editBtn('prod', p.id)}<button class="btn sm danger" data-act="delprod" data-id="${p.id}" data-confirm="1">Eliminar</button></span></div>`).join('') || '<span class="muted">Todavía no hay productos.</span>');
+  B.pres = (searchBox('pres', 'Buscar marca, producto o código de barras') + sortBar('dPres') + `<div id="list-pres" style="display:grid;gap:10px">${presListHTML()}</div>`);
+  B.prices = (searchBox('prices', 'Buscar presentación, tienda o producto') + sortBar('dPrices') + `<div id="list-prices" style="display:grid;gap:10px">${priceListHTML()}</div>`);
+  B.calc = sec('calc', 'Cómo calcula', `<div class="small" style="display:grid;gap:10px">
     <p style="margin:0">Cada promo se traduce a una sola forma: <b>llevando N unidades, pagás un total T</b>. El precio comparable es <b>T ÷ (N × contenido)</b>, en la unidad del producto (kg, L, metro…).</p>
     <table class="calc-ex"><tr><th>Promo</th><th>N</th><th>Total T</th></tr>
       <tr><td>Oferta $X</td><td>1</td><td>X</td></tr><tr><td>% off</td><td>1</td><td>P × (1 − d)</td></tr>
       <tr><td>2ª al 70%</td><td>2</td><td>P + 0,3 P</td></tr><tr><td>3x2</td><td>3</td><td>2 P</td></tr><tr><td>2 por $X</td><td>2</td><td>X</td></tr></table>
     <p style="margin:0">El descuento del medio de pago <b>no se suma</b> a la promo salvo que marques "acumula". Si no llegás a N unidades, la promo no se activa y aplica el descuento de pago: por eso cada precio muestra "llevando 1" y "llevando N". La compra mínima y el tope se controlan en el Carrito, porque dependen del total de la compra.</p></div>`);
-  h += sec('backup', 'Respaldo', `<div class="btns"><button class="btn sm" data-act="copyjson">Copiar respaldo</button><label class="btn sm" for="fileImp" style="display:inline-flex;align-items:center">Importar archivo<input type="file" id="fileImp" accept=".json,application/json" style="display:none"></label></div>
+  B.backup = sec('backup', 'Respaldo', `<div class="btns"><button class="btn sm" data-act="copyjson">Copiar respaldo</button><label class="btn sm" for="fileImp" style="display:inline-flex;align-items:center">Importar archivo<input type="file" id="fileImp" accept=".json,application/json" style="display:none"></label></div>
     <textarea id="jsonBox" aria-label="Respaldo en JSON" placeholder="Pegá acá un respaldo y tocá Importar"></textarea>
     <div class="btns"><button class="btn sm" data-act="importjson">Importar texto pegado</button><button class="btn sm ghost" data-act="reseed" data-confirm="1">Restaurar ejemplo</button><button class="btn sm danger" data-act="wipe" data-confirm="1">Borrar todo</button></div>
     <div class="small muted">Los datos quedan en este celular y funcionan sin conexión. "Borrar todo" y "Restaurar ejemplo" solo afectan a este celular: con la sincronización activa, la próxima vez vuelven los datos de la planilla.</div>`);
-  el.innerHTML = h;
+  el.innerHTML = DV.sec ? datosSection(B, demo) : datosHome(demo);
 }
 function edSave() {
   const d = ED.d;
@@ -713,7 +735,7 @@ function edSave() {
   }
   save(); ED = null; render(); toast('Cambios guardados');
 }
-function startEdit(k, id) { ED = { kind: k, id, d: edData(k, id), confirm: false }; OPEN.add(SEC_OF[k]); }
+function startEdit(k, id) { ED = { kind: k, id, d: edData(k, id), confirm: false }; DV.sec = SEC_OF[k]; DV.adding = false; DV.keep = true; }
 const scrollForm = () => setTimeout(() => $('#edform')?.scrollIntoView({ block: 'center' }), 150);
 
 /* ============ sincronización con Google Sheets ============ */
@@ -942,10 +964,56 @@ function priceListHTML() {
   const q = fold(Q.prices);
   const h = [...S.prods].sort((a, b) => a.name.localeCompare(b.name, 'es')).map(prod => {
     let ps = S.prices.filter(p => getPres(p.presId)?.prodId === prod.id);
+    if (DV.old) ps = ps.filter(p => ageDays(p.fecha) > OLD_DAYS || isEd('price', p.id));
     if (q) ps = ps.filter(p => isEd('price', p.id) || matchAll(q, `${presLabel(getPres(p.presId))} ${getStore(p.storeId)?.name || ''} ${prod.name} ${getPres(p.presId).ean || ''}`));
     return ps.length ? `<h3>${esc(prod.name)}</h3>` + sortList('dPrices', ps).map(p => isEd('price', p.id) ? priceForm(p) : `<div class="drow"><span>${esc(presLabel(getPres(p.presId)))}<br><span class="small muted">${esc(getStore(p.storeId)?.name || '')} · ${money(p.precio)} ${p.promo?.t !== 'none' ? '· ' + esc(promo(p).label) : ''}${p.acum ? ' · acumula' : ''}</span></span><span class="pill ${ageCls(p.fecha)}">${ageTxt(p.fecha)}</span><span class="btns">${editBtn('price', p.id)}<button class="btn sm danger" aria-label="Eliminar precio" data-act="delprice" data-id="${p.id}" data-confirm="1">×</button></span></div>`).join('') : '';
   }).join('');
   return h || `<span class="muted">${q ? 'Ningún precio coincide con la búsqueda.' : 'Todavía no hay precios.'}</span>`;
+}
+
+/* ============ Datos: portada de tarjetas + pantalla por entidad ============ */
+const DV = { sec: null, adding: false, old: false, keep: false };
+const OLD_DAYS = 21;
+const DSECS = [['pays', 'Pagos', 'Medios de pago y beneficios'], ['stores', 'Tiendas', 'Tiendas'], ['prods', 'Productos', 'Productos comparables'], ['pres', 'Presentaciones', 'Presentaciones'], ['prices', 'Precios', 'Precios cargados'], ['ajustes', 'Ajustes', 'Ajustes']];
+const DICON = {
+  pays: '<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10h18M7 15h3"/>',
+  stores: '<path d="M4 10h16l-1.5-5h-13zM5 10v9h14v-9M10 19v-5h4v5"/>',
+  prods: '<path d="M4 8l8-4 8 4-8 4zM4 8v8l8 4 8-4V8M12 12v8"/>',
+  pres: '<path d="M9 3h6v3l2 3v12H7V9l2-3z"/><path d="M7 13h10"/>',
+  prices: '<path d="M3 12l9-9h8v8l-9 9z"/><circle cx="16" cy="8" r="1.5"/>',
+  ajustes: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/>'
+};
+const dIcon = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${DICON[k]}</svg>`;
+function datosHome(demo) {
+  const dow = new Date().getDay();
+  const hoy = S.pays.filter(p => !p.dias?.length || p.dias.includes(dow)).length;
+  const topeBajo = S.pays.filter(p => p.tope && p.tope - (p.usado || 0) < p.tope * 0.2).length;
+  const old = S.prices.filter(p => ageDays(p.fecha) > OLD_DAYS).length;
+  const fresh = S.prices.filter(p => ageDays(p.fecha) <= 7).length;
+  const sinEan = S.pres.filter(x => !x.ean).length;
+  const pend = pendientes(), on = !!(SYNC.url && SYNC.key);
+  const tile = (k, title, count, line, alert, wide) => `<div class="tile-d${wide ? ' wide' : ''}"><button class="tile-main" data-act="dgo" data-s="${k}"><span class="ti">${dIcon(k)}</span><span class="tt">${title}</span>${count !== '' ? `<span class="tc">${count}</span>` : ''}<span class="tl">${line}</span></button>${alert || ''}</div>`;
+  const alertBtn = (act, txt, s) => `<button class="tile-alert" data-act="${act}"${s ? ` data-s="${s}"` : ''}>${txt} →</button>`;
+  return demo + `<div class="dgrid">
+    ${tile('pays', 'Pagos', S.pays.length, `${hoy} aplica${hoy === 1 ? '' : 'n'} hoy`, topeBajo ? alertBtn('dgo', `${topeBajo} con tope casi agotado`, 'pays') : '')}
+    ${tile('stores', 'Tiendas', S.stores.length, `${S.prices.length} precios cargados`)}
+    ${tile('prods', 'Productos', S.prods.length, `${S.pres.length} presentaciones`)}
+    ${tile('pres', 'Presentaciones', S.pres.length, sinEan ? `${sinEan} sin código de barras` : 'Todas con código de barras')}
+    ${tile('prices', 'Precios', S.prices.length, `${fresh} actualizado${fresh === 1 ? '' : 's'} en la última semana`, old ? alertBtn('dold', `${old} con más de 3 semanas`) : '', true)}
+    ${tile('ajustes', 'Ajustes', '', `Sincronización: ${on ? (SYNC.conflicts ? `⚠ ${SYNC.conflicts} conflicto${SYNC.conflicts === 1 ? '' : 's'}` : `${agoTxt(SYNC.lastOk)}${pend ? ` · ${pend} sin enviar` : ''}`) : 'sin configurar'} · Respaldo · Cómo calcula`, '', true)}
+  </div>`;
+}
+function datosSection(B, demo) {
+  const k = DV.sec, meta = DSECS.find(x => x[0] === k);
+  const counts = { pays: S.pays.length, stores: S.stores.length, prods: S.prods.length, pres: S.pres.length, prices: S.prices.length };
+  let h = `<div class="dnav"><button class="btn sm ghost" data-act="dhome">← Datos</button><div class="dtabs" role="tablist" aria-label="Entidades">${DSECS.map(([id, l]) => `<button role="tab" class="chip sm" aria-selected="${id === k}" aria-pressed="${id === k}" data-act="dgo" data-s="${id}">${l}${counts[id] != null ? ` <span class="muted">${counts[id]}</span>` : ''}</button>`).join('')}</div></div>`;
+  const add = { pays: '+ Agregar medio', stores: '+ Agregar tienda', prods: '+ Agregar producto', pres: '+ Agregar en Cargar', prices: '+ Cargar precio' }[k];
+  h += `<div class="dhead"><h2>${dIcon(k)}${meta[2]}</h2>${add ? `<button class="btn sm primary" data-act="dadd">${add}</button>` : ''}</div>`;
+  if (k === 'ajustes') return h + demo + B.sync + B.calc + B.backup;
+  if (k === 'prices' && DV.old) h += `<div class="note">Mostrando solo precios con más de 3 semanas, los más viejos primero. <button class="btn sm ghost" data-act="dold0">Ver todos</button></div>`;
+  if (DV.adding && k === 'stores') h += `<div class="paybox card"><h3>Nueva tienda</h3><input id="newStore" aria-label="Nombre de la tienda nueva" placeholder="Cadena · sucursal"><div class="btns"><button class="btn sm primary" data-act="addstore">Agregar tienda</button><button class="btn sm ghost" data-act="daddx">Cancelar</button></div></div>`;
+  if (DV.adding && k === 'prods') h += `<div class="card">${newProdForm('createprod2')}<button class="btn sm ghost" data-act="daddx">Cancelar</button></div>`;
+  return h + `<div class="card dbody">${B[k]}</div>`;
 }
 
 /* ============ navegación ============ */
@@ -959,7 +1027,7 @@ function render() {
   R[v]();
 }
 function go(v) { if (cur() === v) render(); else location.hash = v; window.scrollTo(0, 0); }
-window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
+window.addEventListener('hashchange', () => { if (cur() === 'datos' && !DV.keep) { DV.sec = null; DV.adding = false; DV.old = false; ED = null; } DV.keep = false; render(); window.scrollTo(0, 0); });
 
 /* ============ acciones ============ */
 const ACT = {
@@ -996,7 +1064,7 @@ const ACT = {
   paydia: el => { const p = touch(S.pays.find(x => x.id === el.dataset.id)), v = +el.dataset.v; p.dias = p.dias?.includes(v) ? p.dias.filter(x => x !== v) : [...(p.dias || []), v].sort(); save(); render(); },
   paystore: el => { const p = touch(S.pays.find(x => x.id === el.dataset.id)), v = el.dataset.v; p.stores = p.stores?.includes(v) ? p.stores.filter(x => x !== v) : [...(p.stores || []), v]; save(); render(); },
   paymodo: el => { touch(S.pays.find(x => x.id === el.dataset.id)).modo = el.dataset.v; save(); render(); },
-  addstore: () => { const v = $('#newStore').value.trim(); if (!v) return toast('Escribí el nombre de la tienda'); S.stores.push(touch({ id: uid(), name: v })); save(); render(); },
+  addstore: () => { const v = $('#newStore').value.trim(); if (!v) return toast('Escribí el nombre de la tienda'); S.stores.push(touch({ id: uid(), name: v })); DV.adding = false; save(); render(); toast('Tienda agregada'); },
   delstore: el => { const id = el.dataset.id; S.stores = S.stores.filter(s => s.id !== id); tomb('stores', id); dropPrices(p => p.storeId === id); S.pays.forEach(p => { if ((p.stores || []).includes(id)) { p.stores = p.stores.filter(x => x !== id); touch(p); } }); save(); render(); },
   delprod: el => { const id = el.dataset.id; const pr = new Set(S.pres.filter(x => x.prodId === id).map(x => x.id)); S.prods = S.prods.filter(p => p.id !== id); tomb('prods', id); pr.forEach(x => tomb('pres', x)); S.pres = S.pres.filter(x => !pr.has(x.id)); dropPrices(p => pr.has(p.presId)); if (F.prodId === id) resetForm(S.prods[0]?.id ?? '__new'); save(); render(); },
   delpres: el => { const id = el.dataset.id; S.pres = S.pres.filter(x => x.id !== id); tomb('pres', id); dropPrices(p => p.presId === id); if (F.presId === id) resetForm(F.prodId); save(); render(); },
@@ -1007,6 +1075,17 @@ const ACT = {
   edcancel: () => { ED = null; renderDatos(); },
   edsave: () => edSave(),
   sync: () => syncNow(false),
+  dgo: el => { const s2 = el.dataset.s; if (s2 !== DV.sec) { ED = null; DV.adding = false; } if (s2 !== 'prices') DV.old = false; DV.sec = s2; renderDatos(); window.scrollTo(0, 0); },
+  dhome: () => { DV.sec = null; DV.adding = false; DV.old = false; ED = null; renderDatos(); window.scrollTo(0, 0); },
+  dold: () => { DV.sec = 'prices'; DV.old = true; ED = null; SORT.dPrices = { by: 'age', dir: 1 }; try { localStorage.setItem(SORT_LS, JSON.stringify(SORT)); } catch (e) {} renderDatos(); window.scrollTo(0, 0); },
+  dold0: () => { DV.old = false; renderDatos(); },
+  daddx: () => { DV.adding = false; renderDatos(); },
+  dadd: () => {
+    const k = DV.sec;
+    if (k === 'pays') { const np = touch({ id: uid(), name: 'Nuevo medio', pct: 10, tope: null, usado: 0, minimo: null, dias: [], stores: [], modo: 'caja' }); S.pays.push(np); save(); render(); setTimeout(() => { $('#pay-' + np.id)?.scrollIntoView({ block: 'center' }); const i = $('#pn-' + np.id); if (i) { i.focus(); i.select?.(); } }, 60); }
+    else if (k === 'stores' || k === 'prods') { DV.adding = true; ED = null; renderDatos(); window.scrollTo(0, 0); setTimeout(() => $(k === 'stores' ? '#newStore' : '#npName')?.focus(), 60); }
+    else { resetForm(S.prods[0] ? (getProd(F.prodId) ? F.prodId : S.prods[0].id) : '__new'); lastSaved = null; go('cargar'); }
+  },
   sort: el => { const k = el.dataset.k, by = el.dataset.by, st = sortState(k); SORT[k] = st.by === by ? { by, dir: -st.dir } : { by, dir: SORTS[k].o[by][2] }; try { localStorage.setItem(SORT_LS, JSON.stringify(SORT)); } catch (e) {} render(); },
   cpick: el => { CONF.list[+el.dataset.i].pick = el.dataset.v; renderConf(); },
   cpickall: el => { CONF.list.forEach(x => x.pick = el.dataset.v); renderConf(); },
@@ -1030,7 +1109,7 @@ function createProd(toForm) {
   const name = (NP.name || '').trim(); if (!name) return toast('Poné un nombre genérico');
   const base = NP.base === 'otro' ? (NP.custom || '').trim() : NP.base; if (!base) return toast('Indicá la unidad de comparación');
   const p = touch({ id: uid(), name, base }); S.prods.push(p); NP = { name: '', base: 'kg', custom: '' }; save();
-  if (toForm) resetForm(p.id); render(); toast('Producto creado');
+  if (toForm) resetForm(p.id); DV.adding = false; render(); toast('Producto creado');
 }
 function importData(txt) {
   try { const d = JSON.parse(txt); if (!d.stores || !d.prices || !d.prods) throw 0; S = migrate(d); ED = null; S.demo = !!d.demo; resetForm(S.prods[0]?.id ?? '__new'); save(); render(); toast('Respaldo importado'); }
@@ -1110,6 +1189,8 @@ function onEan(force) {
 
 /* confirmación en dos toques (sin diálogos del navegador) */
 document.addEventListener('click', e => {
+  const nav = e.target.closest('nav.tabs a[data-tab="datos"]');
+  if (nav && cur() === 'datos' && DV.sec) { DV.sec = null; DV.adding = false; DV.old = false; ED = null; renderDatos(); window.scrollTo(0, 0); return; }
   const el = e.target.closest('[data-act]'); if (!el) return;
   if (el.dataset.confirm) {
     if (!el.dataset.armed || Date.now() - +el.dataset.armed > 3500) { el.dataset.armed = Date.now(); el.dataset.label = el.textContent; el.textContent = 'Tocá de nuevo para confirmar'; setTimeout(() => { if (el.isConnected && el.dataset.armed) { el.textContent = el.dataset.label; delete el.dataset.armed; } }, 3500); return; }
