@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.5.13">
+<meta name="app-version" content="v0.5.14">
 <title>Góndola Comparador</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#132033">
@@ -229,7 +229,7 @@ details.more summary{cursor:pointer;color:var(--muted)}
 <div class="app">
   <header class="top">
     <div class="syncbar" id="syncBar" hidden aria-hidden="true"><i></i></div>
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.5.13</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.5.14</button></span></div>
     <div class="symsg" id="syncMsg" role="status" hidden></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
@@ -1627,16 +1627,35 @@ function eanOk(code) {
 }
 /* "473 ml", "1,5 L", "6 x 473 ml", "750cc", "500 g", "4 x 30 m" → { cont, unit, pack, fam } */
 function parseQty(txt, num2, unit2) {
-  const U = { ml: ['ml', 1, 'L'], cl: ['ml', 10, 'L'], l: ['L', 1, 'L'], lt: ['L', 1, 'L'], lts: ['L', 1, 'L'], litro: ['L', 1, 'L'], litros: ['L', 1, 'L'], cc: ['cc', 1, 'L'], g: ['g', 1, 'kg'], gr: ['g', 1, 'kg'], grs: ['g', 1, 'kg'], gramos: ['g', 1, 'kg'], kg: ['kg', 1, 'kg'], kilo: ['kg', 1, 'kg'], kilos: ['kg', 1, 'kg'], m: ['m', 1, 'm'], mts: ['m', 1, 'm'], metros: ['m', 1, 'm'], u: ['un', 1, 'un'], un: ['un', 1, 'un'], unid: ['un', 1, 'un'], unidades: ['un', 1, 'un'] };
-  const m = String(txt || '').toLowerCase().match(/(?:(\d+)\s*[x×]\s*)?(\d+(?:[.,]\d+)?)\s*(ml|cl|lts|lt|litros|litro|l|cc|grs|gramos|gr|g|kg|kilos|kilo|mts|metros|m|unidades|unid|un|u)\b/);
+  const U = { ml: ['ml', 1, 'L'], cl: ['ml', 10, 'L'], l: ['L', 1, 'L'], lt: ['L', 1, 'L'], lts: ['L', 1, 'L'], litro: ['L', 1, 'L'], litros: ['L', 1, 'L'], cc: ['cc', 1, 'L'], g: ['g', 1, 'kg'], gr: ['g', 1, 'kg'], grs: ['g', 1, 'kg'], gramos: ['g', 1, 'kg'], kg: ['kg', 1, 'kg'], kilo: ['kg', 1, 'kg'], kilos: ['kg', 1, 'kg'], m: ['m', 1, 'm'], mt: ['m', 1, 'm'], mts: ['m', 1, 'm'], metros: ['m', 1, 'm'], u: ['un', 1, 'un'], un: ['un', 1, 'un'], unid: ['un', 1, 'un'], unidades: ['un', 1, 'un'] };
+  const m = String(txt || '').toLowerCase().match(/(?:(\d+)\s*[x×]\s*)?(\d+(?:[.,]\d+)?)\s*(ml|cl|lts|lt|litros|litro|l|cc|grs|gramos|gr|g|kg|kilos|kilo|mts|mt|metros|m|unidades|unid|un|u)\b/);
   if (m && U[m[3]]) { const [unit, f, fam] = U[m[3]]; return { pack: m[1] ? +m[1] : 1, cont: num(m[2]) * f, unit, fam }; }
   const u2 = String(unit2 || '').toLowerCase();
   if (num2 > 0 && U[u2]) { const [unit, f, fam] = U[u2]; return { pack: 1, cont: num2 * f, unit, fam }; }
   return null;
 }
+/* Catálogo SEPA (Precios Claros) armado por el flujo semanal y publicado en la rama "catalogo" */
+const SEPA_BASE = 'https://raw.githubusercontent.com/luchorcompartidos/super/catalogo/ean/';
+const SEPA_SHARD = new Map();
+async function sepaFind(code) {
+  const k = code.slice(0, 5);
+  if (!SEPA_SHARD.has(k)) {
+    const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 8000);
+    try { const r = await fetch(SEPA_BASE + k + '.json', { signal: ctl.signal }); SEPA_SHARD.set(k, r.ok ? await r.json() : {}); }
+    finally { clearTimeout(tm); }
+  }
+  const v = SEPA_SHARD.get(k)[code]; if (!v) return null;
+  const [desc, marca, cant, uni] = v;
+  // La descripción de SEPA suele terminar con la cantidad ("… 473 Ml"): se quita porque va en Contenido
+  const name = desc.replace(/\s+\d+(?:[.,]\d+)?\s*(?:ml|cc|cl|lts?|l|grs?|g|kgs?|un|unid|mts?|m)\.?\s*$/i, '').trim();
+  return { src: 'Precios Claros (SEPA)', url: 'https://www.preciosclaros.gob.ar', brand: titleCase(marca), name, qty: parseQty('', cant, uni), cats: '', catEs: '' };
+}
+const titleCase = t => String(t || '').toLowerCase().replace(/(^|[\s-])\p{L}/gu, m => m.toUpperCase());
 async function lookupEan(code) {
   if (LOOK.has(code)) return LOOK.get(code);
   let lastErr = null;
+  // 1) Catálogo argentino (Precios Claros); si no está o no responde, 2) Open Food Facts y bases hermanas
+  try { const r0 = await sepaFind(code); if (r0) { LOOK.set(code, r0); return r0; } } catch (e) { lastErr = 'sin conexión con el catálogo'; }
   for (const [name, base] of LOOK_SRC) {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
@@ -1680,7 +1699,7 @@ async function lookupFill(manual) {
         if (cand) { F.prodId = cand.id; }
         else {
           // Ningún producto comparable encaja: se sugiere crear uno, con nombre por categoría y unidad por envase
-          const nm = res.catEs ? res.catEs.replace(/^es:/, '').replace(/-/g, ' ') : (desc.split(/\s+/).find(w => w.length > 2) || res.name);
+          const nm = res.catEs ? res.catEs.replace(/^es:/, '').replace(/-/g, ' ') : ((res.name.split(/\s+/).find(w => w.length > 2 && !/\d/.test(w)) || res.name).toLowerCase());
           NP = { name: nm.charAt(0).toUpperCase() + nm.slice(1), base: res.qty.fam, custom: '' }; F.prodId = '__new';
           warn = 'No tenés un producto comparable para este envase: revisá el nombre sugerido y tocá "Crear producto".';
         }

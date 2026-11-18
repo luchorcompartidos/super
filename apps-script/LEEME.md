@@ -27,3 +27,9 @@
 Cuando cambie `Codigo.gs` (por ejemplo, de la 0.1.3 a la 0.2.1, que agrega las tiendas archivadas): pegá el código nuevo, conservá tu CLAVE,
 guardá y en **Implementar → Gestionar implementaciones → editar (lápiz) → Versión: Nueva versión → Implementar**.
 La URL /exec no cambia.
+
+## Catálogo de productos (Precios Claros)
+
+El flujo `.github/workflows/catalogo-sepa.yml` arma cada martes un catálogo por código de barras con la base SEPA
+de Precios Claros (datos.gob.ar) y lo publica en la rama `catalogo`. La app lo consulta primero al buscar datos
+de un código, y después Open Food Facts. Para generarlo por primera vez: Actions → Catálogo SEPA → Run workflow.

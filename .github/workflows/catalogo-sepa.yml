@@ -1,0 +1,45 @@
+name: Catálogo SEPA (Precios Claros)
+
+# Arma el catálogo de productos por código de barras desde la base SEPA de datos.gob.ar
+# y lo publica en la rama "catalogo" (se reemplaza en cada corrida, sin acumular historial).
+# Se ejecuta los martes y se puede lanzar a mano: Actions > Catálogo SEPA > Run workflow.
+
+on:
+  schedule:
+    - cron: "41 10 * * 2"   # martes 07:41 (Argentina)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: catalogo-sepa
+  cancel-in-progress: true
+
+jobs:
+  catalogo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Generar catálogo
+        run: python .github/scripts/catalogo_sepa.py out
+      - name: Publicar en la rama catalogo
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd out
+          git init -q
+          git checkout -q -b catalogo
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Catálogo SEPA $(date -u +%F)"
+          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" catalogo
+          echo "## ✅ Catálogo publicado" >> "$GITHUB_STEP_SUMMARY"
+          cat meta.json >> "$GITHUB_STEP_SUMMARY"

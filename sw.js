@@ -3,7 +3,7 @@
      (el aviso "Hay una versión nueva, recargá" indica cuándo recargar).
    - GitHub (versiones) y Google Apps Script (sincronización) van siempre por la red. */
 const SHELL = 'gondola-shell-v1';
-const RUNTIME = 'gondola-runtime-v1'; // tipografías y lector de códigos (ZXing)
+const RUNTIME = 'gondola-runtime-v1'; // tipografías, lector de códigos (ZXing) y catálogo SEPA // tipografías y lector de códigos (ZXing)
 const PRECACHE = ['./', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
@@ -26,6 +26,16 @@ self.addEventListener('fetch', e => {
       const net = fetch(req, { cache: 'no-store' }).then(r => { if (r.ok) c.put('./', r.clone()); return r; }).catch(() => null);
       if (cached) { e.waitUntil(net); return cached; }
       return (await net) || new Response('<h1>Sin conexión</h1><p>Abrí Góndola una vez con conexión para poder usarla sin señal.</p>', { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+    }));
+    return;
+  }
+  // Catálogo SEPA (rama catalogo): desde el celular si ya se consultó, actualizándose en segundo plano
+  if (url.hostname === 'raw.githubusercontent.com' && url.pathname.includes('/catalogo/')) {
+    e.respondWith(caches.open(RUNTIME).then(async c => {
+      const hit = await c.match(req);
+      const net = fetch(req).then(r => { if (r.ok) c.put(req, r.clone()); return r; }).catch(() => null);
+      if (hit) { e.waitUntil(net); return hit; }
+      return (await net) || new Response('{}', { status: 504, headers: { 'Content-Type': 'application/json' } });
     }));
     return;
   }
