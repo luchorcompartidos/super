@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.5.0">
+<meta name="app-version" content="v0.5.1">
 <title>Góndola Comparador</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#132033">
@@ -212,7 +212,7 @@ details.more summary{cursor:pointer;color:var(--muted)}
 <div class="app">
   <header class="top">
     <div class="syncbar" id="syncBar" hidden aria-hidden="true"><i></i></div>
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.5.0</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.5.1</button></span></div>
     <div class="symsg" id="syncMsg" role="status" hidden></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
@@ -551,7 +551,7 @@ function renderCargar() {
     const diff = top && me ? (me.c.best.per / top.c.best.per - 1) * 100 : 0;
     h += `<div class="card result" role="status"><div class="pv-row"><h3>Guardado en ${esc(getStore(p.storeId)?.name || '')}: ${esc(presLabel(pres))}</h3></div>
       <div class="pv-row"><span>Queda <b>${i + 1}º de ${rows.length}</b> en ${esc(prod.name)}</span><span class="big">${money(me.c.best.per)}<small>/${u}</small></span></div>
-      <div class="pv-row small"><span class="muted">${me.c.best.promoOn ? esc(me.c.pr.label) : 'Góndola ' + money(p.precio)}${me.c.best.payOn ? ` − ${me.c.pay.pct}% ${esc(me.c.pay.name)}` : ''}</span><b>Pagás ${payUnits(me.c.best, me.c.best.N)}</b></div>
+      <div class="pv-row small"><span class="muted">${me.c.best.promoOn ? esc(me.c.pr.label) : 'Góndola ' + money(p.precio)}${me.c.best.payOn ? ` − ${me.c.pay.pct}% ${esc(me.c.pay.name)}` : ''}</span><b>Pagás ${payUnits(me.c.best, me.c.best.N, me.pres)}</b></div>
       <div class="small">${i === 0 ? 'Es la mejor opción registrada.' : `+${nf0.format(diff)}% vs la mejor: ${esc(presLabel(top.pres))} en ${esc(getStore(top.p.storeId).name)}${top.c.best.N > 1 ? ' (llevando ' + top.c.best.N + ')' : ''}.`}</div>
       <div class="btns"><button class="btn sm primary" data-act="gocmp" data-id="${prod.id}">Ver comparación</button><button class="btn sm ghost" data-act="movefromcargar" data-id="${p.id}">Era otra tienda</button><button class="btn sm" data-act="addcart" data-id="${p.id}" data-q="${me.c.best.N}">+ Carrito (${me.c.best.N})</button><button class="btn sm ghost" data-act="dismiss">Cargar otro</button></div></div>`;
   }
@@ -605,7 +605,9 @@ function newProdForm(act) {
     <button class="btn primary" data-act="${act}">Crear producto</button></div>`;
 }
 /* Lo que se paga por la presentación (no solo por kg/L) */
-const payUnits = (s, N) => (N > 1 ? `${money(s.total)} por ${N} (${money(s.total / N)} c/u)` : `${money(s.total)} c/u`);
+/* "c/u" con el tamaño de la presentación entre corchetes, ej.: c/u [x 473 ml.] */
+const cu = pres => (pres ? ` c/u [x ${pres.pack > 1 ? pres.pack + ' × ' : ''}${nfx.format(pres.cont)} ${pres.unit}.]` : ' c/u');
+const payUnits = (s, N, pres) => (N > 1 ? `${money(s.total)} por ${N} (${money(s.total / N)}${cu(pres)})` : `${money(s.total)}${cu(pres)}`);
 function updatePreview() {
   const box = $('#preview'); if (!box) return;
   const t = buildTemp();
@@ -615,12 +617,12 @@ function updatePreview() {
   const payPart = s => (s.payOn ? ` − ${pay.pct}% ${esc(pay.name)}` : c.d > 0 && s.promoOn ? ' · el descuento de pago no se suma' : '');
   const how = (s, N) => (s.promoOn ? `${esc(c.pr.label)}${payPart(s)}` : s.payOn ? `Góndola ${money(t.price.precio)}${payPart(s)}` : 'Precio de góndola, sin descuentos');
   const line = (lbl, s, N, best) => `<div class="pvl"><div class="pv-row"><span><b>${lbl}</b>${best ? ' <span class="pill p-good">Conviene</span>' : ''}</span><span class="big">${money(s.per)}<small>/${u}</small></span></div>
-    <div class="pv-row small"><span class="muted">${how(s, N)}</span><b>Pagás ${payUnits(s, N)}</b></div></div>`;
+    <div class="pv-row small"><span class="muted">${how(s, N)}</span><b>Pagás ${payUnits(s, N, t.pres)}</b></div></div>`;
   h += line(c.pr.on && c.pr.N === 1 ? 'Con la promo' : 'Llevando 1', c.one, 1, c.many && c.best.N === 1);
   if (c.many) h += line(`Llevando ${c.pr.N}`, c.many, c.pr.N, c.best.N > 1);
-  h += `<div class="small muted">Góndola ${money(t.price.precio)} c/u · ${money(c.lista)}/${u} sin descuentos · contenido ${nfx.format(c.C)} ${u}</div>`;
+  h += `<div class="small muted">Góndola ${money(t.price.precio)}${cu(t.pres)} · ${money(c.lista)}/${u} sin descuentos · contenido ${nfx.format(c.C)} ${u}</div>`;
   const w = bestWeek(t.price, t.pres), hint = weekHint(c, w, u);
-  if (hint) h += `<div class="note" style="border:2px solid var(--accent)"><b>${hint}</b> · pagás ${payUnits(w.best, w.best.N)}${t.price.hasta && w.at.date > t.price.hasta ? ` (ese día ya sin la promo, que vence el ${ddmm(t.price.hasta)})` : ''}.</div>`;
+  if (hint) h += `<div class="note" style="border:2px solid var(--accent)"><b>${hint}</b> · pagás ${payUnits(w.best, w.best.N, t.pres)}${t.price.hasta && w.at.date > t.price.hasta ? ` (ese día ya sin la promo, que vence el ${ddmm(t.price.hasta)})` : ''}.</div>`;
   box.innerHTML = h;
 }
 const ageTxt = iso => { const a = ageDays(iso); return a === 0 ? 'hoy' : a === 1 ? 'ayer' : `hace ${a} d`; };
@@ -642,7 +644,7 @@ function renderComparar() {
     const now = w.c.at.k === 0 && w.p.storeId === here;
     const pct = today ? (1 - w.c.best.per / today.c.best.per) * 100 : 0;
     h += `<div class="verdict ${now ? 'good' : 'warn'}"><b class="head">${now ? 'Conviene acá, hoy' : `Conviene ${dayTxt(w.c.at)} en ${esc(getStore(w.p.storeId).name)}`}</b>
-      <span>${esc(presLabel(w.pres))} a <b>${money(w.c.best.per)}/${u}</b> ${esc(conPay(w.c))}${w.c.best.N > 1 ? ` llevando ${w.c.best.N}` : ''} · pagás ${payUnits(w.c.best, w.c.best.N)}.</span>
+      <span>${esc(presLabel(w.pres))} a <b>${money(w.c.best.per)}/${u}</b> ${esc(conPay(w.c))}${w.c.best.N > 1 ? ` llevando ${w.c.best.N}` : ''} · pagás ${payUnits(w.c.best, w.c.best.N, w.pres)}.</span>
       ${!now && today && pct > 0.5 ? `<span class="small">${nf0.format(pct)}% menos que lo mejor de hoy acá (${money(today.c.best.per)}/${u}).${pct < 5 ? ' Diferencia chica.' : ''}</span>` : ''}
       <span class="small muted">Precio de ${ageTxt(w.p.fecha)}. Las promos de la tienda se toman como vigentes salvo que tengan fecha "hasta".</span></div>`;
   }
@@ -668,12 +670,12 @@ function renderComparar() {
     const { p, pres, c } = r, diff = (c.best.per / top.c.best.per - 1) * 100;
     const s = r === top ? 's-good' : diff <= 5 ? 's-warn' : 's-bad';
     const isHere = p.storeId === here;
-    const alt = c.many ? (c.best.N > 1 ? `Si llevás 1: ${money(c.one.per)}/${u} (${money(c.one.total)} c/u)` : `Llevando ${c.pr.N} con la promo: ${money(c.many.per)}/${u}, ${money(c.many.total)} por ${c.pr.N} (no conviene)`) : '';
+    const alt = c.many ? (c.best.N > 1 ? `Si llevás 1: ${money(c.one.per)}/${u} (${money(c.one.total)}${cu(pres)})` : `Llevando ${c.pr.N} con la promo: ${money(c.many.per)}/${u}, ${money(c.many.total)} por ${c.pr.N} (no conviene)`) : '';
     const payTxt = c.d > 0 && c.best.payOn ? `${esc(c.pay.name)} ${c.pay.pct}%${c.pay.minimo ? ` <b>(requiere compra mínima ${money(c.pay.minimo)})</b>` : ''}` : c.d > 0 ? `${esc(c.pay.name)} no se suma a la promo` : 'sin descuento de pago';
     return `<article class="item ${s} ${isHere ? 'here' : ''}">
       <div><div class="it-title">${esc(presLabel(pres))}</div>
         <div class="it-meta"><span class="store">${esc(getStore(p.storeId).name)}${isHere ? ' · acá' : ''}</span><span class="pill ${ageCls(p.fecha)}">${ageTxt(p.fecha)}</span>${c.pr.on ? `<span class="tag">${esc(c.pr.label)}${p.hasta ? ' · hasta ' + ddmm(p.hasta) : ''}</span>` : ''}${c.pr.expired ? '<span class="pill p-neutral">promo vencida</span>' : ''}${CMP.mode === 'week' ? `<span class="pill ${c.at.k === 0 ? 'p-good' : 'p-warn'}">${c.at.k === 0 ? 'Hoy' : dayTxt(c.at).replace(/^el /, '').replace(/^./, m => m.toUpperCase())}</span>` : ''}</div></div>
-      <div class="it-price"><div class="big">${money(c.best.per)}<small>/${u}</small></div><span class="small" style="font-weight:700">${c.best.N > 1 ? `${money(c.best.total)} por ${c.best.N}` : `${money(c.best.total)} c/u`}</span>
+      <div class="it-price"><div class="big">${money(c.best.per)}<small>/${u}</small></div><span class="small" style="font-weight:700">${c.best.N > 1 ? `${money(c.best.total)} por ${c.best.N}` : `${money(c.best.total)}${cu(pres)}`}</span>
         ${c.best.N > 1 ? `<span class="pill p-warn">Llevando ${c.best.N}</span>` : `<span class="pill p-neutral">Llevando 1</span>`}
         <span class="small" style="font-weight:700;color:var(--${r === top ? 'good' : diff <= 5 ? 'warn' : 'bad'})">${r === top ? 'Mejor' : '+' + nf0.format(diff) + '%'}</span></div>
       <div class="it-sub">${CMP.mode !== 'week' && weekHint(c, W.get(p.id), u) ? `<b style="color:var(--accent)">${weekHint(c, W.get(p.id), u)}</b><br>` : ''}Góndola ${money(p.precio)} · ${payTxt}${alt ? ' · ' + alt : ''}${p.hist?.length ? ` · antes ${money(p.hist[p.hist.length - 1].precio)} (${ageTxt(p.hist[p.hist.length - 1].fecha)})` : ''}</div>
@@ -736,7 +738,7 @@ function renderCarrito() {
   if (k.items.length > 1) h += sortBar('cart');
   h += `<div class="list">` + sortList('cart', k.items.map((x, idx) => ({ ...x, idx }))).map(x => `<article class="item">
       <div><div class="it-title">${esc(presLabel(getPres(x.p.presId)))}</div>
-      <div class="it-meta">${x.pr.on ? `<span class="tag">${esc(x.pr.label)}</span>` : ''}<span class="small muted">${money(x.p.precio)} c/u</span></div></div>
+      <div class="it-meta">${x.pr.on ? `<span class="tag">${esc(x.pr.label)}</span>` : ''}<span class="small muted">${money(x.p.precio)}${cu(getPres(x.p.presId))}</span></div></div>
       <div class="it-price"><div class="big" style="font-size:22px">${money(x.sub)}</div>${x.pr.on && x.pr.N > 1 ? `<span class="small muted">${x.groups} promo${x.groups === 1 ? '' : 's'}${x.rem ? ` + ${x.rem} suelta${x.rem === 1 ? '' : 's'}` : ''}</span>` : ''}</div>
       <div class="it-actions" style="justify-content:space-between;align-items:center">${x.hint ? `<span class="pill p-warn">${esc(x.hint)}</span>` : '<span></span>'}
         <div class="stepper"><button aria-label="Quitar uno" data-act="qty" data-id="${x.p.id}" data-d="-1">−</button><span>${x.it.qty}</span><button aria-label="Sumar uno" data-act="qty" data-id="${x.p.id}" data-d="1">+</button></div></div>
@@ -1308,7 +1310,7 @@ function planListHTML() {
     return `<article class="item ${sv > 0.05 ? 's-good' : sv > 0.005 ? 's-warn' : ''}">
       <div><div class="it-title">${esc(x.prod.name)}</div>
         <div class="it-meta"><span class="pill ${at.k === 0 ? 'p-good' : 'p-warn'}">${at.k === 0 ? 'Hoy' : dayTxt(at).replace(/^el /, '').replace(/^./, m => m.toUpperCase())}</span><span class="store">${esc(getStore(p.storeId).name)}</span><span class="pill p-neutral">${esc(conPay({ ...c, best: b }).replace(/^con /, ''))}</span></div></div>
-      <div class="it-price"><div class="big">${money(b.per)}<small>/${u}</small></div><span class="small" style="font-weight:700">${payUnits(b, b.N)}</span></div>
+      <div class="it-price"><div class="big">${money(b.per)}<small>/${u}</small></div><span class="small" style="font-weight:700">${payUnits(b, b.N, pres)}</span></div>
       <div class="it-sub">${esc(presLabel(pres))}${b.N > 1 ? ` · llevando ${b.N} (${esc(c.pr.label)})` : c.pr.on ? ` · ${esc(c.pr.label)}` : ''} · precio de ${ageTxt(p.fecha)}<br>${svTxt}</div>
       <div class="it-actions"><button class="btn sm ghost" data-act="gocmp" data-id="${x.prod.id}">Ver en Comparar</button>${typeof addToListBtn === 'function' ? addToListBtn(x) : ''}</div>
     </article>`;
