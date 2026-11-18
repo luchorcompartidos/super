@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.3.0">
+<meta name="app-version" content="v0.4.0">
 <title>Góndola Comparador</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#132033">
@@ -138,7 +138,7 @@ details.sec > .body{padding:0 14px 14px;display:grid;gap:10px}
 .calc-ex td:last-child,.calc-ex th:last-child{text-align:right}
 nav.tabs{position:fixed;bottom:0;left:0;right:0;z-index:6;background:var(--surface);border-top:1px solid var(--line);
   display:flex;justify-content:center;padding-bottom:env(safe-area-inset-bottom)}
-nav.tabs .in{max-width:520px;width:100%;display:grid;grid-template-columns:repeat(4,1fr)}
+nav.tabs .in{max-width:520px;width:100%;display:grid;grid-template-columns:repeat(5,1fr)}
 nav.tabs a{display:grid;justify-items:center;gap:2px;padding:9px 4px 10px;color:var(--muted);text-decoration:none;font-size:12px;font-weight:700;position:relative}
 nav.tabs a svg{width:24px;height:24px}
 nav.tabs a[aria-current="page"]{color:var(--accent)}
@@ -210,7 +210,7 @@ details.more summary{cursor:pointer;color:var(--muted)}
 <div class="app">
   <header class="top">
     <div class="syncbar" id="syncBar" hidden aria-hidden="true"><i></i></div>
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.3.0</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.4.0</button></span></div>
     <div class="symsg" id="syncMsg" role="status" hidden></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
@@ -223,6 +223,7 @@ details.more summary{cursor:pointer;color:var(--muted)}
     <section class="view" id="view-cargar"></section>
     <section class="view" id="view-comparar" hidden></section>
     <section class="view" id="view-carrito" hidden></section>
+    <section class="view" id="view-planificar" hidden></section>
     <section class="view" id="view-datos" hidden></section>
   </main>
 </div>
@@ -231,6 +232,7 @@ details.more summary{cursor:pointer;color:var(--muted)}
   <div class="in">
     <a href="#cargar" data-tab="cargar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Cargar</a>
     <a href="#comparar" data-tab="comparar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 18h4V9H4zM10 18h4V5h-4zM16 18h4v-6h-4z"/></svg>Comparar</a>
+    <a href="#planificar" data-tab="planificar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4M8 14h3M8 17h6"/></svg>Planificar</a>
     <a href="#carrito" data-tab="carrito"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h2l2.4 11h10.2L20 8H6.2"/><circle cx="9" cy="19.5" r="1.5"/><circle cx="17" cy="19.5" r="1.5"/></svg>Carrito<span class="badge" id="cartBadge" hidden></span></a>
     <a href="#datos" data-tab="datos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/></svg>Datos</a>
   </div>
@@ -1113,6 +1115,7 @@ const SORTS = {
   selPres: { def: 'rec', o: { rec: ['Recientes', lastUsePres, -1], az: ['A-Z', presLabel, 1], cont: ['Contenido', contentOf, 1] } },
   cmp: { def: 'best', o: { best: ['Mejor precio', r => r.c.best.per, 1], gond: ['Precio góndola', r => r.p.precio, 1], age: ['Más viejos', r => r.p.fecha, 1], store: ['Tienda', r => getStore(r.p.storeId)?.name || '', 1], marca: ['Marca', r => presLabel(r.pres), 1] } },
   cart: { def: 'add', o: { add: ['Agregado', x => x.idx, 1], sub: ['Subtotal', x => x.sub, -1], name: ['Nombre', x => presLabel(getPres(x.p.presId)), 1] } },
+  plan: { def: 'save', o: { save: ['Mayor ahorro', x => x.save, -1], az: ['Producto A-Z', x => x.prod.name, 1], store: ['Tienda y día', x => x.best ? (getStore(x.best.p.storeId)?.name || '') + ' ' + x.best.c.at.k : '~', 1] } },
   dStores: { def: 'az', o: { az: ['A-Z', s => s.name, 1], add: ['Orden de carga', s => S.stores.indexOf(s), 1] } },
   dPays: { def: 'az', o: { az: ['A-Z', p => p.name, 1], add: ['Orden de carga', p => S.pays.indexOf(p), 1] } },
   dProds: { def: 'az', o: { az: ['A-Z', p => p.name, 1], npres: ['Presentaciones', p => S.pres.filter(x => x.prodId === p.id).length, -1], mod: ['Modificados', p => p.upd || '', -1] } },
@@ -1227,9 +1230,93 @@ function datosSection(B, demo) {
   return h + `<div class="card dbody">${B[k]}</div>`;
 }
 
+/* ============ Planificar: sugerencias de compra ============
+   Para cada producto, dónde, qué día, con qué medio de pago y en qué presentación conviene comprarlo,
+   según tus preferencias (que quedan guardadas en el celular). */
+const PREF_LS = 'gondola.plan';
+const PREF_DEF = { stores: [], days: [], pays: [], maxAge: 30, allowMulti: true, q: '', open: false };
+let PREF = { ...PREF_DEF }; try { Object.assign(PREF, JSON.parse(localStorage.getItem(PREF_LS) || '{}')); } catch (e) {}
+const savePref = () => { try { localStorage.setItem(PREF_LS, JSON.stringify(PREF)); } catch (e) {} };
+const PL = { tab: 'sug' };
+function planBest(prod) {
+  const pays = [NOPAY, ...S.pays.filter(p => !PREF.pays.length || PREF.pays.includes(p.id))];
+  const days = []; for (let k = 0; k < 7; k++) { const at = dayInfo(k); if (!PREF.days.length || PREF.days.includes(at.dow)) days.push(at); }
+  let best = null;
+  S.prices.forEach(p => {
+    const pres = getPres(p.presId), st = getStore(p.storeId);
+    if (!pres || pres.prodId !== prod.id || !st || st.archived) return;
+    if (PREF.stores.length && !PREF.stores.includes(st.id)) return;
+    if (PREF.maxAge && ageDays(p.fecha) > PREF.maxAge) return;
+    days.forEach(at => pays.forEach(pay => {
+      const c = calc(p, pay, pres, at), b = PREF.allowMulti ? c.best : { ...c.one, N: 1 };
+      if (!best || b.per < best.b.per - 0.005) best = { p, pres, c, b };
+    }));
+  });
+  return best;
+}
+/* Referencia: comprarlo hoy en la tienda donde estás, con el medio de pago elegido */
+function planBase(prod) {
+  const vpay = getPay(S.visit.payId); let base = null;
+  S.prices.filter(p => p.storeId === S.visit.storeId && getPres(p.presId)?.prodId === prod.id).forEach(p => {
+    const c = calc(p, vpay), b = PREF.allowMulti ? c.best : { ...c.one, N: 1 };
+    if (!base || b.per < base.b.per) base = { p, c, b };
+  });
+  return base;
+}
+function planItems() {
+  const q = fold(PREF.q);
+  return S.prods.filter(pr => !q || matchAll(q, pr.name + ' ' + S.pres.filter(x => x.prodId === pr.id).map(x => presLabel(x)).join(' ')))
+    .map(prod => { const best = planBest(prod), base = planBase(prod); return { prod, best, base, save: best && base ? 1 - best.b.per / base.b.per : -1 }; });
+}
+function prefChip(group, val, label) {
+  const on = PREF[group].includes(val);
+  return `<button type="button" class="chip sm" aria-pressed="${on}" data-act="pref" data-g="${group}" data-v="${val}">${label}</button>`;
+}
+function renderPlanificar() {
+  const el = $('#view-planificar');
+  const tabs = `<div class="dtabs" role="tablist" aria-label="Planificar"><button role="tab" class="chip sm" aria-pressed="${PL.tab === 'sug'}" aria-selected="${PL.tab === 'sug'}" data-act="pltab" data-t="sug">Sugerencias</button>${typeof renderListas === 'function' ? `<button role="tab" class="chip sm" aria-pressed="${PL.tab === 'list'}" aria-selected="${PL.tab === 'list'}" data-act="pltab" data-t="list">Listas de compra</button>` : ''}</div>`;
+  if (PL.tab === 'list' && typeof renderListas === 'function') { el.innerHTML = tabs + renderListas(); return; }
+  const nF = (PREF.stores.length ? 1 : 0) + (PREF.days.length ? 1 : 0) + (PREF.pays.length ? 1 : 0) + (PREF.maxAge !== PREF_DEF.maxAge ? 1 : 0) + (!PREF.allowMulti ? 1 : 0);
+  let h = tabs + `<div class="dhead"><h2>Sugerencias de compra</h2></div>
+    <div class="small muted">Para cada producto, la mejor opción de los próximos 7 días según tus preferencias, comparada con comprarlo hoy en ${esc(getStore(S.visit.storeId)?.name || 'tu tienda')} con ${esc(getPay(S.visit.payId).name)}.</div>
+    <details class="sec" data-pref="1" ${PREF.open ? 'open' : ''}><summary>Preferencias ${nF ? `<span class="pill p-warn">${nF} activa${nF === 1 ? '' : 's'}</span>` : '<span class="small muted">(todas las opciones)</span>'}</summary><div class="body">
+      <div class="fl">Tiendas a las que vas (ninguna marcada = todas)<div class="chips">${activeStores().map(s2 => prefChip('stores', s2.id, esc(s2.name))).join('')}</div></div>
+      <div class="fl">Días en que podés comprar (ninguno = todos)<div class="chips">${[1, 2, 3, 4, 5, 6, 0].map(d => prefChip('days', d, DOW[d])).join('')}</div></div>
+      <div class="fl">Medios de pago que querés usar (ninguno = todos)<div class="chips">${S.pays.map(p => prefChip('pays', p.id, esc(p.name))).join('')}</div></div>
+      <div class="fl">Antigüedad máxima del precio<div class="chips">${[[7, '1 semana'], [14, '2 semanas'], [30, '1 mes'], [60, '2 meses'], [0, 'Sin límite']].map(([v, l]) => `<button type="button" class="chip sm" aria-pressed="${PREF.maxAge === v}" data-act="prefage" data-v="${v}">${l}</button>`).join('')}</div></div>
+      <label class="switch" for="prefMulti"><input type="checkbox" id="prefMulti" data-prefmulti="1" ${PREF.allowMulti ? 'checked' : ''}> Aceptar promos que exigen llevar varias unidades</label>
+      <button class="btn sm ghost" data-act="prefreset">Restablecer preferencias</button>
+      <div class="small muted">Se guardan en este celular.</div></div></details>
+    <input type="search" class="search" data-planq="1" value="${esc(PREF.q)}" placeholder="Buscar producto o marca" aria-label="Buscar producto o marca" autocomplete="off">`;
+  h += `<div id="planList" style="display:grid;gap:10px">${planListHTML()}</div>`;
+  el.innerHTML = h;
+}
+function planListHTML() {
+  const items = planItems();
+  const ok = items.filter(x => x.best), saves = ok.filter(x => x.save > 0.005);
+  const visits = new Set(ok.map(x => x.best.p.storeId + '|' + x.best.c.at.k));
+  let h = items.length ? `<div class="tiles"><div class="tile main"><span class="lbl">Productos con sugerencia</span><span class="val">${ok.length} de ${items.length}</span></div>
+    <div class="tile"><span class="lbl">Ahorran vs hoy acá</span><span class="val" style="color:var(--good)">${saves.length}</span></div>
+    <div class="tile"><span class="lbl">Visitas sugeridas</span><span class="val">${visits.size}</span></div></div>` : '';
+  h += (items.length > 1 ? sortBar('plan') : '') + sortList('plan', items).map(x => {
+    const u = baseOf(x.prod).short;
+    if (!x.best) return `<article class="item"><div><div class="it-title">${esc(x.prod.name)}</div><div class="small muted">Sin precios que cumplan tus preferencias (tiendas, días, medios o antigüedad).</div></div></article>`;
+    const { p, pres, c, b } = x.best, at = c.at, now = at.k === 0 && p.storeId === S.visit.storeId;
+    const sv = x.save, svTxt = x.base ? (sv > 0.005 ? `<span style="color:var(--good);font-weight:700">−${nf0.format(sv * 100)}% vs hoy acá (${money(x.base.b.per)}/${u})</span>` : now ? '<span class="muted">Es la opción de hoy acá</span>' : '<span class="muted">Igual que hoy acá</span>') : '<span class="muted">Sin precio hoy acá para comparar</span>';
+    return `<article class="item ${sv > 0.05 ? 's-good' : sv > 0.005 ? 's-warn' : ''}">
+      <div><div class="it-title">${esc(x.prod.name)}</div>
+        <div class="it-meta"><span class="pill ${at.k === 0 ? 'p-good' : 'p-warn'}">${at.k === 0 ? 'Hoy' : dayTxt(at).replace(/^el /, '').replace(/^./, m => m.toUpperCase())}</span><span class="store">${esc(getStore(p.storeId).name)}</span><span class="pill p-neutral">${esc(conPay({ ...c, best: b }).replace(/^con /, ''))}</span></div></div>
+      <div class="it-price"><div class="big">${money(b.per)}<small>/${u}</small></div><span class="small" style="font-weight:700">${payUnits(b, b.N)}</span></div>
+      <div class="it-sub">${esc(presLabel(pres))}${b.N > 1 ? ` · llevando ${b.N} (${esc(c.pr.label)})` : c.pr.on ? ` · ${esc(c.pr.label)}` : ''} · precio de ${ageTxt(p.fecha)}<br>${svTxt}</div>
+      <div class="it-actions"><button class="btn sm ghost" data-act="gocmp" data-id="${x.prod.id}">Ver en Comparar</button>${typeof addToListBtn === 'function' ? addToListBtn(x) : ''}</div>
+    </article>`;
+  }).join('');
+  return h || '<div class="card muted">Todavía no hay productos cargados.</div>';
+}
+
 /* ============ navegación ============ */
-const VIEWS = ['cargar', 'comparar', 'carrito', 'datos'];
-const R = { cargar: renderCargar, comparar: renderComparar, carrito: renderCarrito, datos: renderDatos };
+const VIEWS = ['cargar', 'comparar', 'planificar', 'carrito', 'datos'];
+const R = { cargar: renderCargar, comparar: renderComparar, planificar: renderPlanificar, carrito: renderCarrito, datos: renderDatos };
 const cur = () => { const v = location.hash.slice(1); return VIEWS.includes(v) ? v : 'cargar'; };
 function render() {
   renderVisit(); renderSyncBtn(); const v = cur();
@@ -1294,6 +1381,10 @@ const ACT = {
   editpres: el => { startEdit('pres', el.dataset.id); go('datos'); scrollForm(); },
   edcancel: () => { ED = null; renderDatos(); },
   edsave: () => edSave(),
+  pltab: el => { PL.tab = el.dataset.t; renderPlanificar(); },
+  pref: el => { const g = el.dataset.g, v = g === 'days' ? +el.dataset.v : el.dataset.v; PREF[g] = PREF[g].includes(v) ? PREF[g].filter(x => x !== v) : [...PREF[g], v]; savePref(); renderPlanificar(); },
+  prefage: el => { PREF.maxAge = +el.dataset.v; savePref(); renderPlanificar(); },
+  prefreset: () => { PREF = { ...PREF_DEF, open: true }; savePref(); renderPlanificar(); },
   sync: () => { if (SYUI.result === 'err' && !syncing) toast('Último intento: ' + SYUI.msg + '. Reintentando…', 3500); syncNow(false); },
   dgo: el => { const s2 = el.dataset.s; if (s2 !== DV.sec) { ED = null; DV.adding = false; } if (s2 !== 'prices') DV.old = false; DV.sec = s2; renderDatos(); window.scrollTo(0, 0); },
   smerge: el => { SMERGE = el.dataset.id; renderDatos(); },
@@ -1438,6 +1529,8 @@ document.addEventListener('input', e => {
   else if (t.dataset.np) { NP[t.dataset.np] = t.value; }
   else if (t.dataset.ed && ED) { ED.d[t.dataset.ed] = t.type === 'checkbox' ? t.checked : t.value; }
   else if (t.dataset.edp && ED) { ED.d.promo[t.dataset.edp] = t.value; }
+  else if (t.dataset.planq) { PREF.q = t.value; savePref(); const c2 = $('#planList'); if (c2) c2.innerHTML = planListHTML(); }
+  else if (t.dataset.prefmulti) { PREF.allowMulti = t.checked; savePref(); renderPlanificar(); }
   else if (t.dataset.q) { Q[t.dataset.q] = t.value; const c = $('#list-' + t.dataset.q); if (c) c.innerHTML = t.dataset.q === 'pres' ? presListHTML() : priceListHTML(); }
   else if (t.dataset.syncauto) { SYNC.auto = t.checked; saveSync(); }
   else if (t.dataset.sync) { SYNC[t.dataset.sync] = t.value.trim(); if (t.dataset.sync === 'url') { SYNC.last = ''; SYNC.lastOk = ''; SYNC.planilla = ''; } saveSync(); renderSyncBtn(); }
@@ -1448,7 +1541,7 @@ document.addEventListener('input', e => {
     touch(p); save(); renderVisit();
   }
 });
-document.addEventListener('toggle', e => { const d = e.target; if (d.dataset && d.dataset.more) F.more = d.open; if (d.dataset && d.dataset.sec) d.open ? OPEN.add(d.dataset.sec) : OPEN.delete(d.dataset.sec); }, true);
+document.addEventListener('toggle', e => { const d = e.target; if (d.dataset && d.dataset.pref) { PREF.open = d.open; savePref(); } if (d.dataset && d.dataset.more) F.more = d.open; if (d.dataset && d.dataset.sec) d.open ? OPEN.add(d.dataset.sec) : OPEN.delete(d.dataset.sec); }, true);
 document.addEventListener('change', e => {
   const t = e.target, a = t.dataset.chg;
   if (t.id === 'fileImp' && t.files[0]) { t.files[0].text().then(importData); return; }
