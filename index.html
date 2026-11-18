@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.5.10">
+<meta name="app-version" content="v0.5.11">
 <title>Góndola Comparador</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#132033">
@@ -229,7 +229,7 @@ details.more summary{cursor:pointer;color:var(--muted)}
 <div class="app">
   <header class="top">
     <div class="syncbar" id="syncBar" hidden aria-hidden="true"><i></i></div>
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.5.10</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.5.11</button></span></div>
     <div class="symsg" id="syncMsg" role="status" hidden></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
@@ -307,7 +307,7 @@ function mergeHist(keep, lose) {
   if ((lose.fecha || '') <= (keep.fecha || '')) keep.hist = [...(keep.hist || []), ...(lose.hist || []), { precio: lose.precio, fecha: lose.fecha }].sort((a, b) => (a.fecha < b.fecha ? -1 : 1)).slice(-12);
 }
 const contentOf = pres => { const b = baseOf(getProd(pres.prodId)); return pres.cont * (b.units[pres.unit] ?? 1) * (pres.pack || 1); };
-const presLabel = pres => `${pres.marca}${pres.desc ? ' ' + pres.desc : ''} · ${pres.pack > 1 ? pres.pack + ' × ' : ''}${nfx.format(pres.cont)} ${pres.unit}`;
+const presLabel = pres => `${pres.marca || 'Sin marca'}${pres.desc ? ' ' + pres.desc : ''} · ${pres.cont > 0 ? `${pres.pack > 1 ? pres.pack + ' × ' : ''}${nfx.format(pres.cont)} ${pres.unit}` : 'contenido pendiente'}`;
 
 /* ============ motor de promociones ============
    Toda promo se expresa como: "llevando N unidades, el total es T".  */
@@ -444,7 +444,7 @@ function migrate(d) {
   const t = nowISO();
   COLLS.forEach(c => (d[c] = d[c] || []).forEach(r => { r.upd = r.upd || t; }));
   d.pays.forEach(p => { if (p.minimo === undefined) p.minimo = null; });
-  d.tomb = d.tomb || []; d.need = d.need || [];
+  d.tomb = d.tomb || []; d.need = d.need || []; d.remind = d.remind || [];
   // Listas: de cantidad en kg/L a unidades de una presentación
   d.need.forEach(n => {
     if (n.units != null && n.presId) return;
@@ -463,7 +463,7 @@ let F; // formulario de carga
 function resetForm(prodId) {
   const pid = prodId ?? F?.prodId ?? S.prods[0]?.id ?? '__new';
   F = { prodId: pid, presId: 'new', ean: '', marca: '', desc: '', cont: '', unit: defUnit(getProd(pid)), pack: '1', precio: '', promo: { t: 'none' }, acum: false,
-    storeId: F?.storeId || S.visit.storeId, fecha: F?.fecha || todayISO(), more: !!F?.more, setVisit: false, hasta: '' };
+    storeId: F?.storeId || S.visit.storeId, fecha: F?.fecha || todayISO(), more: !!F?.more, setVisit: false, hasta: '', nota: '' };
 }
 /* Tienda del formulario de carga: por defecto "Estoy en", pero se puede cambiar solo para esta carga */
 const formStore = () => { const st = getStore(F.storeId); return st && !st.archived ? st.id : S.visit.storeId; };
@@ -544,7 +544,8 @@ function buildTemp() {
   return { pres, price, prod };
 }
 function fillFromPres(pres) {
-  Object.assign(F, { prodId: pres.prodId, presId: pres.id, ean: pres.ean || '', marca: pres.marca, desc: pres.desc || '', cont: nfx.format(pres.cont), unit: pres.unit, pack: String(pres.pack || 1), precio: '' });
+  Object.assign(F, { prodId: pres.prodId, presId: pres.id, ean: pres.ean || '', marca: pres.marca === 'Sin marca' ? '' : pres.marca, desc: pres.desc || '', cont: pres.cont > 0 ? nfx.format(pres.cont) : '', unit: pres.unit, pack: String(pres.pack || 1), precio: '', nota: pres.nota || '' });
+  if (pres.pendPrecio && pres.pendPrecio.storeId === formStore()) F.precio = nfx.format(pres.pendPrecio.precio);
   const ex = S.prices.find(x => x.presId === pres.id && x.storeId === formStore());
   F.promo = ex ? { ...ex.promo } : { t: 'none' }; F.acum = ex ? !!ex.acum : false; F.hasta = ex?.hasta || '';
 }
@@ -591,6 +592,8 @@ function renderCargar() {
   }
   const prod = getProd(F.prodId), b = baseOf(prod);
   const fsid = formStore(), other = fsid !== S.visit.storeId, fpay = formPay();
+  const remHere = S.remind.filter(m => m.storeId === fsid && getPres(m.presId) && !S.prices.some(p => p.presId === m.presId && p.storeId === fsid && p.fecha >= (m.fecha || '')));
+  if (remHere.length) h += `<div class="note" style="border:2px solid var(--warn)"><b>Tenés ${remHere.length} precio${remHere.length === 1 ? '' : 's'} pendiente${remHere.length === 1 ? '' : 's'} en ${esc(getStore(fsid).name)}:</b> <div class="chips" style="margin-top:6px">${remHere.map(m => `<button class="chip sm" data-act="remgo" data-id="${m.id}">${esc(presLabel(getPres(m.presId)))}</button>`).join('')}</div></div>`;
   h += `<div class="card"><div class="storebar${other ? ' other' : ''}">
       <label class="fl" for="fStore">Cargando en<select id="fStore" data-chg="fstore">${[getStore(S.visit.storeId), ...activeStores().filter(x => x.id !== S.visit.storeId).sort((a, b) => a.name.localeCompare(b.name, 'es'))].filter(Boolean).map(x => `<option value="${x.id}" ${x.id === fsid ? 'selected' : ''}>${esc(x.name)}${x.id === S.visit.storeId ? ' (Estoy en)' : ''}</option>`).join('')}</select></label>
       <div class="small muted">Pago con ${esc(fpay.name)}${fpay.pct ? ' · ' + fpay.pct + '%' : ''}${other ? ' (el que corresponde a esta tienda)' : ''}</div>
@@ -605,7 +608,7 @@ function renderCargar() {
   const presList = S.pres.filter(x => x.prodId === F.prodId);
   const exHere = F.presId !== 'new' ? S.prices.find(x => x.presId === F.presId && x.storeId === fsid) : null;
   const units = Object.keys(b.units);
-  const lock = F.presId !== 'new' ? 'disabled' : '';
+  const lock = F.presId !== 'new' && !getPres(F.presId)?.pend ? 'disabled' : '';
   h += `<div class="row"><label class="fl grow" for="fEan">Código de barras (opcional)<input id="fEan" data-f="ean" inputmode="numeric" ${lock} value="${esc(F.ean)}" placeholder="Ej.: 7791234000017"></label><button type="button" class="btn ghost" style="align-self:end" data-act="scan" ${lock}>Escanear</button></div>
     <label class="fl" for="fPres">Presentación<select id="fPres" data-chg="fpres"><option value="new">Nueva presentación</option>${sortList('selPres', presList).map(x => `<option value="${x.id}" ${x.id === F.presId ? 'selected' : ''}>${esc(presLabel(x))}</option>`).join('')}</select></label>${presList.length > 1 ? sortBar('selPres') : ''}
     ${F.presId !== 'new' ? presStoresHTML(F.presId, fsid) : ''}
@@ -628,7 +631,10 @@ function renderCargar() {
       <label class="fl" for="fFecha" style="margin-top:8px">Fecha del precio (si lo cargás desde un ticket o un folleto)<input type="date" id="fFecha" data-f="fecha" value="${esc(F.fecha)}" max="${todayISO()}"></label>
       ${F.fecha !== todayISO() ? `<button type="button" class="btn sm ghost" data-act="fhoy">Volver a hoy</button>` : ''}</details>
     <div id="preview" class="preview" aria-live="polite"></div>
-    <button class="btn primary block" data-act="save">Guardar precio</button></div>`;
+    <label class="fl" for="fNota">Nota (opcional)<input id="fNota" data-f="nota" value="${esc(F.nota || '')}" placeholder="Ej.: góndola 5, al lado de los vermut" autocomplete="off"></label>
+    <button class="btn primary block" data-act="save">Guardar precio</button>
+    <button class="btn ghost block" data-act="savepend">Guardar como pendiente</button>
+    <div class="small muted">"Pendiente" guarda lo que tengas (alcanza con el producto) para completarlo después desde Datos → Pendientes.</div></div>`;
   el.innerHTML = h; updatePreview();
 }
 function newProdForm(act) {
@@ -725,7 +731,7 @@ function renderComparar() {
   const herePres = new Set(S.prices.filter(p => p.storeId === here).map(p => p.presId));
   const missing = S.pres.filter(x => x.prodId === prod.id && !herePres.has(x.id));
   if (missing.length) h += `<div class="card"><h3>Sin precio en ${esc(getStore(here).name)}</h3><div class="small muted">Ya las conocés de otra tienda: solo falta tipear el precio de acá.</div>
-    ${missing.map(x => `<div class="drow"><span>${esc(presLabel(x))}</span><button class="btn sm" data-act="loadpres" data-id="${x.id}">Cargar</button></div>`).join('')}</div>`;
+    ${missing.map(x => `<div class="drow"><span>${esc(presLabel(x))}</span><span class="btns">${S.remind.some(m => m.presId === x.id && m.storeId === here) ? '<span class="pill p-warn">Recordatorio</span>' : `<button class="btn sm ghost" data-act="remadd" data-id="${x.id}">Recordar</button>`}<button class="btn sm" data-act="loadpres" data-id="${x.id}">Cargar</button></span></div>`).join('')}</div>`;
   h += `<button class="btn ghost block" data-act="loadnew" data-id="${prod.id}">+ Cargar otra presentación de ${esc(prod.name)}</button>`;
   el.innerHTML = h;
 }
@@ -950,7 +956,7 @@ function norm(c, r) {
   if (c === 'prices') o.acum = o.acum === true || /^(true|verdadero|si|sí)$/i.test(String(o.acum));
   if (c === 'prices') o.hasta = /^\d{4}-\d{2}-\d{2}$/.test(String(o.hasta || '')) ? o.hasta : '';
   if (c === 'stores') o.archived = o.archived === true || /^(true|verdadero|si|sí)$/i.test(String(o.archived));
-  if (c === 'pres') o.pack = Math.max(1, Math.round(o.pack || 1));
+  if (c === 'pres') { o.pack = Math.max(1, Math.round(o.pack || 1)); o.pend = o.pend === true || /^(true|verdadero)$/i.test(String(o.pend)); o.nota = String(o.nota || ''); }
   if (c === 'pays' && !o.modo) o.modo = 'caja';
   return o;
 }
@@ -975,7 +981,7 @@ async function syncTest() {
   catch (e) { toast('No se pudo conectar: ' + e.message + '.', 5000); }
 }
 /* Sincronizar: 1) leer la planilla, 2) detectar conflictos y preguntar, 3) enviar y recibir todo */
-const SFIELDS = { stores: ['name', 'archived'], pays: ['name', 'pct', 'minimo', 'tope', 'usado', 'dias', 'stores', 'modo'], prods: ['name', 'base'], pres: ['prodId', 'marca', 'desc', 'cont', 'unit', 'pack', 'ean'], prices: ['presId', 'storeId', 'precio', 'promo', 'acum', 'fecha', 'hasta', 'hist'] };
+const SFIELDS = { stores: ['name', 'archived'], pays: ['name', 'pct', 'minimo', 'tope', 'usado', 'dias', 'stores', 'modo'], prods: ['name', 'base'], pres: ['prodId', 'marca', 'desc', 'cont', 'unit', 'pack', 'ean', 'pend', 'nota'], prices: ['presId', 'storeId', 'precio', 'promo', 'acum', 'fecha', 'hasta', 'hist'] };
 const ENT = { stores: 'Tienda', pays: 'Medio de pago', prods: 'Producto', pres: 'Presentación', prices: 'Precio' };
 /* Comparación tolerante: vacío = inexistente, "35" = 35, mismo objeto aunque cambie el orden de sus claves */
 function canon(v) {
@@ -1205,7 +1211,7 @@ function presListHTML() {
   const h = [...S.prods].sort((a, b) => a.name.localeCompare(b.name, 'es')).map(prod => {
     let xs = S.pres.filter(x => x.prodId === prod.id);
     if (q) xs = xs.filter(x => isEd('pres', x.id) || matchAll(q, `${presLabel(x)} ${x.ean || ''} ${prod.name}`));
-    return xs.length ? `<h3>${esc(prod.name)}</h3>` + sortList('dPres', xs).map(x => isEd('pres', x.id) ? presForm(x) : `<div class="drow"><span>${esc(presLabel(x))}<br><span class="small muted">${x.ean ? 'EAN ' + esc(x.ean) + ' · ' : ''}${nPricesPres(x)} precios</span></span><span class="btns">${editBtn('pres', x.id)}<button class="btn sm danger" aria-label="Eliminar presentación" data-act="delpres" data-id="${x.id}" data-confirm="1">×</button></span></div>`).join('') : '';
+    return xs.length ? `<h3>${esc(prod.name)}</h3>` + sortList('dPres', xs).map(x => isEd('pres', x.id) ? presForm(x) : `<div class="drow"><span>${esc(presLabel(x))}<br><span class="small muted">${x.ean ? 'EAN ' + esc(x.ean) + ' · ' : ''}${nPricesPres(x)} precios${x.pend || !presOk(x) ? ' · <span class="pill p-warn">pendiente</span>' : ''}</span></span><span class="btns">${editBtn('pres', x.id)}<button class="btn sm danger" aria-label="Eliminar presentación" data-act="delpres" data-id="${x.id}" data-confirm="1">×</button></span></div>`).join('') : '';
   }).join('');
   return h || `<span class="muted">${q ? 'Ninguna presentación coincide con la búsqueda.' : 'Todavía no hay presentaciones.'}</span>`;
 }
@@ -1223,13 +1229,14 @@ function priceListHTML() {
 /* ============ Datos: portada de tarjetas + pantalla por entidad ============ */
 const DV = { sec: null, adding: false, old: false, keep: false };
 const OLD_DAYS = 21;
-const DSECS = [['pays', 'Pagos', 'Medios de pago y beneficios'], ['stores', 'Tiendas', 'Tiendas'], ['prods', 'Productos', 'Productos comparables'], ['pres', 'Presentaciones', 'Presentaciones'], ['prices', 'Precios', 'Precios cargados'], ['ajustes', 'Ajustes', 'Ajustes']];
+const DSECS = [['pays', 'Pagos', 'Medios de pago y beneficios'], ['stores', 'Tiendas', 'Tiendas'], ['prods', 'Productos', 'Productos comparables'], ['pres', 'Presentaciones', 'Presentaciones'], ['prices', 'Precios', 'Precios cargados'], ['pend', 'Pendientes', 'Pendientes'], ['ajustes', 'Ajustes', 'Ajustes']];
 const DICON = {
   pays: '<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10h18M7 15h3"/>',
   stores: '<path d="M4 10h16l-1.5-5h-13zM5 10v9h14v-9M10 19v-5h4v5"/>',
   prods: '<path d="M4 8l8-4 8 4-8 4zM4 8v8l8 4 8-4V8M12 12v8"/>',
   pres: '<path d="M9 3h6v3l2 3v12H7V9l2-3z"/><path d="M7 13h10"/>',
   prices: '<path d="M3 12l9-9h8v8l-9 9z"/><circle cx="16" cy="8" r="1.5"/>',
+  pend: '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9zM9 12h6M9 16h4"/>',
   ajustes: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/>'
 };
 const dIcon = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${DICON[k]}</svg>`;
@@ -1276,6 +1283,7 @@ function datosHome(demo) {
     ${tile('pays', 'Pagos', S.pays.length, `${hoy} aplica${hoy === 1 ? '' : 'n'} hoy`, topeBajo ? alertBtn('dgo', `${topeBajo} con tope casi agotado`, 'pays') : '')}
     ${(() => { const a = activeStores().length, ar = S.stores.length - a; return tile('stores', 'Tiendas', a, `activa${a === 1 ? '' : 's'}${ar ? ` · ${ar} archivada${ar === 1 ? '' : 's'}` : ''} · ${S.prices.length} precios`); })()}
     ${tile('prods', 'Productos', S.prods.length, `${S.pres.length} presentaciones`)}
+    ${(() => { const P = pendData(); return tile('pend', 'Pendientes', P.n, P.n ? `${P.pres.length} por completar · ${P.rem.length} precios para cargar` : 'Nada pendiente', P.n ? alertBtn('dgo', `${P.n} cargas pendientes`, 'pend') : ''); })()}
     ${tile('pres', 'Presentaciones', S.pres.length, sinEan ? `${sinEan} sin código de barras` : 'Todas con código de barras')}
     ${tile('prices', 'Precios', S.prices.length, `${fresh} actualizado${fresh === 1 ? '' : 's'} en la última semana`, old ? alertBtn('dold', `${old} con más de 3 semanas`) : '', true)}
     ${tile('ajustes', 'Ajustes', '', `Sincronización: ${on ? (SYNC.conflicts ? `⚠ ${SYNC.conflicts} conflicto${SYNC.conflicts === 1 ? '' : 's'}` : `${agoTxt(SYNC.lastOk)}${pend ? ` · ${pend} sin enviar` : ''}`) : 'sin configurar'} · Respaldo · Cómo calcula`, '', true)}
@@ -1283,11 +1291,12 @@ function datosHome(demo) {
 }
 function datosSection(B, demo) {
   const k = DV.sec, meta = DSECS.find(x => x[0] === k);
-  const counts = { pays: S.pays.length, stores: S.stores.length, prods: S.prods.length, pres: S.pres.length, prices: S.prices.length };
+  const counts = { pend: pendData().n, pays: S.pays.length, stores: S.stores.length, prods: S.prods.length, pres: S.pres.length, prices: S.prices.length };
   let h = `<div class="dnav"><button class="btn sm ghost" data-act="dhome">← Datos</button><div class="dtabs" role="tablist" aria-label="Entidades">${DSECS.map(([id, l]) => `<button role="tab" class="chip sm" aria-selected="${id === k}" aria-pressed="${id === k}" data-act="dgo" data-s="${id}">${l}${counts[id] != null ? ` <span class="muted">${counts[id]}</span>` : ''}</button>`).join('')}</div></div>`;
   const add = { pays: '+ Agregar medio', stores: '+ Agregar tienda', prods: '+ Agregar producto', pres: '+ Agregar en Cargar', prices: '+ Cargar precio' }[k];
   h += `<div class="dhead"><h2>${dIcon(k)}${meta[2]}</h2>${add ? `<button class="btn sm primary" data-act="dadd">${add}</button>` : ''}</div>`;
   if (k === 'ajustes') return h + demo + B.sync + B.calc + B.backup;
+  if (k === 'pend') return h + `<div class="card dbody">${pendBody()}</div>`;
   if (k === 'prices' && DV.old) h += `<div class="note">Mostrando solo precios con más de 3 semanas, los más viejos primero. <button class="btn sm ghost" data-act="dold0">Ver todos</button></div>`;
   if (DV.adding && k === 'stores') h += `<div class="paybox card"><h3>Nueva tienda</h3><input id="newStore" aria-label="Nombre de la tienda nueva" placeholder="Cadena · sucursal"><div class="btns"><button class="btn sm primary" data-act="addstore">Agregar tienda</button><button class="btn sm ghost" data-act="daddx">Cancelar</button></div></div>`;
   if (DV.adding && k === 'prods') h += `<div class="card">${newProdForm('createprod2')}<button class="btn sm ghost" data-act="daddx">Cancelar</button></div>`;
@@ -1482,7 +1491,7 @@ function renderListas() {
   const P = buildPlan(), notIn = S.prods.filter(pr => !S.need.some(n => n.prodId === pr.id && !n.done));
   let h = `<div class="dhead"><h2>Listas de compra</h2></div>
     <div class="card"><h3>Qué necesito</h3>
-    ${S.need.filter(n => !n.done && getProd(n.prodId)).map(n => { const pr = getProd(n.prodId), u = baseOf(pr).short, ps = S.pres.filter(x => x.prodId === n.prodId); return `<div class="needbox">
+    ${S.need.filter(n => !n.done && getProd(n.prodId)).map(n => { const pr = getProd(n.prodId), u = baseOf(pr).short, ps = S.pres.filter(x => x.prodId === n.prodId && presOk(x)); return `<div class="needbox">
       <div class="row" style="justify-content:space-between"><b>${esc(pr.name)}</b><button class="btn sm ghost" aria-label="Quitar de la lista" data-act="needdel" data-id="${n.id}">×</button></div>
       <div class="row"><select aria-label="Presentación" data-needpres="${n.id}" class="grow">${ps.map(x => `<option value="${x.id}" ${x.id === n.presId ? 'selected' : ''}>${esc(presLabel(x))}</option>`).join('')}</select>
         <span class="stepper"><button aria-label="Una unidad menos" data-act="needunits" data-id="${n.id}" data-d="-1">−</button><span>× ${n.units}</span><button aria-label="Una unidad más" data-act="needunits" data-id="${n.id}" data-d="1">+</button></span></div>
@@ -1572,6 +1581,38 @@ function simForm(r, rows, u) {
     <div class="btns"><button class="btn sm primary" data-act="simapply" data-id="${r.p.id}">Aplicar</button><button class="btn sm ghost" data-act="simcancel">Cancelar</button></div></div>`;
 }
 
+/* ============ Pendientes: cargas incompletas y recordatorios de precio ============ */
+const presOk = x => !!x && x.cont > 0;   // sin contenido no se puede comparar
+const pendReasons = x => {
+  const r = [];
+  if (!(x.cont > 0)) r.push('contenido');
+  if (!x.marca || x.marca === 'Sin marca') r.push('marca');
+  if (!S.prices.some(p => p.presId === x.id)) r.push('precio');
+  return r;
+};
+function pendData() {
+  // Los recordatorios ya cumplidos (hay precio cargado en esa tienda) se limpian solos
+  const before = S.remind.length;
+  S.remind = S.remind.filter(m => getPres(m.presId) && getStore(m.storeId) && !S.prices.some(p => p.presId === m.presId && p.storeId === m.storeId && p.fecha >= (m.fecha || '')));
+  if (S.remind.length !== before) save();
+  const pres = S.pres.filter(x => x.pend || !presOk(x));
+  const prods = S.prods.filter(p => !S.pres.some(x => x.prodId === p.id));
+  return { pres, prods, rem: S.remind.filter(m => !getStore(m.storeId).archived), n: pres.length + prods.length + S.remind.length };
+}
+function pendBody() {
+  const P = pendData();
+  if (!P.n) return '<div class="muted">Nada pendiente.</div>';
+  let h = '';
+  if (P.pres.length) h += `<h3>Presentaciones por completar (${P.pres.length})</h3>` + P.pres.map(x => `<div class="drow"><span><b>${esc(getProd(x.prodId)?.name || '')}</b> · ${esc(presLabel(x))}<br><span class="small"><span class="pill p-warn">Falta ${pendReasons(x).join(', ') || 'revisar'}</span>${x.pendPrecio ? ` <span class="small muted">precio anotado ${money(x.pendPrecio.precio)} en ${esc(getStore(x.pendPrecio.storeId)?.name || '')}</span>` : ''}${x.nota ? `<br><span class="muted">Nota: ${esc(x.nota)}</span>` : ''}</span></span><span class="btns"><button class="btn sm primary" data-act="pendgo" data-id="${x.id}">Completar</button>${!S.prices.some(p => p.presId === x.id) ? `<button class="btn sm danger" aria-label="Descartar" data-act="delpres" data-id="${x.id}" data-confirm="1">×</button>` : ''}</span></div>`).join('');
+  if (P.rem.length) h += `<h3>Precios para cargar (${P.rem.length})</h3>` + P.rem.map(m => { const x = getPres(m.presId); return `<div class="drow"><span><b>${esc(presLabel(x))}</b><br><span class="small muted">en ${esc(getStore(m.storeId).name)}${m.nota ? ' · ' + esc(m.nota) : ''}</span></span><span class="btns"><button class="btn sm primary" data-act="remgo" data-id="${m.id}">Cargar</button><button class="btn sm ghost" aria-label="Quitar recordatorio" data-act="remdel" data-id="${m.id}">×</button></span></div>`; }).join('');
+  if (P.prods.length) h += `<h3>Productos sin presentaciones (${P.prods.length})</h3>` + P.prods.map(p => `<div class="drow"><span>${esc(p.name)}</span><button class="btn sm" data-act="loadnew" data-id="${p.id}">Cargar presentación</button></div>`).join('');
+  return h;
+}
+function addRemind(presId, storeId, nota) {
+  if (S.remind.some(m => m.presId === presId && m.storeId === storeId)) return false;
+  S.remind.push({ id: uid(), presId, storeId, nota: nota || '', fecha: todayISO() }); return true;
+}
+
 /* ============ navegación ============ */
 const VIEWS = ['cargar', 'comparar', 'planificar', 'carrito', 'datos'];
 const R = { cargar: renderCargar, comparar: renderComparar, planificar: renderPlanificar, carrito: renderCarrito, datos: renderDatos };
@@ -1596,6 +1637,7 @@ const ACT = {
     if (t.pres.ean && S.pres.some(x => x.ean === t.pres.ean && x.id !== pres?.id)) return toast('Ese código de barras ya pertenece a otra presentación');
     if (!pres) { pres = touch({ ...t.pres, id: uid() }); S.pres.push(pres); }
     else if (F.presId === 'new' && !pres.ean && t.pres.ean) { pres.ean = t.pres.ean; touch(pres); }
+    else if (pres.pend) { Object.assign(pres, { marca: t.pres.marca, desc: t.pres.desc, cont: t.pres.cont, unit: t.pres.unit, pack: t.pres.pack, ean: t.pres.ean || pres.ean, pend: false, nota: (F.nota || '').trim() }); delete pres.pendPrecio; touch(pres); }
     let price = S.prices.find(x => x.presId === pres.id && x.storeId === t.price.storeId);
     const np = { ...t.price, presId: pres.id };
     let msg = '';
@@ -1605,12 +1647,34 @@ const ACT = {
       msg = `Ese precio es más viejo que el vigente (${ageTxt(price.fecha)}): se guardó en el historial.`;
     } else if (price) { const hist = [...(price.hist || []), { precio: price.precio, fecha: price.fecha }].slice(-12); Object.assign(price, np, { id: price.id, hist }); touch(price); }
     else { price = touch({ ...np, id: uid(), hist: [] }); S.prices.push(price); }
+    S.remind = S.remind.filter(m => !(m.presId === pres.id && m.storeId === t.price.storeId));
     if (F.setVisit && t.price.storeId !== S.visit.storeId) { S.visit.storeId = t.price.storeId; F.storeId = t.price.storeId; }
     save(); lastSaved = price.id; CMP.prodId = pres.prodId; resetForm(pres.prodId); render(); window.scrollTo(0, 0);
     if (msg) toast(msg, 5000);
   },
   fsetstore: el => { F.storeId = el.dataset.id; F.setVisit = false; const keep = F.presId; if (keep !== 'new') fillFromPres(getPres(keep)); renderCargar(); $('#fPrecio')?.focus(); },
   fhoy: () => { F.fecha = todayISO(); renderCargar(); },
+  savepend: () => {
+    const prod = getProd(F.prodId); if (!prod) return toast('Elegí o creá el producto');
+    const sid = formStore(), cont = num(F.cont), precio = num(F.precio), nota = (F.nota || '').trim();
+    const ean = (F.ean || '').trim();
+    if (F.presId !== 'new' && !getPres(F.presId)?.pend) {
+      // Presentación completa: queda el recordatorio de cargar el precio en esta tienda
+      const x = getPres(F.presId); if (addRemind(x.id, sid, nota)) { save(); toast(`Recordatorio: cargar el precio de ${presLabel(x)} en ${getStore(sid).name}.`, 4000); } else toast('Ese recordatorio ya existe');
+      resetForm(prod.id); renderCargar(); return;
+    }
+    if (ean && S.pres.some(x => x.ean === ean && x.id !== F.presId)) return toast('Ese código de barras ya pertenece a otra presentación');
+    let x = F.presId !== 'new' ? getPres(F.presId) : null;
+    const data = { prodId: prod.id, marca: (F.marca || '').trim(), desc: (F.desc || '').trim(), cont: cont > 0 ? cont : 0, unit: F.unit, pack: Math.max(1, Math.round(num(F.pack) || 1)), ean, nota, pend: true };
+    if (x) Object.assign(x, data); else { x = { id: uid(), ...data }; S.pres.push(x); }
+    if (precio > 0) x.pendPrecio = { storeId: sid, precio, fecha: todayISO() };
+    touch(x); save(); resetForm(prod.id); renderCargar();
+    toast(`Guardado como pendiente. Falta ${pendReasons(x).join(', ')}: lo ves en Datos → Pendientes.`, 4500);
+  },
+  pendgo: el => { const x = getPres(el.dataset.id); if (!x) return; resetForm(x.prodId); if (x.pendPrecio) F.storeId = x.pendPrecio.storeId; fillFromPres(x); lastSaved = null; go('cargar'); setTimeout(() => $(x.cont > 0 ? '#fPrecio' : '#fCont')?.focus(), 80); },
+  remgo: el => { const m = S.remind.find(r => r.id === el.dataset.id); if (!m) return; const x = getPres(m.presId); resetForm(x.prodId); F.storeId = m.storeId; fillFromPres(x); if (m.nota) F.nota = m.nota; lastSaved = null; go('cargar'); renderCargar(); setTimeout(() => $('#fPrecio')?.focus(), 80); },
+  remdel: el => { S.remind = S.remind.filter(r => r.id !== el.dataset.id); save(); render(); },
+  remadd: el => { const x = getPres(el.dataset.id); if (x && addRemind(x.id, S.visit.storeId, '')) { save(); render(); toast(`Recordatorio: cargar el precio en ${getStore(S.visit.storeId).name}.`); } },
   dismiss: () => { lastSaved = null; renderCargar(); $('#fEan')?.focus(); },
   gocmp: el => { CMP.prodId = el.dataset.id; lastSaved = null; go('comparar'); },
   cprod: el => { CMP.prodId = el.dataset.id; renderComparar(); },
@@ -1639,7 +1703,7 @@ const ACT = {
   editpres: el => { startEdit('pres', el.dataset.id); go('datos'); scrollForm(); },
   edcancel: () => { ED = null; renderDatos(); },
   edsave: () => edSave(),
-  needadd: el => { const pr = getProd(el.dataset.id); if (!pr) return; const pb = planBest(pr); const pres = pb ? pb.pres : S.pres.find(x => x.prodId === pr.id); if (!pres) return toast('Ese producto todavía no tiene presentaciones'); S.need.push({ id: uid(), prodId: pr.id, presId: pres.id, units: pb ? pb.b.N : 1, flex: false, pin: null, done: false }); save(); render(); toast(`${pr.name} agregado a la lista`); },
+  needadd: el => { const pr = getProd(el.dataset.id); if (!pr) return; const pb = planBest(pr); const pres = pb ? pb.pres : S.pres.find(x => x.prodId === pr.id && presOk(x)); if (!pres) return toast('Ese producto todavía no tiene presentaciones completas'); S.need.push({ id: uid(), prodId: pr.id, presId: pres.id, units: pb ? pb.b.N : 1, flex: false, pin: null, done: false }); save(); render(); toast(`${pr.name} agregado a la lista`); },
   needunits: el => { const n = S.need.find(x => x.id === el.dataset.id); if (!n) return; n.units = Math.max(1, n.units + +el.dataset.d); save(); renderPlanificar(); },
   needpin: el => { const n = S.need.find(x => x.id === el.dataset.id); if (!n) return; n.pin = n.pin === el.dataset.key ? null : el.dataset.key; save(); renderPlanificar(); toast(n.pin ? 'Fijado en esta visita: no se mueve al recalcular' : 'Fijación quitada'); },
   needaddsel: () => { const id = $('#needSel')?.value; if (id) ACT.needadd({ dataset: { id } }); },
