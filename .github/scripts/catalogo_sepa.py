@@ -201,7 +201,8 @@ class Estado:
         self.sucs = {}                                            # sucursales de las zonas
         self.precios = collections.defaultdict(dict)             # clave -> {ean: fila}
         self.leyendas = collections.defaultdict(dict)            # clave -> {texto: índice}
-        self.omitidos = []                                        # paquetes dañados que se saltearon
+        self.omitidos = []
+        self.zeans = set()                                        # códigos con precio en alguna sucursal de las zonas                                        # paquetes dañados que se saltearon
 
 
 def volcar(E, claves):
@@ -287,7 +288,7 @@ def _procesar(zf, E, pref, mias):
             else:
                 f += [0, -1]
         while len(f) > 1 and f[-2:] == [0, -1]: f = f[:-2]
-        E.precios[clave][ean] = f
+        E.precios[clave][ean] = f; E.zeans.add(ean)
 
 
 def recorrer(zf, E, prof=0, ruta=""):
@@ -329,18 +330,21 @@ def main():
     E = Estado(zonas, salida)
     with zipfile.ZipFile(path) as zf: recorrer(zf, E)
     if not E.cat: sys.exit("No se encontraron productos con código de barras válido")
-    shards = collections.defaultdict(dict)
+    shards, nombres = collections.defaultdict(dict), {}
     for ean, c in E.cat.items():
         (desc, marca, cant, uni), _ = c.most_common(1)[0]   # la descripción más repetida entre comercios
         shards[ean[:5]][ean] = [desc, marca, cant, uni]
+        if ean in E.zeans: nombres[ean] = [desc, marca, cant, uni]
     for k, v in shards.items(): escribir(os.path.join(salida, "ean", k + ".json"), v)
     hoy = datetime.date.today().isoformat()
     sucs = sorted(E.sucs.values(), key=lambda i: (i["z"], i["b"], i["n"]))
     for info in sucs: info.setdefault("np", 0)
+    # Nombres de lo que se vende en las zonas: lo usa "Todo el catálogo" de una sucursal (un solo archivo compartido)
+    escribir(os.path.join(salida, "precios", "nombres.json"), {"f": hoy, "p": nombres})
     escribir(os.path.join(salida, "precios", "sucursales.json"), {"fecha": hoy, "zonas": [f"{z['prov']}: {z['zona']}" for z in zonas], "s": sucs})
     meta = {"fecha": hoy, "fuente": "Precios Claros - SEPA (datos.produccion.gob.ar)", "recurso": url, "productos": len(E.cat), "filas": E.filas,
             "archivos": len(shards), "zonas": len(zonas), "sucursales": len(sucs), "sucursales_con_precios": sum(1 for s in sucs if s["np"]),
-            "omitidos": E.omitidos[:50]}
+            "nombres": len(nombres), "omitidos": E.omitidos[:50]}
     escribir(os.path.join(salida, "meta.json"), meta, indent=1)
     with open(os.path.join(salida, "README.md"), "w", encoding="utf-8") as f:
         f.write("# Catálogo SEPA para Góndola\n\nGenerado automáticamente por `.github/workflows/catalogo-sepa.yml` (rama main). "

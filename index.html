@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.7.3">
+<meta name="app-version" content="v0.8.0">
 <title>Góndola Comparador</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#132033">
@@ -244,7 +244,7 @@ details.more summary{cursor:pointer;color:var(--muted)}
 <div class="app">
   <header class="top">
     <div class="syncbar" id="syncBar" hidden aria-hidden="true"><i></i></div>
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.7.3</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.8.0</button></span></div>
     <div class="symsg" id="syncMsg" role="status" hidden></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
@@ -931,7 +931,7 @@ function renderDatos() {
   B.stores = storesBody();
   B.prods = (catsAdminHTML() + searchBox('prods', 'Buscar producto') + (S.prods.length > 1 ? sortBar('dProds') : '') + sortList('dProds', qf('prods', S.prods, p => (isEd('prod', p.id) ? Q.prods : `${p.name} ${baseOf(p).short} ${catOf(p)}`))).map(p => isEd('prod', p.id) ? prodForm(p) : `<div class="drow"><span><b>${esc(p.name)}</b> <span class="muted">por ${esc(baseOf(p).short)}</span><br><span class="small muted">${S.pres.filter(x => x.prodId === p.id).length} presentaciones · ${catOf(p) ? esc(catOf(p)) : '<span style="color:var(--warn)">sin categoría</span>'}</span></span><span class="btns">${editBtn('prod', p.id)}<button class="btn sm danger" data-act="delprod" data-id="${p.id}" data-confirm="1">Eliminar</button></span></div>`).join('') || noHits('prods') || '<span class="muted">Todavía no hay productos.</span>');
   B.pres = (searchBox('pres', 'Buscar marca, producto o código de barras') + sortBar('dPres') + `<div id="list-pres" style="display:grid;gap:10px">${presListHTML()}</div>`);
-  B.prices = (searchBox('prices', 'Buscar presentación, tienda o producto') + sortBar('dPrices') + `<div id="list-prices" style="display:grid;gap:10px">${priceListHTML()}</div>`);
+  B.prices = (priceStoreFilter() + searchBox('prices', 'Buscar presentación, tienda o producto') + sortBar('dPrices') + `<div id="list-prices" style="display:grid;gap:10px">${priceListHTML()}</div>`);
   B.calc = sec('calc', 'Cómo calcula', `<div class="small" style="display:grid;gap:10px">
     <p style="margin:0">Cada promo se traduce a una sola forma: <b>llevando N unidades, pagás un total T</b>. El precio comparable es <b>T ÷ (N × contenido)</b>, en la unidad del producto (kg, L, metro…).</p>
     <table class="calc-ex"><tr><th>Promo</th><th>N</th><th>Total T</th></tr>
@@ -1274,16 +1274,16 @@ function presListHTML() {
 function priceListHTML() {
   const q = fold(Q.prices);
   const h = [...S.prods].sort((a, b) => a.name.localeCompare(b.name, 'es')).map(prod => {
-    let ps = S.prices.filter(p => getPres(p.presId)?.prodId === prod.id);
+    let ps = S.prices.filter(p => getPres(p.presId)?.prodId === prod.id && (!DV.pstore || p.storeId === DV.pstore));
     if (DV.old) ps = ps.filter(p => ageDays(p.fecha) > OLD_DAYS || isEd('price', p.id));
     if (q) ps = ps.filter(p => isEd('price', p.id) || matchAll(q, `${presLabel(getPres(p.presId))} ${getStore(p.storeId)?.name || ''} ${prod.name} ${getPres(p.presId).ean || ''}`));
     return ps.length ? `<h3>${esc(prod.name)}</h3>` + sortList('dPrices', ps).map(p => isEd('price', p.id) ? priceForm(p) : `<div class="drow"><span>${esc(presLabel(getPres(p.presId)))}<br><span class="small muted">${esc(getStore(p.storeId)?.name || '')}${getStore(p.storeId)?.archived ? ' (archivada)' : ''} · ${money(p.precio)} ${p.promo?.t !== 'none' ? '· ' + promoTxt(p) : ''}${p.acum ? ' · acumula' : ''}</span></span>${agePill(p.fecha)}<span class="btns">${editBtn('price', p.id)}<button class="btn sm danger" aria-label="Eliminar precio" data-act="delprice" data-id="${p.id}" data-confirm="1">×</button></span></div>`).join('') : '';
   }).join('');
-  return h || `<span class="muted">${q ? 'Ningún precio coincide con la búsqueda.' : 'Todavía no hay precios.'}</span>`;
+  return h || `<span class="muted">${q ? 'Ningún precio coincide con la búsqueda' + (DV.pstore ? ' en esta tienda' : '') + '.' : DV.pstore ? 'Esta tienda no tiene precios cargados.' : 'Todavía no hay precios.'}</span>`;
 }
 
 /* ============ Datos: portada de tarjetas + pantalla por entidad ============ */
-const DV = { sec: null, adding: false, old: false, keep: false };
+const DV = { sec: null, adding: false, old: false, keep: false, suc: null, pstore: '' };
 const OLD_DAYS = 21;
 const DSECS = [['pays', 'Pagos', 'Medios de pago y beneficios'], ['stores', 'Tiendas', 'Tiendas'], ['prods', 'Productos', 'Productos comparables'], ['pres', 'Presentaciones', 'Presentaciones'], ['prices', 'Precios', 'Precios cargados'], ['pend', 'Pendientes', 'Pendientes'], ['ajustes', 'Ajustes', 'Ajustes']];
 const DICON = {
@@ -1303,6 +1303,7 @@ function mergeNote(st) {
       <div class="btns"><button class="btn sm primary" data-act="sdomerge" data-id="${st.id}" data-confirm="1">Unir tiendas</button><button class="btn sm ghost" data-act="smergex">Cancelar</button></div></div>`;
 }
 function storesBody() {
+  if (DV.suc && getStore(DV.suc)?.sepa) return sucViewHTML(getStore(DV.suc));
   const act = activeStores(), arch = S.stores.filter(s => s.archived), np = id => S.prices.filter(p => p.storeId === id).length;
   const row = st => `<div class="paybox"><div class="row"><input aria-label="Nombre de la tienda" data-store="${st.id}" value="${esc(st.name)}"><span class="small muted" style="white-space:nowrap">${np(st.id)} precios</span></div>
     ${sepaStoreRow(st)}${LINK === st.id ? linkPanelHTML() : ''}
@@ -1843,6 +1844,89 @@ function refCmpHTML(prod, u) {
   }).join('');
   return h + `</details>`;
 }
+/* ============ Precios de una sucursal vinculada ============
+   "Mis productos": tus presentaciones con código de barras frente a lo que informa la sucursal.
+   "Todo el catálogo": todo lo que informa, con buscador; los nombres vienen de un archivo compartido
+   (precios/nombres.json) que se descarga solo al abrir esta pestaña. */
+let SV = { tab: 'mine', f: 'all', q: '' }, NOMBRES = null, NOMST = '';
+const NIDX = new Map();   // clave de sucursal -> [{ ean, t }] con el texto ya preparado para buscar
+async function loadNombres(fresh = false) {
+  NOMST = 'loading';
+  try { const d = await getJSON(SEPA_ROOT + 'precios/nombres.json', fresh); NOMBRES = d && d.p ? d : null; NOMST = NOMBRES ? 'ok' : 'none'; }
+  catch (e) { NOMST = 'err'; }
+  NIDX.clear();
+  if (cur() === 'datos' && DV.suc) render();
+}
+function sucViewHTML(st) {
+  ensureRefs();
+  const s = sucInfo(st.sepa), R0 = REF.get(st.sepa), d = R0?.d;
+  let h = `<div class="btns"><button class="btn sm ghost" data-act="sucback">← Tiendas</button></div>
+    <h3 style="margin:0">${esc(st.name)}</h3><div class="small muted">Precios Claros: ${esc(s ? sucName(s) : st.sepa)}${s?.d ? ' · ' + esc(s.d) : ''} ${refStTxt(st.sepa)}</div>`;
+  if (!d) return h + (!R0 || R0.st === 'loading' ? '<div class="small muted">Descargando los precios de la sucursal…</div>' : '<div class="note">No hay datos de esta sucursal. Probá "Actualizar precios" en Tiendas.</div>');
+  h += `<div class="chips" role="tablist" aria-label="Vista"><button class="chip" role="tab" aria-pressed="${SV.tab === 'mine'}" data-act="svtab" data-t="mine">Mis productos</button><button class="chip" role="tab" aria-pressed="${SV.tab === 'all'}" data-act="svtab" data-t="all">Todo el catálogo (${Object.keys(d.p).length.toLocaleString('es-AR')})</button></div>
+    <div class="small muted">Lo informa la cadena a Precios Claros y puede no coincidir con la góndola.</div>`;
+  return h + (SV.tab === 'mine' ? sucMineHTML(st) : sucAllHTML(st, d));
+}
+function sucMineHTML(st) {
+  const rows = []; let sinEan = 0;
+  S.pres.forEach(x => {
+    const mine = S.prices.find(p => p.presId === x.id && p.storeId === st.id);
+    if (!eanOk(x.ean || '')) { if (mine) sinEan++; return; }
+    const r = refFor(x.ean, st.id); if (!r && !mine) return;
+    const pp = r ? refPromo(r) : null;
+    const same = r && mine && mine.precio === r.lista && JSON.stringify(canon(mine.promo)) === JSON.stringify(canon(pp.promo));
+    rows.push({ x, r, pp, mine, prod: getProd(x.prodId), kind: !r ? 'noref' : !mine ? 'nomine' : same ? 'same' : 'diff' });
+  });
+  const n = k => rows.filter(r => r.kind === k).length;
+  const FL = [['all', 'Todos', rows.length], ['diff', 'Con diferencia', n('diff')], ['nomine', 'No cargados acá', n('nomine')], ['same', 'Coinciden', n('same')], ['noref', 'Sin dato en Precios Claros', n('noref')]];
+  if (!FL.some(f => f[0] === SV.f && (f[2] || f[0] === 'all'))) SV.f = 'all';
+  let h = `<div class="chips">${FL.filter(f => f[0] === 'all' || f[2]).map(([k, l, c]) => `<button class="chip sm" aria-pressed="${SV.f === k}" data-act="svf" data-f="${k}">${l} (${c})</button>`).join('')}</div>`;
+  if (!rows.length) h += `<div class="small muted">Ninguna de tus presentaciones con código de barras figura en esta sucursal. Buscalas en "Todo el catálogo".</div>`;
+  h += rows.filter(r => SV.f === 'all' || r.kind === SV.f)
+    .sort((a, b) => (a.prod?.name || '').localeCompare(b.prod?.name || '', 'es') || presLabel(a.x).localeCompare(presLabel(b.x), 'es'))
+    .map(({ x, r, pp, mine, kind, prod }) => {
+      const dif = kind === 'diff' && mine.precio !== r.lista ? ` <span class="pill ${r.lista < mine.precio ? 'p-good' : 'p-warn'}">Precios Claros ${r.lista < mine.precio ? '−' : '+'}${money(Math.abs(r.lista - mine.precio))}</span>` : kind === 'same' ? ' <span class="pill p-good">Coincide</span>' : kind === 'nomine' ? ' <span class="pill p-warn">No lo cargaste</span>' : '';
+      return `<div class="refrow"><div><b>${esc(presLabel(x))}</b> <span class="small muted">· ${esc(prod?.name || '')}</span>${dif}</div>
+        <div class="small">${r ? `Precios Claros: <b>${money(r.lista)}</b>${refPromoTxt(r, pp) ? ' · ' + refPromoTxt(r, pp) : ''} <span class="muted">(${ddmm(r.fecha)})</span>` : '<span class="muted">Precios Claros no la informa en esta sucursal.</span>'}</div>
+        <div class="small">${mine ? `Tu precio: <b>${money(mine.precio)}</b>${mine.promo?.t !== 'none' ? ' · ' + promoTxt(mine) : ''} <span class="muted">(${ageTxt(mine.fecha)})</span>` : '<span class="muted">Sin precio tuyo en esta tienda.</span>'}</div>
+        ${r && kind !== 'same' ? `<div class="btns"><button class="btn sm" data-act="refcmp" data-p="${x.id}" data-s="${st.id}">Usar este precio</button></div>` : ''}</div>`;
+    }).join('');
+  if (sinEan) h += `<div class="small muted">${sinEan} ${sinEan === 1 ? 'presentación con precio acá no tiene' : 'presentaciones con precio acá no tienen'} código de barras: sin código no se pueden cruzar.</div>`;
+  return h;
+}
+function sucAllHTML(st, d) {
+  if (!NOMBRES) {
+    if (!NOMST) setTimeout(() => loadNombres(), 0);
+    const msg = NOMST === 'err' ? 'No se pudieron descargar los nombres de los productos. Revisá la conexión.' : NOMST === 'none' ? 'Los nombres de los productos se generan en la próxima actualización desde tu computadora ("Actualizar catalogo").' : 'Descargando los nombres de los productos…';
+    return `<div class="small">${msg}</div>${NOMST === 'err' || NOMST === 'none' ? '<button class="btn sm" data-act="nomretry">Reintentar</button>' : ''}`;
+  }
+  return `<input id="svQ" data-svq="1" value="${esc(SV.q)}" placeholder="Buscar producto, marca o código de barras" autocomplete="off" aria-label="Buscar en el catálogo de la sucursal"><div id="svRes">${sucAllRes(st, d)}</div>`;
+}
+function sucAllRes(st, d) {
+  const q = fold(SV.q).trim();
+  if (q.length < 2) return `<div class="small muted">Escribí al menos 2 letras. Esta sucursal informa ${Object.keys(d.p).length.toLocaleString('es-AR')} productos.</div>`;
+  let idx = NIDX.get(st.sepa);
+  if (!idx) { idx = Object.keys(d.p).map(ean => { const n = NOMBRES.p[ean]; return { ean, t: fold(n ? `${n[0]} ${n[1]} ${ean}` : ean) }; }); NIDX.set(st.sepa, idx); }
+  const words = q.split(/\s+/), hits = [];
+  for (const it of idx) { if (words.every(w => it.t.includes(w))) { hits.push(it.ean); if (hits.length > 50) break; } }
+  if (!hits.length) return `<div class="small muted">Sin resultados en esta sucursal.</div>`;
+  const mine = new Map(S.pres.filter(x => x.ean).map(x => [x.ean, x]));
+  return (hits.length > 50 ? `<div class="small muted">Se muestran los primeros 50: escribí más para acotar.</div>` : '') + hits.slice(0, 50).map(ean => {
+    const n = NOMBRES.p[ean] || ['(sin nombre)', '', null, ''], r = refFor(ean, st.id), pp = refPromo(r), mp = mine.get(ean);
+    return `<div class="refrow"><div><b>${esc(titleCase(n[0]))}</b>${n[1] ? ` <span class="small muted">· ${esc(titleCase(n[1]))}</span>` : ''}</div>
+      <div class="small">${n[2] ? esc(nfx.format(n[2]) + ' ' + (n[3] || '')) + ' · ' : ''}Góndola <b>${money(r.lista)}</b>${refPromoTxt(r, pp) ? ' · ' + refPromoTxt(r, pp) : ''}</div>
+      <div class="row" style="justify-content:space-between"><span class="small muted">${ean}</span>${mp ? `<span class="btns"><span class="pill p-neutral">La tenés</span><button class="btn sm" data-act="refcmp" data-p="${mp.id}" data-s="${st.id}">Usar este precio</button></span>` : `<button class="btn sm" data-act="svadd" data-e="${ean}">Agregar a mis productos</button>`}</div></div>`;
+  }).join('');
+}
+/* Datos → Precios: filtro por tienda */
+function priceStoreFilter() {
+  const sts = S.stores.filter(s => S.prices.some(p => p.storeId === s.id)).sort((a, b) => a.name.localeCompare(b.name, 'es'));
+  if (DV.pstore && !sts.some(s => s.id === DV.pstore)) DV.pstore = '';
+  if (sts.length < 2) return '';
+  const n = id => S.prices.filter(p => p.storeId === id).length;
+  return `<label class="fl" for="pStore">Tienda<select id="pStore" data-chg="pstore"><option value="">Todas (${S.prices.length})</option>${sts.map(s => `<option value="${s.id}" ${s.id === DV.pstore ? 'selected' : ''}>${esc(s.name)}${s.archived ? ' (archivada)' : ''} (${n(s.id)})</option>`).join('')}</select></label>`;
+}
+
 /* Datos → Tiendas: vínculo con sucursales */
 function sucResHTML() {
   const used = new Map(linkedStores().map(s => [s.sepa, s])), q = fold(SQ);
@@ -1882,7 +1966,7 @@ function sepaStoresHead() {
     <div class="btns">${n < SEPA_MAX ? `<button class="btn sm" data-act="sepalink" data-id="new">+ Agregar tienda desde Precios Claros</button>` : ''}${n ? '<button class="btn sm ghost" data-act="sepafresh">Actualizar precios</button>' : ''}</div></div>${LINK === 'new' ? linkPanelHTML() : ''}`;
 }
 function sepaStoreRow(st) {
-  if (st.sepa) { const s = sucInfo(st.sepa); return `<div class="small">Precios Claros: <b>${esc(s ? sucName(s) : st.sepa)}</b>${s?.d ? ' · ' + esc(s.d) : ''} ${refStTxt(st.sepa)} <button class="btn sm ghost" data-act="sepalink" data-id="${st.id}">Cambiar</button><button class="btn sm ghost" data-act="sepaunlink" data-id="${st.id}">Quitar vínculo</button></div>`; }
+  if (st.sepa) { const s = sucInfo(st.sepa); return `<div class="small">Precios Claros: <b>${esc(s ? sucName(s) : st.sepa)}</b>${s?.d ? ' · ' + esc(s.d) : ''} ${refStTxt(st.sepa)} <div class="btns"><button class="btn sm" data-act="sucopen" data-id="${st.id}">Ver precios de esta sucursal</button><button class="btn sm ghost" data-act="sepalink" data-id="${st.id}">Cambiar</button><button class="btn sm ghost" data-act="sepaunlink" data-id="${st.id}">Quitar vínculo</button></div></div>`; }
   return LINK === st.id ? '' : `<div><button class="btn sm ghost" data-act="sepalink" data-id="${st.id}">Vincular con Precios Claros</button></div>`;
 }
 async function lookupEan(code) {
@@ -2039,7 +2123,7 @@ function render() {
   R[v]();
 }
 function go(v) { if (cur() === v) render(); else location.hash = v; window.scrollTo(0, 0); }
-window.addEventListener('hashchange', () => { if (cur() === 'datos' && !DV.keep) { DV.sec = null; DV.adding = false; DV.old = false; ED = null; } DV.keep = false; render(); window.scrollTo(0, 0); });
+window.addEventListener('hashchange', () => { if (cur() === 'datos' && !DV.keep) { DV.sec = null; DV.adding = false; DV.old = false; DV.suc = null; ED = null; } DV.keep = false; render(); window.scrollTo(0, 0); });
 
 /* ============ acciones ============ */
 const ACT = {
@@ -2049,6 +2133,12 @@ const ACT = {
   refuse: () => { const ean = (F.ean || (F.presId !== 'new' ? getPres(F.presId)?.ean : '') || '').trim(), r = refFor(ean, formStore()); if (!r) return; applyRef(r); renderCargar(); toast('Revisá los datos y tocá "Guardar precio"'); },
   refcmp: el => { const x = getPres(el.dataset.p), st = getStore(el.dataset.s), r = x && st ? refFor(x.ean, st.id) : null; if (!r) return; resetForm(x.prodId); F.storeId = st.id; fillFromPres(x); applyRef(r); lastSaved = null; go('cargar'); setTimeout(() => toast('Revisá los datos y tocá "Guardar precio"'), 80); },
   sepalink: el => { LINK = el.dataset.id; SQ = ''; if (LINK !== 'new' && !getStore(LINK)?.sepa && linkedStores().length >= SEPA_MAX) { LINK = null; return toast(`Podés vincular hasta ${SEPA_MAX} tiendas: quitá el vínculo de alguna para sumar otra.`); } DV.keep = true; render(); setTimeout(() => { $('#sepaPanel')?.scrollIntoView({ block: 'start' }); $('#sepaQ')?.focus(); }, 60); },
+  sucopen: el => { DV.suc = el.dataset.id; SV = { tab: 'mine', f: 'all', q: '' }; render(); window.scrollTo(0, 0); },
+  sucback: () => { DV.suc = null; render(); window.scrollTo(0, 0); },
+  svtab: el => { SV.tab = el.dataset.t; render(); if (SV.tab === 'all') setTimeout(() => $('#svQ')?.focus(), 60); },
+  svf: el => { SV.f = el.dataset.f; render(); },
+  nomretry: () => { NOMBRES = null; loadNombres(true); render(); },
+  svadd: el => { const st = getStore(DV.suc); if (!st) return; resetForm(); F.storeId = st.id; F.ean = el.dataset.e; lastSaved = null; go('cargar'); setTimeout(() => onEan(true), 80); },
   sepacancel: () => { LINK = null; SQ = ''; render(); },
   sucretry: () => { SUCS = null; loadSucs(true); render(); },
   sepapick: el => {
@@ -2060,7 +2150,7 @@ const ACT = {
     toast(`${st.name} vinculada con ${sucName(s)}`);
   },
   sepaunlink: el => { const st = getStore(el.dataset.id); if (!st) return; st.sepa = ''; touch(st); save(); render(); toast('Vínculo quitado: tus precios no cambian'); },
-  sepafresh: () => { SUCS = null; SUCST = ''; loadRefs(true).then(() => toast('Precios de referencia actualizados')); toast('Actualizando…'); },
+  sepafresh: () => { SUCS = null; SUCST = ''; if (NOMBRES) { NOMBRES = null; NOMST = ''; } loadRefs(true).then(() => toast('Precios de referencia actualizados')); toast('Actualizando…'); },
   save: () => {
     const t = buildTemp(); if (t.err) return toast(t.err);
     let pres = F.presId !== 'new' ? getPres(F.presId) : S.pres.find(x => x.prodId === t.pres.prodId && x.marca.toLowerCase() === t.pres.marca.toLowerCase() && (x.desc || '').toLowerCase() === t.pres.desc.toLowerCase() && x.cont === t.pres.cont && x.unit === t.pres.unit && x.pack === t.pres.pack);
@@ -2186,7 +2276,7 @@ const ACT = {
   prefage: el => { PREF.maxAge = +el.dataset.v; savePref(); renderPlanificar(); },
   prefreset: () => { PREF = { ...PREF_DEF, open: true }; savePref(); renderPlanificar(); },
   sync: () => { if (SYUI.result === 'err' && !syncing) toast('Último intento: ' + SYUI.msg + '. Reintentando…', 3500); syncNow(false); },
-  dgo: el => { const s2 = el.dataset.s; if (s2 !== DV.sec) { ED = null; DV.adding = false; } if (s2 !== 'prices') DV.old = false; DV.sec = s2; renderDatos(); window.scrollTo(0, 0); },
+  dgo: el => { const s2 = el.dataset.s; if (s2 !== DV.sec) { ED = null; DV.adding = false; } if (s2 !== 'prices') DV.old = false; DV.suc = null; DV.sec = s2; renderDatos(); window.scrollTo(0, 0); },
   smerge: el => { SMERGE = el.dataset.id; renderDatos(); },
   smergex: () => { SMERGE = null; renderDatos(); },
   sdomerge: el => { const src = el.dataset.id, dst = $('#mergeDest')?.value; if (!dst) return; const n = getStore(src).name, r = mergeStores(src, dst); SMERGE = null; save(); render(); toast(`${n} se unió a ${getStore(dst).name}: ${r.moved} precio${r.moved === 1 ? '' : 's'} pasaron y ${r.merged} se combinaron.`, 4500); },
@@ -2200,7 +2290,7 @@ const ACT = {
   }),
   edmovepick: el => { ED.d.movePick = el.dataset.v; renderDatos(); },
   movefromcargar: el => { startEdit('price', el.dataset.id); ED.d.fromCargar = true; ED.d.visitToo = true; lastSaved = null; go('datos'); scrollForm(); },
-  dhome: () => { DV.sec = null; DV.adding = false; DV.old = false; ED = null; renderDatos(); window.scrollTo(0, 0); },
+  dhome: () => { DV.sec = null; DV.adding = false; DV.old = false; DV.suc = null; ED = null; renderDatos(); window.scrollTo(0, 0); },
   dold: () => { DV.sec = 'prices'; DV.old = true; ED = null; SORT.dPrices = { by: 'age', dir: 1 }; try { localStorage.setItem(SORT_LS, JSON.stringify(SORT)); } catch (e) {} renderDatos(); window.scrollTo(0, 0); },
   dold0: () => { DV.old = false; renderDatos(); },
   daddx: () => { DV.adding = false; renderDatos(); },
@@ -2322,7 +2412,7 @@ function onEan(force) {
 /* confirmación en dos toques (sin diálogos del navegador) */
 document.addEventListener('click', e => {
   const nav = e.target.closest('nav.tabs a[data-tab="datos"]');
-  if (nav && cur() === 'datos' && DV.sec) { DV.sec = null; DV.adding = false; DV.old = false; ED = null; renderDatos(); window.scrollTo(0, 0); return; }
+  if (nav && cur() === 'datos' && DV.sec) { DV.sec = null; DV.adding = false; DV.old = false; DV.suc = null; ED = null; renderDatos(); window.scrollTo(0, 0); return; }
   const el = e.target.closest('[data-act]'); if (!el) return;
   if (el.dataset.confirm) {
     if (!el.dataset.armed || Date.now() - +el.dataset.armed > 3500) { el.dataset.armed = Date.now(); el.dataset.label = el.textContent; el.textContent = 'Tocá de nuevo para confirmar'; setTimeout(() => { if (el.isConnected && el.dataset.armed) { el.textContent = el.dataset.label; delete el.dataset.armed; } }, 3500); return; }
@@ -2341,6 +2431,7 @@ document.addEventListener('input', e => {
   else if (t.dataset.needflex) { const n = S.need.find(x => x.id === t.dataset.needflex); if (n) { n.flex = t.checked; save(); renderPlanificar(); } }
   else if (t.dataset.ppq) { PP.q = t.value; const o = $('#ppOv'); const pos = t.selectionStart; o.innerHTML = prodPickerHTML(); const i = $('#ppSearch'); if (i) { i.focus(); try { i.setSelectionRange(pos, pos); } catch (e) {} } }
   else if (t.dataset.catnew) { CATNEW = t.value; }
+  else if (t.dataset.svq) { SV.q = t.value; const c = $('#svRes'), st = getStore(DV.suc), d = st && REF.get(st.sepa)?.d; if (c && d && NOMBRES) c.innerHTML = sucAllRes(st, d); }
   else if (t.dataset.sepaq) { SQ = t.value; const c = $('#sepaRes'); if (c && SUCS) c.innerHTML = sucResHTML(); }
   else if (t.dataset.planq) { PREF.q = t.value; savePref(); const c2 = $('#planList'); if (c2) c2.innerHTML = planListHTML(); }
   else if (t.dataset.prefmulti) { PREF.allowMulti = t.checked; savePref(); renderPlanificar(); }
@@ -2371,6 +2462,7 @@ document.addEventListener('change', e => {
   if (a === 'vstore') { S.visit.storeId = t.value; F.storeId = t.value; save(); lastSaved = null; render(); }
   else if (t.dataset.f === 'fecha' || t.dataset.f === 'hasta') { renderCargar(); }
   else if (t.dataset.ed === 'hasta' && ED) { renderDatos(); }
+  else if (a === 'pstore') { DV.pstore = t.value; const c = $('#list-prices'); if (c) c.innerHTML = priceListHTML(); }
   else if (a === 'fstore') { F.storeId = t.value; F.setVisit = false; if (F.presId !== 'new') fillFromPres(getPres(F.presId)); renderCargar(); }
   else if (a === 'vpay') { if (!t.value) return; S.visit.payId = t.value; S.visit.payByStore = { ...(S.visit.payByStore || {}), [S.visit.storeId]: t.value }; save(); render(); }
   else if (a === 'fprod') { setLastProd(t.value); const keep = F.presId === 'new' ? { ean: F.ean, marca: F.marca, desc: F.desc, cont: F.cont, unit: F.unit, pack: F.pack, nota: F.nota, look: F.look } : null; resetForm(t.value); if (keep) { Object.assign(F, keep); const pr = getProd(t.value); if (pr && baseOf(pr).units[F.unit] === undefined) F.unit = defUnit(pr); } lastSaved = null; renderCargar(); }
