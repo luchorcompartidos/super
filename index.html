@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.2.2">
+<meta name="app-version" content="v0.2.3">
 <title>Góndola Comparador</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#132033">
@@ -185,7 +185,7 @@ nav.tabs a[aria-current="page"]::before{content:"";position:absolute;top:0;left:
 <body>
 <div class="app">
   <header class="top">
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button> <button id="verBtn" class="vs-ver" type="button">v0.2.2</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button> <button id="verBtn" class="vs-ver" type="button">v0.2.3</button></span></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
       <label for="vPay">Pago con<select id="vPay" data-chg="vpay"></select></label>
@@ -658,7 +658,7 @@ function presForm(x) {
     <div class="fl">Contenido<div class="row"><input id="ed-cont" aria-label="Contenido" data-ed="cont" inputmode="decimal" class="w-num" value="${esc(d.cont)}">
       <select id="ed-unit" aria-label="Unidad" data-ed="unit" class="w-unit">${Object.keys(b.units).map(u => `<option ${u === d.unit ? 'selected' : ''}>${u}</option>`).join('')}</select>
       <span class="muted">×</span><input id="ed-pack" aria-label="Unidades en el pack" data-ed="pack" inputmode="numeric" class="w-pack" value="${esc(d.pack)}"><span class="small muted">en pack</span></div></div>
-    <label class="fl" for="ed-ean">Código de barras<input id="ed-ean" data-ed="ean" inputmode="numeric" value="${esc(d.ean)}"></label>
+    <div class="row"><label class="fl grow" for="ed-ean">Código de barras<input id="ed-ean" data-ed="ean" inputmode="numeric" value="${esc(d.ean)}"></label><button type="button" class="btn ghost" style="align-self:end" data-act="scaned">Escanear</button></div>
     <div class="small muted">Solo se puede mover a productos que se comparan por ${esc(b.short)}. Tiene ${ps.length} precio${ps.length === 1 ? '' : 's'} en ${nst} tienda${nst === 1 ? '' : 's'}.</div>
     ${ED.confirm ? `<div class="note" style="border:2px solid var(--warn)"><b>Ojo:</b> cambiar el contenido cambia el precio por ${esc(b.short)} de ${ps.length} precio${ps.length === 1 ? '' : 's'} en ${nst} tienda${nst === 1 ? '' : 's'}. Si en realidad cambió el envase (otra presentación), conviene cancelar y cargarla como nueva.</div>` : ''}
     ${edBtns(ED.confirm ? 'Confirmar el cambio' : 'Guardar cambios')}</div>`;
@@ -1137,6 +1137,12 @@ const ACT = {
   sdomerge: el => { const src = el.dataset.id, dst = $('#mergeDest')?.value; if (!dst) return; const n = getStore(src).name, r = mergeStores(src, dst); SMERGE = null; save(); render(); toast(`${n} se unió a ${getStore(dst).name}: ${r.moved} precio${r.moved === 1 ? '' : 's'} pasaron y ${r.merged} se combinaron.`, 4500); },
   sarch: el => { const st = getStore(el.dataset.id); st.archived = true; touch(st); if (S.visit.storeId === st.id) S.visit.storeId = activeStores()[0]?.id; save(); render(); toast(`${st.name} archivada: no aparece en los selectores ni en Comparar. La podés reactivar en Tiendas.`, 4500); },
   sunarch: el => { const st = getStore(el.dataset.id); st.archived = false; touch(st); save(); render(); toast(`${st.name} reactivada`); },
+  scaned: () => scan(code => {
+    if (!ED || ED.kind !== 'pres') return;
+    const other = S.pres.find(o => o.ean === code && o.id !== ED.id);
+    ED.d.ean = code; renderDatos(); scrollForm();
+    toast(other ? `Ojo: ese código ya es de ${presLabel(other)}. Revisalo antes de guardar.` : `Código leído: ${code}. Guardá los cambios para aplicarlo.`, other ? 5000 : 3000);
+  }),
   edmovepick: el => { ED.d.movePick = el.dataset.v; renderDatos(); },
   movefromcargar: el => { startEdit('price', el.dataset.id); ED.d.fromCargar = true; ED.d.visitToo = true; lastSaved = null; go('datos'); scrollForm(); },
   dhome: () => { DV.sec = null; DV.adding = false; DV.old = false; ED = null; renderDatos(); window.scrollTo(0, 0); },
@@ -1222,7 +1228,7 @@ async function makeDetector() {
     }
   };
 }
-async function scan() {
+async function scan(onCode) {
   if (!navigator.mediaDevices?.getUserMedia) return toast('Este navegador no permite usar la cámara. Tipeá el código.', 4500);
   let det;
   try { det = await makeDetector(); }
@@ -1238,7 +1244,7 @@ async function scan() {
   const loop = async () => {
     if (!alive) return;
     let code = null; try { code = await det.detect(v); } catch (e) {}
-    if (code && alive) { stop(); try { navigator.vibrate?.(60); } catch (e) {} F.ean = code; onEan(true); return; }
+    if (code && alive) { stop(); try { navigator.vibrate?.(60); } catch (e) {} if (onCode) onCode(code); else { F.ean = code; onEan(true); } return; }
     setTimeout(loop, 120);
   };
   loop();
