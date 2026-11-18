@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.2.7">
+<meta name="app-version" content="v0.2.8">
 <title>Góndola Comparador</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#132033">
@@ -40,10 +40,17 @@ body{background:var(--bg);color:var(--ink);font-family:var(--font-b);font-size:1
 .app{max-width:520px;margin:0 auto;min-height:100%;display:flex;flex-direction:column}
 header.top{position:sticky;top:0;z-index:5;background:var(--surface);border-bottom:1px solid var(--line);
   padding:calc(10px + env(safe-area-inset-top)) 16px 12px;display:grid;gap:8px}
-.brand{display:flex;align-items:baseline;gap:8px}
+.brand{display:flex;align-items:center;gap:8px;min-width:0}
+.brand .sub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+@media (max-width:440px){.brand .sub{display:none}}
 .brand h1{font-family:var(--font-d);font-weight:700;font-size:26px;margin:0;letter-spacing:.2px}
 .brand .dot{width:12px;height:12px;border-radius:3px;background:var(--tag);display:inline-block;transform:translateY(-2px)}
-.ver{font-size:12px;color:var(--muted);margin-left:auto}
+.ver{font-size:12px;color:var(--muted);margin-left:auto;display:flex;gap:6px;align-items:center;flex:none}
+.ver .vs-ver{margin:0;white-space:nowrap}
+#syncBtn{min-width:40px;text-align:center}
+.symsg{font-size:12px;font-weight:600;display:flex;gap:6px;align-items:center;color:var(--accent);margin-top:-2px}
+.symsg[hidden]{display:none}
+.symsg.ok{color:var(--good)} .symsg.err{color:var(--bad)}
 .visit{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .visit label{font-size:12px;color:var(--muted);display:grid;gap:3px;font-weight:600}
 .vhint{grid-column:1/-1;font-size:13px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
@@ -203,7 +210,8 @@ details.more summary{cursor:pointer;color:var(--muted)}
 <div class="app">
   <header class="top">
     <div class="syncbar" id="syncBar" hidden aria-hidden="true"><i></i></div>
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button> <button id="verBtn" class="vs-ver" type="button">v0.2.7</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.2.8</button></span></div>
+    <div class="symsg" id="syncMsg" role="status" hidden></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
       <label for="vPay">Pago con<select id="vPay" data-chg="vpay"></select></label>
@@ -1002,13 +1010,19 @@ function renderSyncBtn() {
   const on = !!(SYNC.url && SYNC.key); b.hidden = !on; if (!on) return;
   const p = pendientes();
   let html, cls = '', title;
-  if (syncing && SYUI.phase) { html = `<span class="sy-ic spin" aria-hidden="true">⟳</span> ${esc(SYUI.phase)}`; cls = 'sy-busy'; title = 'Sincronizando con Google Sheets'; }
+  if (syncing && SYUI.phase) { html = `<span class="sy-ic spin" aria-hidden="true">⟳</span>`; cls = 'sy-busy'; title = 'Sincronizando con Google Sheets: ' + SYUI.phase; }
   else if (SYNC.conflicts) { html = `⚠ ${SYNC.conflicts}`; cls = 'new'; title = `Hay ${SYNC.conflicts} conflicto${SYNC.conflicts === 1 ? '' : 's'} para revisar: tocá para elegir qué versión queda`; }
-  else if (SYUI.result === 'ok') { html = '✓ Sincronizado'; cls = 'sy-ok'; title = 'Sincronización completa'; }
-  else if (SYUI.result === 'err') { html = '✕ Sin sincronizar'; cls = 'sy-err'; title = 'No se pudo sincronizar: tocá para ver el motivo y reintentar'; }
+  else if (SYUI.result === 'ok') { html = '✓'; cls = 'sy-ok'; title = 'Sincronización completa'; }
+  else if (SYUI.result === 'err') { html = '✕'; cls = 'sy-err'; title = 'No se pudo sincronizar: tocá para reintentar'; }
   else { html = p ? `⟳ ${p}` : '⟳'; cls = p ? 'new' : ''; title = `Sincronizar con Google Sheets · última: ${agoTxt(SYNC.lastOk)}${p ? ` · ${p} cambio${p === 1 ? '' : 's'} sin enviar` : ''}`; }
   b.innerHTML = html; b.title = title; b.setAttribute('aria-label', title); b.setAttribute('aria-busy', syncing ? 'true' : 'false');
   b.classList.remove('new', 'sy-busy', 'sy-ok', 'sy-err'); if (cls) b.classList.add(cls);
+  // Línea de estado bajo el nombre: la etapa en curso o el resultado, sin agrandar los botones
+  const m = $('#syncMsg');
+  if (m) {
+    const txt = syncing && SYUI.phase ? `Sincronizando · ${SYUI.phase}` : SYUI.result === 'ok' ? '✓ Sincronizado' : SYUI.result === 'err' ? `✕ Sin sincronizar: ${SYUI.msg} · tocá ✕ para reintentar` : '';
+    m.hidden = !txt; m.textContent = txt; m.className = 'symsg' + (SYUI.result === 'ok' && !syncing ? ' ok' : SYUI.result === 'err' && !syncing ? ' err' : '');
+  }
   // Mismo estado en Ajustes → Sincronizar ahora
   const nb = $('#syncNowBtn');
   if (nb) { nb.disabled = syncing; nb.innerHTML = syncing ? `<span class="sy-ic spin" aria-hidden="true">⟳</span> ${esc(SYUI.phase || 'Sincronizando…')}` : SYUI.result === 'ok' ? '✓ Sincronizado' : 'Sincronizar ahora'; }
