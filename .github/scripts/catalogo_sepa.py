@@ -14,7 +14,7 @@ Se generan todas las sucursales de esas zonas: así no queda publicado a cuáles
 Solo usa la biblioteca estándar de Python.
 Variables opcionales: SEPA_URL (zip a usar), SEPA_ZIP (zip ya descargado, para pruebas), ZONAS (archivo de zonas).
 """
-import csv, io, json, os, re, sys, time, unicodedata, urllib.request, zipfile, collections, datetime
+import csv, io, json, os, re, shutil, sys, tempfile, time, unicodedata, urllib.request, zipfile, collections, datetime
 
 # Portal de origen (CKAN de datos.produccion.gob.ar); datos.gob.ar replica el mismo dataset
 CKAN = ["https://datos.produccion.gob.ar/api/3/action/package_show?id=sepa-precios",
@@ -193,8 +193,8 @@ def miembro(zf, sufijo, pref=""):
 
 
 class Estado:
-    def __init__(self, zonas):
-        self.zonas = zonas
+    def __init__(self, zonas, salida):
+        self.zonas, self.salida = zonas, salida
         self.cat = collections.defaultdict(collections.Counter)  # catálogo de todo el país
         self.filas = 0
         self.sucs = {}                                            # sucursales de las zonas
@@ -202,7 +202,24 @@ class Estado:
         self.leyendas = collections.defaultdict(dict)            # clave -> {texto: índice}
 
 
+def volcar(E, claves):
+    """Escribe los archivos de esas sucursales y libera la memoria."""
+    for clave in claves:
+        p, ley = E.precios.pop(clave, None), E.leyendas.pop(clave, {})
+        info = E.sucs[clave]; info["np"] = len(p or {})
+        if p:
+            escribir(os.path.join(E.salida, "precios", "s", clave + ".json"),
+                     {"k": clave, "f": info["f"] or datetime.date.today().isoformat(), "i": [info["b"], info["n"], info["d"], info["z"]],
+                      "l": [t for t, _ in sorted(ley.items(), key=lambda kv: kv[1])], "p": p})
+
+
 def procesar_comercio(zf, E, pref=""):
+    mias = {}
+    try: _procesar(zf, E, pref, mias)
+    finally: volcar(E, set(mias.values()))
+
+
+def _procesar(zf, E, pref, mias):
     """Un paquete sepa (comercio.csv + sucursales.csv + productos.csv)."""
     banderas, fechas = {}, {}
     n = miembro(zf, "comercio.csv", pref)
@@ -213,7 +230,6 @@ def procesar_comercio(zf, E, pref=""):
             k = (val(row, ic), val(row, ib) or "1")
             if not k[0]: continue
             banderas[k] = val(row, inom); fechas[k] = val(row, ifec)[:10]
-    mias = {}
     n = miembro(zf, "sucursales.csv", pref)
     if n and E.zonas:
         cab, rd = abrir_csv(zf, n)
@@ -275,7 +291,13 @@ def procesar_comercio(zf, E, pref=""):
 def recorrer(zf, E, prof=0):
     for nombre in zf.namelist():
         if nombre.lower().endswith(".zip") and prof < 3:
-            with zipfile.ZipFile(io.BytesIO(zf.read(nombre))) as z2: recorrer(z2, E, prof + 1)
+            fd, tmp = tempfile.mkstemp(suffix=".zip"); os.close(fd)
+            try:
+                with zf.open(nombre) as src, open(tmp, "wb") as dst: shutil.copyfileobj(src, dst, 1 << 20)
+                with zipfile.ZipFile(tmp) as z2: recorrer(z2, E, prof + 1)
+            finally:
+                try: os.remove(tmp)
+                except OSError: pass
     # Cada carpeta con un productos.csv es un paquete de un comercio
     for pref in sorted({n[: len(n) - len(n.split("/")[-1])] for n in zf.namelist() if n.lower().endswith("productos.csv")}):
         procesar_comercio(zf, E, pref)
@@ -293,8 +315,8 @@ def main():
     print("Zonas:", ", ".join(f"{z['prov']}: {z['zona']}" for z in zonas) or "(ninguna)")
     path, url = os.environ.get("SEPA_ZIP"), "local"
     if not path:
-        url = ultimo_zip(); path = "/tmp/sepa.zip"; print("Descargando", url); bajar(url, path)
-    E = Estado(zonas)
+        url = ultimo_zip(); path = os.path.join(tempfile.gettempdir(), "sepa.zip"); print("Descargando", url); bajar(url, path)
+    E = Estado(zonas, salida)
     with zipfile.ZipFile(path) as zf: recorrer(zf, E)
     if not E.cat: sys.exit("No se encontraron productos con código de barras válido")
     shards = collections.defaultdict(dict)
@@ -303,15 +325,8 @@ def main():
         shards[ean[:5]][ean] = [desc, marca, cant, uni]
     for k, v in shards.items(): escribir(os.path.join(salida, "ean", k + ".json"), v)
     hoy = datetime.date.today().isoformat()
-    sucs = []
-    for clave, info in sorted(E.sucs.items(), key=lambda kv: (kv[1]["z"], kv[1]["b"], kv[1]["n"])):
-        p = E.precios.get(clave)
-        info["np"] = len(p or {})
-        sucs.append(info)
-        if p:
-            ley = sorted(E.leyendas[clave].items(), key=lambda kv: kv[1])
-            escribir(os.path.join(salida, "precios", "s", clave + ".json"),
-                     {"k": clave, "f": info["f"] or hoy, "i": [info["b"], info["n"], info["d"], info["z"]], "l": [t for t, _ in ley], "p": p})
+    sucs = sorted(E.sucs.values(), key=lambda i: (i["z"], i["b"], i["n"]))
+    for info in sucs: info.setdefault("np", 0)
     escribir(os.path.join(salida, "precios", "sucursales.json"), {"fecha": hoy, "zonas": [f"{z['prov']}: {z['zona']}" for z in zonas], "s": sucs})
     meta = {"fecha": hoy, "fuente": "Precios Claros - SEPA (datos.produccion.gob.ar)", "recurso": url, "productos": len(E.cat), "filas": E.filas,
             "archivos": len(shards), "zonas": len(zonas), "sucursales": len(sucs), "sucursales_con_precios": sum(1 for s in sucs if s["np"])}

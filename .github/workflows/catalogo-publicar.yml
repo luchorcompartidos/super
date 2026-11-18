@@ -1,0 +1,51 @@
+name: Catálogo SEPA · publicar (desde tu computadora)
+
+# El portal del Gobierno bloquea las descargas desde GitHub: el programa local/gondola_catalogo.py
+# descarga y procesa la base SEPA en tu computadora, sube un único catalogo.zip a la rama "catalogo-subida"
+# y dispara este flujo, que lo publica en la rama "catalogo" (la que lee la app).
+
+on:
+  workflow_dispatch:
+    inputs:
+      origen:
+        description: "Rama con catalogo.zip"
+        default: catalogo-subida
+      destino:
+        description: "Rama a publicar"
+        default: catalogo
+
+permissions:
+  contents: write
+
+concurrency:
+  group: catalogo-sepa
+  cancel-in-progress: false
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.origen || 'catalogo-subida' }}
+      - name: Revisar el paquete
+        run: |
+          test -f catalogo.zip || { echo "::error::No está catalogo.zip en la rama catalogo-subida"; exit 1; }
+          mkdir out && unzip -q catalogo.zip -d out
+          test -f out/meta.json && test -f out/precios/sucursales.json && ls out/ean | head -1 >/dev/null
+      - name: Publicar en la rama catalogo
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DESTINO: ${{ inputs.destino || 'catalogo' }}
+        run: |
+          cd out
+          git init -q
+          git checkout -q -b "$DESTINO"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Catálogo SEPA $(date -u +%F)"
+          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$DESTINO"
+          echo "## ✅ Catálogo publicado" >> "$GITHUB_STEP_SUMMARY"
+          cat meta.json >> "$GITHUB_STEP_SUMMARY"

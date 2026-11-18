@@ -32,13 +32,17 @@ La URL /exec no cambia.
 
 El flujo `.github/workflows/catalogo-sepa.yml` arma cada martes un catálogo por código de barras con la base SEPA
 de Precios Claros (datos.gob.ar) y lo publica en la rama `catalogo`. La app lo consulta primero al buscar datos
-de un código, y después Open Food Facts. Para generarlo por primera vez: Actions → Catálogo SEPA → Run workflow.
+de un código, y después Open Food Facts.
+
+**Importante (nov-2026):** el portal del Gobierno bloquea las descargas desde los servidores de GitHub. El catálogo se arma
+desde tu computadora con el programa de la carpeta `local/` (ver `local/LEEME.txt`): descarga y procesa la base, sube un
+archivo y el flujo `catalogo-publicar.yml` lo publica.
 
 ### Precios de referencia por sucursal (desde la 0.7.0)
 
 - El mismo flujo publica los precios y promos informados por **todas** las sucursales de las zonas de
   `.github/catalogo-zonas.txt` (barrios de CABA y localidades o partidos de PBA). Al guardar un cambio en ese
-  archivo, el catálogo se regenera solo.
+  archivo, se aplica en la próxima actualización desde tu computadora.
 - En la app, **Datos → Tiendas → Vincular con Precios Claros** (hasta 10 tiendas). Qué sucursales elegiste queda
   en tu celular y en tu planilla (columna `sepa` de Tiendas), no en el repo público.
 - Son precios de referencia: se ven en Cargar y Comparar y solo pasan a ser tuyos con **Usar este precio** y

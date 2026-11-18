@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.7.0">
+<meta name="app-version" content="v0.7.1">
 <title>Góndola Comparador</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#132033">
@@ -244,7 +244,7 @@ details.more summary{cursor:pointer;color:var(--muted)}
 <div class="app">
   <header class="top">
     <div class="syncbar" id="syncBar" hidden aria-hidden="true"><i></i></div>
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.7.0</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.7.1</button></span></div>
     <div class="symsg" id="syncMsg" role="status" hidden></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
@@ -1859,7 +1859,7 @@ function linkPanelHTML() {
   const title = LINK === 'new' ? 'Agregar tienda desde Precios Claros' : `Vincular "${esc(getStore(LINK)?.name || '')}" con su sucursal`;
   if (!SUCS) {
     if (!SUCST) setTimeout(() => loadSucs(), 0);
-    const msg = SUCST === 'err' ? 'No se pudo descargar la lista de sucursales. Revisá la conexión.' : SUCST === 'none' ? 'Todavía no está generada la lista de sucursales: hay que correr una vez el flujo "Catálogo SEPA" en GitHub (Actions → Catálogo SEPA → Run workflow).' : 'Descargando la lista de sucursales…';
+    const msg = SUCST === 'err' ? 'No se pudo descargar la lista de sucursales. Revisá la conexión.' : SUCST === 'none' ? 'Todavía no está generada la lista de sucursales: corré una vez "Actualizar catalogo" en tu computadora (carpeta local del repo, ver LEEME.txt).' : 'Descargando la lista de sucursales…';
     return `<div class="paybox" id="sepaPanel"><h3>${title}</h3><div class="small">${msg}</div><div class="btns">${SUCST === 'err' || SUCST === 'none' ? '<button class="btn sm" data-act="sucretry">Reintentar</button>' : ''}<button class="btn sm ghost" data-act="sepacancel">Cancelar</button></div></div>`;
   }
   return `<div class="paybox" id="sepaPanel"><h3>${title}</h3>

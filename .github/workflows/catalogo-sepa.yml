@@ -1,18 +1,12 @@
 name: Catálogo SEPA (Precios Claros)
 
-# Arma, desde la base SEPA de datos.gob.ar, el catálogo de productos por código de barras y los
-# precios de referencia de las sucursales de las zonas de .github/catalogo-zonas.txt.
-# Lo publica en la rama "catalogo" (se reemplaza en cada corrida, sin acumular historial).
-# Se ejecuta los martes, al cambiar las zonas, y a mano: Actions > Catálogo SEPA > Run workflow.
+# Arma, desde la base SEPA, el catálogo por código de barras y los precios de referencia de las
+# sucursales de .github/catalogo-zonas.txt, y lo publica en la rama "catalogo".
+# AVISO (nov-2026): el portal datos.produccion.gob.ar responde 403 a los servidores de GitHub, así que
+# esto se hace desde tu computadora con local/gondola_catalogo.py (ver local/LEEME.txt). Este flujo queda
+# solo para lanzarlo a mano, por si el portal vuelve a permitirlo: Actions > Catálogo SEPA > Run workflow.
 
 on:
-  schedule:
-    - cron: "41 10 * * 2"   # martes 07:41 (Argentina)
-  push:
-    branches: [main]
-    paths:
-      - ".github/catalogo-zonas.txt"
-      - ".github/scripts/catalogo_sepa.py"
   workflow_dispatch:
 
 permissions:

@@ -1,0 +1,28 @@
+GÓNDOLA · ACTUALIZAR PRECIOS CLAROS DESDE TU COMPUTADORA (Windows)
+
+Por qué: el portal del Gobierno no deja descargar la base SEPA desde los servidores de GitHub.
+Este programa la descarga con tu conexión, arma los precios de tus zonas y los sube a GitHub,
+donde un flujo los publica para la app. No queda nada corriendo en segundo plano.
+
+UNA SOLA VEZ
+1. Instalá Python desde https://www.python.org/downloads/ (botón "Download Python").
+   En la primera pantalla del instalador tildá "Add python.exe to PATH" y después "Install Now".
+2. Creá el token de GitHub: https://github.com/settings/personal-access-tokens/new
+   - Token name: Góndola catálogo · Expiration: la que prefieras (al vencer, se crea otro)
+   - Repository access: Only select repositories -> super
+   - Permissions -> Repository permissions:  Contents = Read and write · Actions = Read and write
+   - Generate token y copialo.
+3. Descomprimí esta carpeta donde quieras (por ejemplo, Documentos\Gondola-catalogo).
+4. Doble clic en "Actualizar catalogo.bat". La primera vez te pide el token: pegalo (clic derecho) y Enter.
+   Descarga, procesa y publica. Tarda entre 15 y 40 minutos según la conexión.
+5. (Opcional) Doble clic en "Programar actualizacion semanal.bat": crea una tarea que corre los
+   miércoles a las 03:00, o apenas la computadora esté encendida y sin uso por 10 minutos.
+
+DESPUÉS
+- Se actualiza solo: antes de cada corrida baja la última versión del programa y de las zonas.
+- Para actualizar a mano en cualquier momento: doble clic en "Actualizar catalogo.bat".
+- Cada corrida queda anotada en registro.txt (en esta carpeta).
+- config.txt guarda tu token: no lo compartas. Si lo borrás, el programa lo vuelve a pedir.
+- Mientras corre usa un núcleo del procesador, entre 300 y 500 MB de memoria y hasta 2 o 3 GB
+  de disco temporal (se borran al terminar), siempre con prioridad baja.
+- Para quitar la tarea: Programador de tareas -> "Gondola - Actualizar catalogo" -> Eliminar.
