@@ -1,0 +1,11 @@
+{
+ "fecha": "2026-11-18",
+ "fuente": "Precios Claros - SEPA (datos.produccion.gob.ar)",
+ "recurso": "local",
+ "productos": 3,
+ "filas": 7,
+ "archivos": 3,
+ "zonas": 8,
+ "sucursales": 4,
+ "sucursales_con_precios": 4
+}
