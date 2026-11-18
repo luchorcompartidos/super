@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.8.3">
+<meta name="app-version" content="v0.8.4">
 <title>Góndola Comparador</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#132033">
@@ -141,6 +141,8 @@ details.sec > .body{padding:0 14px 14px;display:grid;gap:10px}
 .drow>span:first-child{flex:1 1 160px;min-width:0}
 .drow>.btns{flex:0 0 auto;flex-wrap:nowrap;margin-left:auto}
 .drow .age-line{display:block;margin-top:4px}
+.cpysel{width:22px;height:22px;min-height:0;padding:0;margin:0 8px 0 0;vertical-align:middle;accent-color:var(--accent)}
+.cpypill{border:0;cursor:pointer;font:inherit;font-size:12px;font-weight:700}
 .linkbtn{background:none;border:0;padding:0;font:inherit;color:inherit;text-align:left;cursor:pointer;text-decoration:underline;text-decoration-color:var(--accent);text-underline-offset:3px}
 .paybox{border:1px solid var(--line);border-radius:12px;padding:10px;display:grid;gap:8px}
 .note{font-size:13px;color:var(--muted);background:var(--bg);border-radius:10px;padding:10px}
@@ -271,7 +273,7 @@ body.in-datos header.top{padding-bottom:8px}
 <div class="app">
   <header class="top">
     <div class="syncbar" id="syncBar" hidden aria-hidden="true"><i></i></div>
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="vmini" id="vMini"></span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.8.3</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="vmini" id="vMini"></span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.8.4</button></span></div>
     <div class="symsg" id="syncMsg" role="status" hidden></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
@@ -670,7 +672,7 @@ function renderCargar() {
   const units = Object.keys(b.units);
   h += `<label class="fl" for="fPres">Presentación<select id="fPres" data-chg="fpres"><option value="new">Nueva presentación</option>${sortList('selPres', presList).map(x => `<option value="${x.id}" ${x.id === F.presId ? 'selected' : ''}>${esc(presLabel(x))}</option>`).join('')}</select></label>${presList.length > 1 ? sortBar('selPres') : ''}
     ${F.presId !== 'new' ? presStoresHTML(F.presId, fsid) : ''}
-    ${exHere ? `<div class="note">Último precio acá: <b>${money(exHere.precio)}</b> ${exHere.promo?.t !== 'none' ? '<span class="tag">' + esc(promo(exHere).label) + '</span>' : ''} · ${ageTxt(exHere.fecha)}. Tipeá el precio nuevo: el anterior pasa al historial. Si fue un error de carga, <button type="button" class="btn sm ghost" data-act="editprice" data-id="${exHere.id}">Corregilo</button> sin guardar historial.</div>` : ''}
+    ${exHere ? `<div class="note">Último precio acá: <b>${money(exHere.precio)}</b> ${exHere.promo?.t !== 'none' ? '<span class="tag">' + esc(promo(exHere).label) + '</span>' : ''} · ${ageTxt(exHere.fecha)}.${isCopy(exHere) ? `<br><b style="color:var(--sim)">Copiado de ${esc(copyFrom(exHere)?.name || 'otra tienda')}${copyRefOk(exHere) ? ' · Precios Claros coincide' : ''}.</b> Si en góndola está igual: <button type="button" class="btn sm" data-act="cpyverify" data-id="${exHere.id}" data-hoy="1">Está igual en góndola</button><br>` : ''} Tipeá el precio nuevo: el anterior pasa al historial. Si fue un error de carga, <button type="button" class="btn sm ghost" data-act="editprice" data-id="${exHere.id}">Corregilo</button> sin guardar historial.</div>` : ''}
     ${lock ? `<div class="small muted">Los datos de la presentación se cambian desde Datos, porque afectan sus precios en todas las tiendas. <button type="button" class="btn sm ghost" data-act="editpres" data-id="${F.presId}">Editar presentación</button></div>` : ''}
     <div class="grid2"><label class="fl" for="fMarca">Marca<input id="fMarca" data-f="marca" ${lock} value="${esc(F.marca)}" autocomplete="off" list="dlMarcas"></label><label class="fl" for="fDesc">Variedad / detalle<input id="fDesc" data-f="desc" ${lock} value="${esc(F.desc)}" autocomplete="off"></label></div>
     <datalist id="dlMarcas">${(() => { const c = {}; S.pres.forEach(x => { c[x.marca] = (c[x.marca] || 0) + 1 + nPricesPres(x); }); return Object.keys(c).sort((a, b) => c[b] - c[a] || a.localeCompare(b, 'es')); })().map(m => `<option value="${esc(m)}">`).join('')}</datalist>
@@ -781,11 +783,11 @@ function renderComparar() {
     const payTxt = c.d > 0 && c.best.payOn ? `${esc(c.pay.name)} ${c.pay.pct}%${c.pay.minimo ? ` <b>(requiere compra mínima ${money(c.pay.minimo)})</b>` : ''}` : c.d > 0 ? `${esc(c.pay.name)} no se suma a la promo` : 'sin descuento de pago';
     return `<article class="item ${s} ${isHere ? 'here' : ''}${r.sim ? ' sim' : ''}">
       <div><div class="it-title">${esc(presLabel(pres))}</div>
-        <div class="it-meta">${r.sim ? `<span class="pill p-sim">El día que… ${esc(simLabel(r.sim))}</span>` : ''}<span class="store">${esc(getStore(p.storeId).name)}${isHere ? ' · acá' : ''}</span>${agePill(p.fecha)}${p.src === 'sepa' ? '<span class="pill p-neutral" title="Lo tomaste de Precios Claros">de Precios Claros</span>' : ''}${!r.sim && c.pr.on ? `<span class="tag">${esc(c.pr.label)}${p.hasta ? ' · hasta ' + ddmm(p.hasta) : ''}</span>` : ''}${!r.sim && c.pr.expired ? '<span class="pill p-neutral">promo vencida</span>' : ''}${CMP.mode === 'week' && !r.sim ? `<span class="pill p-day">${buyTxt(c.at)}</span>` : ''}</div></div>
+        <div class="it-meta">${r.sim ? `<span class="pill p-sim">El día que… ${esc(simLabel(r.sim))}</span>` : ''}<span class="store">${esc(getStore(p.storeId).name)}${isHere ? ' · acá' : ''}</span>${agePill(p.fecha)}${p.src === 'sepa' ? '<span class="pill p-neutral" title="Lo tomaste de Precios Claros">de Precios Claros</span>' : ''}${isCopy(p) ? copyPill(p) : ''}${!r.sim && c.pr.on ? `<span class="tag">${esc(c.pr.label)}${p.hasta ? ' · hasta ' + ddmm(p.hasta) : ''}</span>` : ''}${!r.sim && c.pr.expired ? '<span class="pill p-neutral">promo vencida</span>' : ''}${CMP.mode === 'week' && !r.sim ? `<span class="pill p-day">${buyTxt(c.at)}</span>` : ''}</div></div>
       <div class="it-price"><div class="big per">${money(c.best.per)}<small>/${u}</small></div><span class="final">${c.best.N > 1 ? `${money(c.best.total)} por ${c.best.N}` : `${money(c.best.total)}${cu(pres)}`}</span>
         ${c.best.N > 1 ? `<span class="pill p-warn">Llevando ${c.best.N}</span>` : `<span class="pill p-neutral">Llevando 1</span>`}
         <span class="small" style="font-weight:700;color:var(--${r === top ? 'good' : diff <= 5 ? 'warn' : 'bad'})">${r === top ? (r.sim ? 'Mejor (supuesto)' : 'Mejor') : '+' + money((c.best.per - top.c.best.per) * qtyOf(top.c)) + ' ' + pctS(-diff / 100)}</span></div>
-      ${r.sim ? simRealTxt(r, u) : ''}
+      ${r.sim ? simRealTxt(r, u) : ''}${VER === p.id && isCopy(p) ? verifyPanel(p) : ''}
       <div class="it-sub">${!r.sim && CMP.mode !== 'week' && weekHint(c, W.get(p.id), u) ? `<b style="color:var(--accent)">${weekHint(c, W.get(p.id), u)}</b><br>` : ''}Góndola ${money(p.precio)} · ${payTxt}${alt ? ' · ' + alt : ''}${p.hist?.length ? ` · antes ${money(p.hist[p.hist.length - 1].precio)} (${ageTxt(p.hist[p.hist.length - 1].fecha)})` : ''}</div>
       ${SIMED === p.id ? simForm(r, rows, u) : ''}
       <div class="it-actions">${r.sim ? `<button class="btn sm ghost" data-act="simopen" data-id="${p.id}">Cambiar</button><button class="btn sm ghost" data-act="simdel" data-id="${p.id}">Quitar</button><button class="btn sm" data-act="simreal" data-id="${p.id}">Convertir en real</button>` : SIMED !== p.id ? `<button class="btn sm ghost sim-btn" data-act="simopen" data-id="${p.id}">El día que…</button>` : ''}<button class="btn sm ghost" data-act="editprice" data-id="${p.id}">Corregir</button>${isHere ? `<button class="btn sm" data-act="addcart" data-id="${p.id}" data-q="${c.best.N}">+ Carrito (${c.best.N})</button>` : ''}</div>
@@ -926,6 +928,7 @@ function moveBlock(p, d) {
 function priceForm(p) {
   const d = ED.d;
   return `<div class="paybox" id="edform"><h3>Editar precio · ${esc(presLabel(getPres(p.presId)))}</h3>
+    ${isCopy(p) ? verifyPanel(p, true) : ''}
     ${d.fromCargar ? `<div class="note">Elegí la tienda correcta para este precio. Se mueve como corrección, con su historial.</div>` : ''}
     <label class="fl" for="ed-store">Tienda<select id="ed-store" data-ed="storeId">${[getStore(p.storeId), ...activeStores().filter(x => x.id !== p.storeId)].filter(Boolean).map(x => `<option value="${x.id}" ${x.id === d.storeId ? 'selected' : ''}>${esc(x.name)}${x.id === p.storeId ? ' (actual)' : ''}${x.archived ? ' (archivada)' : ''}</option>`).join('')}</select></label>
     ${moveBlock(p, d)}
@@ -937,6 +940,7 @@ function priceForm(p) {
     ${d.promo.t !== 'none' ? `<label class="switch" for="ed-acum"><input type="checkbox" id="ed-acum" data-ed="acum" ${d.acum ? 'checked' : ''}> La promo se acumula con el descuento del medio de pago</label>` : ''}
     <label class="fl" for="ed-fecha">Fecha del precio<input type="date" id="ed-fecha" data-ed="fecha" value="${esc(d.fecha)}" max="${todayISO()}"></label>
     ${p.hist?.length ? `<div class="small muted">Historial: ${p.hist.slice().reverse().map(h => `${money(h.precio)} (${ageTxt(h.fecha)})`).join(' · ')} <button class="btn sm ghost" data-act="clearhist" data-id="${p.id}" data-confirm="1">Borrar historial</button></div>` : ''}
+    ${copyBlock(p)}
     ${edBtns()}</div>`;
 }
 function renderDatos() {
@@ -958,7 +962,7 @@ function renderDatos() {
   B.stores = storesBody();
   B.prods = (catsAdminHTML() + searchBox('prods', 'Buscar producto') + (S.prods.length > 1 ? sortBar('dProds') : '') + sortList('dProds', qf('prods', S.prods, p => (isEd('prod', p.id) ? Q.prods : `${p.name} ${baseOf(p).short} ${catOf(p)}`))).map(p => isEd('prod', p.id) ? prodForm(p) : `<div class="drow"><span><b>${esc(p.name)}</b> <span class="muted">por ${esc(baseOf(p).short)}</span><br><span class="small muted">${S.pres.filter(x => x.prodId === p.id).length} presentaciones · ${catOf(p) ? esc(catOf(p)) : '<span style="color:var(--warn)">sin categoría</span>'}</span></span><span class="btns">${editBtn('prod', p.id)}<button class="btn sm danger" data-act="delprod" data-id="${p.id}" data-confirm="1">Eliminar</button></span></div>`).join('') || noHits('prods') || '<span class="muted">Todavía no hay productos.</span>');
   B.pres = (searchBox('pres', 'Buscar marca, producto o código de barras') + sortBar('dPres') + `<div id="list-pres" style="display:grid;gap:10px">${presListHTML()}</div>`);
-  B.prices = (presFilterNote() + priceStoreFilter() + searchBox('prices', 'Buscar presentación, tienda o producto') + sortBar('dPrices') + `<div id="list-prices" style="display:grid;gap:10px">${priceListHTML()}</div>`);
+  B.prices = (presFilterNote() + priceStoreFilter() + copyFilterHTML() + searchBox('prices', 'Buscar presentación, tienda o producto') + sortBar('dPrices') + `<div id="list-prices" style="display:grid;gap:10px">${priceListHTML()}</div>`);
   B.calc = sec('calc', 'Cómo calcula', `<div class="small" style="display:grid;gap:10px">
     <p style="margin:0">Cada promo se traduce a una sola forma: <b>llevando N unidades, pagás un total T</b>. El precio comparable es <b>T ÷ (N × contenido)</b>, en la unidad del producto (kg, L, metro…).</p>
     <table class="calc-ex"><tr><th>Promo</th><th>N</th><th>Total T</th></tr>
@@ -1300,18 +1304,21 @@ function presListHTML() {
   return h || `<span class="muted">${q ? 'Ninguna presentación coincide con la búsqueda.' : 'Todavía no hay presentaciones.'}</span>`;
 }
 function priceListHTML() {
-  const q = fold(Q.prices);
+  const q = fold(Q.prices), vis = [];
   const h = [...S.prods].sort((a, b) => a.name.localeCompare(b.name, 'es')).map(prod => {
-    let ps = S.prices.filter(p => getPres(p.presId)?.prodId === prod.id && (!DV.pstore || p.storeId === DV.pstore) && (!DV.ppres || p.presId === DV.ppres));
+    let ps = S.prices.filter(p => getPres(p.presId)?.prodId === prod.id && (!DV.pstore || p.storeId === DV.pstore) && (!DV.ppres || p.presId === DV.ppres) && (!DV.pcopy || isCopy(p)));
     if (DV.old) ps = ps.filter(p => ageDays(p.fecha) > OLD_DAYS || isEd('price', p.id));
     if (q) ps = ps.filter(p => isEd('price', p.id) || matchAll(q, `${presLabel(getPres(p.presId))} ${getStore(p.storeId)?.name || ''} ${prod.name} ${getPres(p.presId).ean || ''}`));
-    return ps.length ? `<h3>${esc(prod.name)}</h3>` + sortList('dPrices', ps).map(p => isEd('price', p.id) ? priceForm(p) : `<div class="drow"><span><button type="button" class="linkbtn" data-act="gopres" data-id="${p.presId}" title="Ver la presentación">${esc(presLabel(getPres(p.presId)))}</button><br><span class="small muted">${esc(getStore(p.storeId)?.name || '')}${getStore(p.storeId)?.archived ? ' (archivada)' : ''} · ${money(p.precio)} ${p.promo?.t !== 'none' ? '· ' + promoTxt(p) : ''}${p.acum ? ' · acumula' : ''}</span><span class="age-line">${agePill(p.fecha)}</span></span><span class="btns">${editBtn('price', p.id)}<button class="btn sm danger" aria-label="Eliminar precio" data-act="delprice" data-id="${p.id}" data-confirm="1">×</button></span></div>`).join('') : '';
+    ps.forEach(p => vis.push(p.id));
+    return ps.length ? `<h3>${esc(prod.name)}</h3>` + sortList('dPrices', ps).map(p => isEd('price', p.id) ? priceForm(p) : `<div class="drow"><span>${DV.pcopy ? `<input type="checkbox" class="cpysel" data-chg="cpysel" data-id="${p.id}" ${SELC.has(p.id) ? 'checked' : ''} aria-label="Seleccionar">` : ''}<button type="button" class="linkbtn" data-act="gopres" data-id="${p.presId}" title="Ver la presentación">${esc(presLabel(getPres(p.presId)))}</button><br><span class="small muted">${esc(getStore(p.storeId)?.name || '')}${getStore(p.storeId)?.archived ? ' (archivada)' : ''} · ${money(p.precio)} ${p.promo?.t !== 'none' ? '· ' + promoTxt(p) : ''}${p.acum ? ' · acumula' : ''}</span><span class="age-line">${agePill(p.fecha)}${isCopy(p) ? ' ' + copyPill(p) : ''}</span>${VER === p.id ? verifyPanel(p) : ''}</span><span class="btns">${editBtn('price', p.id)}<button class="btn sm danger" aria-label="Eliminar precio" data-act="delprice" data-id="${p.id}" data-confirm="1">×</button></span></div>`).join('') : '';
   }).join('');
-  return h || `<span class="muted">${q ? 'Ningún precio coincide con la búsqueda' + (DV.pstore ? ' en esta tienda' : '') + '.' : DV.pstore ? 'Esta tienda no tiene precios cargados.' : 'Todavía no hay precios.'}</span>`;
+  LASTVIS = vis; for (const id of [...SELC]) if (!vis.includes(id)) SELC.delete(id);
+  const bar = DV.pcopy && vis.length ? `<div class="note" style="border:2px solid var(--sim);color:var(--ink)">Seleccionados: <b>${SELC.size}</b> de ${vis.length}<div class="btns"><button type="button" class="btn sm ghost" data-act="cpyselall">${SELC.size === vis.length ? 'Quitar selección' : 'Seleccionar todos'}</button><button type="button" class="btn sm primary" data-act="cpyverifysel">Verificar seleccionados (hoy)</button></div></div>` : '';
+  return (h ? bar + h : '') || `<span class="muted">${q ? 'Ningún precio coincide con la búsqueda' + (DV.pstore ? ' en esta tienda' : '') + '.' : DV.pstore ? 'Esta tienda no tiene precios cargados.' : 'Todavía no hay precios.'}</span>`;
 }
 
 /* ============ Datos: portada de tarjetas + pantalla por entidad ============ */
-const DV = { sec: null, adding: false, old: false, keep: false, suc: null, pstore: '', ppres: '', back: null };
+const DV = { sec: null, adding: false, old: false, keep: false, suc: null, pstore: '', ppres: '', back: null, pcopy: false };
 const OLD_DAYS = 21;
 const DSECS = [['pays', 'Pagos', 'Medios de pago y beneficios'], ['stores', 'Tiendas', 'Tiendas'], ['prods', 'Productos', 'Productos comparables'], ['pres', 'Presentaciones', 'Presentaciones'], ['prices', 'Precios', 'Precios cargados'], ['pend', 'Pendientes', 'Pendientes'], ['ajustes', 'Ajustes', 'Ajustes']];
 const DICON = {
@@ -1947,6 +1954,48 @@ function sucAllRes(st, d) {
       <div class="row" style="justify-content:space-between"><span class="small muted">${ean}</span>${mp ? `<span class="btns"><span class="pill p-neutral">La tenés</span><button class="btn sm" data-act="refcmp" data-p="${mp.id}" data-s="${st.id}">Usar este precio</button></span>` : `<button class="btn sm" data-act="svadd" data-e="${ean}">Agregar a mis productos</button>`}</div></div>`;
   }).join('');
 }
+/* ============ Copiar precios entre tiendas y verificar las copias ============
+   La copia conserva la fecha original y queda marcada (src = "copia:<tienda de origen>") hasta que se verifica:
+   con "Verificado" (fecha elegible), "Está igual en góndola" en Cargar, desde Comparar, en lote desde Datos → Precios,
+   o con un toque si Precios Claros informa el mismo precio y la misma promo. */
+let VER = null; const SELC = new Set(); let LASTVIS = [];
+const isCopy = p => String(p?.src || '').startsWith('copia:');
+const copyFrom = p => (isCopy(p) ? getStore(p.src.slice(6)) : null);
+function copyRefOk(p) {
+  const r = refFor(getPres(p.presId)?.ean, p.storeId); if (!r) return null;
+  return r.lista === p.precio && JSON.stringify(canon(p.promo)) === JSON.stringify(canon(refPromo(r).promo)) ? r : null;
+}
+const copyPill = p => `<button type="button" class="pill p-sim cpypill" data-act="cpyopen" data-id="${p.id}" title="Tocá para verificarlo">copiado de ${esc(copyFrom(p)?.name || 'otra tienda')}${copyRefOk(p) ? ' · Precios Claros coincide' : ''}</button>`;
+function verifyPanel(p, inForm) {
+  const r = copyRefOk(p);
+  return `<div class="note cpyv" style="border:2px solid var(--sim);display:grid;gap:8px;color:var(--ink)"><span><b>Copiado de ${esc(copyFrom(p)?.name || 'otra tienda')}</b> · precio del ${ddmm(p.fecha)}. Si lo viste igual en esta tienda, marcalo como verificado: la fecha pasa a la que indiques.</span>
+    ${r ? `<span class="small" style="color:var(--good);font-weight:700">Precios Claros informa el mismo precio y la misma promo (el ${ddmm(r.fecha)}).</span>` : ''}
+    <div class="row"><input type="date" id="vf-${p.id}" value="${todayISO()}" min="${esc(p.fecha)}" max="${todayISO()}" aria-label="Fecha en que lo verificaste" style="max-width:180px"><button type="button" class="btn sm primary" data-act="cpyverify" data-id="${p.id}">Verificado</button></div>
+    ${r ? `<button type="button" class="btn sm" data-act="cpyverify" data-id="${p.id}" data-sepa="1" style="justify-self:start">Verificar con Precios Claros (${ddmm(r.fecha)})</button>` : ''}
+    ${inForm ? '' : `<div class="btns"><button type="button" class="btn sm ghost" data-act="editprice" data-id="${p.id}">Corregir el precio</button><button type="button" class="btn sm ghost" data-act="cpyclose">Cerrar</button></div>`}</div>`;
+}
+function verifyCopy(p, fecha) {
+  if (!p || !isCopy(p)) return;
+  p.src = '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(fecha || '') && fecha > (p.fecha || '') && fecha <= todayISO()) p.fecha = fecha;
+  touch(p);
+  if (ED && ED.kind === 'price' && ED.id === p.id) ED.d.fecha = p.fecha;
+}
+function copyBlock(p) {
+  if (!ED.copy) return `<button type="button" class="btn sm" data-act="cpystart" style="justify-self:start">Copiar a otras tiendas…</button>`;
+  const C = ED.copy, sts = activeStores().filter(s => s.id !== p.storeId).sort((a, b) => a.name.localeCompare(b.name, 'es'));
+  if (!sts.length) return `<div class="small muted">No hay otras tiendas activas para copiar.</div>`;
+  return `<div class="paybox" style="border:2px solid var(--accent)"><b>Copiar a otras tiendas</b>
+    <div class="small muted">Se copia el precio guardado (${money(p.precio)}${p.promo?.t !== 'none' ? ' · ' + promoTxt(p) : ''}, del ${ddmm(p.fecha)}), no los cambios sin guardar. Queda marcado "copiado de ${esc(getStore(p.storeId)?.name || '')}" hasta que lo verifiques. Si la otra tienda ya tiene un precio más nuevo, no se toca.</div>
+    <div class="chips">${sts.map(s => { const ex = S.prices.find(x => x.presId === p.presId && x.storeId === s.id); return `<button type="button" class="chip" aria-pressed="${C.st.includes(s.id)}" data-act="cpystore" data-id="${s.id}">${esc(s.name)}${ex ? ` <span class="muted">(${money(ex.precio)}, ${ageTxt(ex.fecha)})</span>` : ''}</button>`; }).join('')}</div>
+    ${p.promo?.t !== 'none' ? `<label class="switch"><input type="checkbox" data-chg="cpypromo" ${C.promo ? 'checked' : ''}> Copiar también la promo, su vigencia y si se acumula</label>` : ''}
+    <div class="btns"><button type="button" class="btn sm primary" data-act="cpydo">Copiar${C.st.length ? ` a ${C.st.length} ${C.st.length === 1 ? 'tienda' : 'tiendas'}` : ''}</button><button type="button" class="btn sm ghost" data-act="cpycancel">Cancelar</button></div></div>`;
+}
+function copyFilterHTML() {
+  const n = S.prices.filter(isCopy).length;
+  if (!n && !DV.pcopy) return '';
+  return `<label class="switch"><input type="checkbox" data-chg="pcopy" ${DV.pcopy ? 'checked' : ''}> Solo copiados sin verificar (${n})</label>`;
+}
 /* Datos → Precios: filtro por presentación (desde Presentaciones) */
 function presFilterNote() {
   const x = DV.ppres && getPres(DV.ppres); if (!x) { DV.ppres = ''; return ''; }
@@ -2167,7 +2216,7 @@ function render() {
   R[v](); stickVars();
 }
 function go(v) { if (cur() === v) render(); else location.hash = v; window.scrollTo(0, 0); }
-window.addEventListener('hashchange', () => { if (cur() === 'datos' && !DV.keep) { DV.sec = null; DV.adding = false; DV.old = false; DV.suc = null; DV.ppres = ''; DV.back = null; ED = null; } DV.keep = false; render(); window.scrollTo(0, 0); });
+window.addEventListener('hashchange', () => { if (cur() === 'datos' && !DV.keep) { DV.sec = null; DV.adding = false; DV.old = false; DV.suc = null; DV.ppres = ''; DV.back = null; DV.pcopy = false; ED = null; } DV.keep = false; render(); window.scrollTo(0, 0); });
 
 /* ============ acciones ============ */
 const ACT = {
@@ -2276,6 +2325,39 @@ const ACT = {
   goprices: el => { const x = getPres(el.dataset.id); if (!x) return; DV.back = { sec: DV.sec, id: x.id }; ED = null; DV.sec = 'prices'; DV.ppres = x.id; DV.pstore = ''; DV.old = false; Q.prices = ''; renderDatos(); window.scrollTo(0, 0); },
   ppresclr: () => { DV.ppres = ''; renderDatos(); },
   dback: () => { const b = DV.back; DV.back = null; DV.ppres = b?.ppres || ''; ED = null; if (b) DV.sec = b.sec; renderDatos(); setTimeout(() => { const e = b && document.querySelector(`[data-id="${b.id}"][data-act="${b.sec === 'pres' ? 'goprices' : 'gopres'}"]`); if (e) e.scrollIntoView({ block: 'center' }); else window.scrollTo(0, 0); }, 40); },
+  cpyopen: el => { VER = VER === el.dataset.id ? null : el.dataset.id; render(); },
+  cpyclose: () => { VER = null; render(); },
+  cpyverify: el => {
+    const p = getPrice(el.dataset.id); if (!p) return;
+    let f = todayISO();
+    if (el.dataset.sepa) { const r = copyRefOk(p); f = r && r.fecha > p.fecha ? r.fecha : p.fecha; }
+    else if (!el.dataset.hoy) f = $('#vf-' + p.id)?.value || todayISO();
+    verifyCopy(p, f); VER = null; save(); render(); toast('Precio verificado: ya no figura como copiado');
+  },
+  cpystart: () => { if (ED) { ED.copy = { st: [], promo: true }; renderDatos(); } },
+  cpycancel: () => { if (ED) { ED.copy = null; renderDatos(); } },
+  cpystore: el => { const C = ED?.copy; if (!C) return; const i = C.st.indexOf(el.dataset.id); if (i >= 0) C.st.splice(i, 1); else C.st.push(el.dataset.id); renderDatos(); },
+  cpydo: () => {
+    const C = ED?.copy, p = ED && getPrice(ED.id); if (!C || !p) return;
+    if (!C.st.length) return toast('Elegí al menos una tienda');
+    const conPromo = C.promo && p.promo?.t !== 'none';
+    let nuevos = 0, reemp = 0; const omit = [];
+    C.st.forEach(sid => {
+      const np = { precio: p.precio, promo: conPromo ? { ...p.promo } : { t: 'none' }, hasta: conPromo ? p.hasta || '' : '', acum: conPromo ? !!p.acum : false, fecha: p.fecha, src: 'copia:' + p.storeId };
+      const d = S.prices.find(x => x.presId === p.presId && x.storeId === sid);
+      if (!d) { S.prices.push(touch({ ...np, id: uid(), presId: p.presId, storeId: sid, hist: [] })); nuevos++; }
+      else if ((np.fecha || '') > (d.fecha || '')) { d.hist = [...(d.hist || []), { precio: d.precio, fecha: d.fecha }].slice(-12); Object.assign(d, np); touch(d); reemp++; }
+      else omit.push(getStore(sid)?.name || '');
+    });
+    ED.copy = null; save(); renderDatos();
+    toast([nuevos ? `Copiado a ${nuevos} ${nuevos === 1 ? 'tienda' : 'tiendas'}` : '', reemp ? `${reemp} reemplazado${reemp === 1 ? '' : 's'} (el anterior quedó en el historial)` : '', omit.length ? `sin cambios en ${omit.join(', ')}: ya tenía un precio igual o más nuevo` : ''].filter(Boolean).join(' · '), 5000);
+  },
+  cpyselall: () => { if (SELC.size === LASTVIS.length) SELC.clear(); else LASTVIS.forEach(id => SELC.add(id)); const c = $('#list-prices'); if (c) c.innerHTML = priceListHTML(); },
+  cpyverifysel: () => {
+    if (!SELC.size) return toast('Seleccioná los precios que verificaste');
+    const n = SELC.size; SELC.forEach(id => verifyCopy(getPrice(id), todayISO())); SELC.clear(); save(); renderDatos();
+    toast(`${n} ${n === 1 ? 'precio verificado' : 'precios verificados'}`);
+  },
   editstart: el => { startEdit(el.dataset.k, el.dataset.id); renderDatos(); scrollForm(); },
   editprice: el => { startEdit('price', el.dataset.id); go('datos'); scrollForm(); },
   editpres: el => { startEdit('pres', el.dataset.id); go('datos'); scrollForm(); },
@@ -2324,7 +2406,7 @@ const ACT = {
   prefage: el => { PREF.maxAge = +el.dataset.v; savePref(); renderPlanificar(); },
   prefreset: () => { PREF = { ...PREF_DEF, open: true }; savePref(); renderPlanificar(); },
   sync: () => { if (SYUI.result === 'err' && !syncing) toast('Último intento: ' + SYUI.msg + '. Reintentando…', 3500); syncNow(false); },
-  dgo: el => { const s2 = el.dataset.s; if (s2 !== DV.sec) { ED = null; DV.adding = false; } if (s2 !== 'prices') DV.old = false; DV.suc = null; DV.ppres = ''; DV.back = null; DV.sec = s2; renderDatos(); window.scrollTo(0, 0); },
+  dgo: el => { const s2 = el.dataset.s; if (s2 !== DV.sec) { ED = null; DV.adding = false; } if (s2 !== 'prices') DV.old = false; DV.suc = null; DV.ppres = ''; DV.back = null; if (s2 !== 'prices') DV.pcopy = false; DV.sec = s2; renderDatos(); window.scrollTo(0, 0); },
   smerge: el => { SMERGE = el.dataset.id; renderDatos(); },
   smergex: () => { SMERGE = null; renderDatos(); },
   sdomerge: el => { const src = el.dataset.id, dst = $('#mergeDest')?.value; if (!dst) return; const n = getStore(src).name, r = mergeStores(src, dst); SMERGE = null; save(); render(); toast(`${n} se unió a ${getStore(dst).name}: ${r.moved} precio${r.moved === 1 ? '' : 's'} pasaron y ${r.merged} se combinaron.`, 4500); },
@@ -2338,7 +2420,7 @@ const ACT = {
   }),
   edmovepick: el => { ED.d.movePick = el.dataset.v; renderDatos(); },
   movefromcargar: el => { startEdit('price', el.dataset.id); ED.d.fromCargar = true; ED.d.visitToo = true; lastSaved = null; go('datos'); scrollForm(); },
-  dhome: () => { DV.sec = null; DV.adding = false; DV.old = false; DV.suc = null; DV.ppres = ''; DV.back = null; ED = null; renderDatos(); window.scrollTo(0, 0); },
+  dhome: () => { DV.sec = null; DV.adding = false; DV.old = false; DV.suc = null; DV.ppres = ''; DV.back = null; DV.pcopy = false; ED = null; renderDatos(); window.scrollTo(0, 0); },
   dold: () => { DV.sec = 'prices'; DV.old = true; ED = null; SORT.dPrices = { by: 'age', dir: 1 }; try { localStorage.setItem(SORT_LS, JSON.stringify(SORT)); } catch (e) {} renderDatos(); window.scrollTo(0, 0); },
   dold0: () => { DV.old = false; renderDatos(); },
   daddx: () => { DV.adding = false; renderDatos(); },
@@ -2460,7 +2542,7 @@ function onEan(force) {
 /* confirmación en dos toques (sin diálogos del navegador) */
 document.addEventListener('click', e => {
   const nav = e.target.closest('nav.tabs a[data-tab="datos"]');
-  if (nav && cur() === 'datos' && DV.sec) { DV.sec = null; DV.adding = false; DV.old = false; DV.suc = null; DV.ppres = ''; DV.back = null; ED = null; renderDatos(); window.scrollTo(0, 0); return; }
+  if (nav && cur() === 'datos' && DV.sec) { DV.sec = null; DV.adding = false; DV.old = false; DV.suc = null; DV.ppres = ''; DV.back = null; DV.pcopy = false; ED = null; renderDatos(); window.scrollTo(0, 0); return; }
   const el = e.target.closest('[data-act]'); if (!el) return;
   if (el.dataset.confirm) {
     if (!el.dataset.armed || Date.now() - +el.dataset.armed > 3500) { el.dataset.armed = Date.now(); el.dataset.label = el.textContent; el.textContent = 'Tocá de nuevo para confirmar'; setTimeout(() => { if (el.isConnected && el.dataset.armed) { el.textContent = el.dataset.label; delete el.dataset.armed; } }, 3500); return; }
@@ -2510,6 +2592,9 @@ document.addEventListener('change', e => {
   if (a === 'vstore') { S.visit.storeId = t.value; F.storeId = t.value; save(); lastSaved = null; render(); }
   else if (t.dataset.f === 'fecha' || t.dataset.f === 'hasta') { renderCargar(); }
   else if (t.dataset.ed === 'hasta' && ED) { renderDatos(); }
+  else if (a === 'pcopy') { DV.pcopy = t.checked; SELC.clear(); renderDatos(); }
+  else if (a === 'cpysel') { if (t.checked) SELC.add(t.dataset.id); else SELC.delete(t.dataset.id); const c = $('#list-prices'); if (c) c.innerHTML = priceListHTML(); }
+  else if (a === 'cpypromo') { if (ED?.copy) ED.copy.promo = t.checked; }
   else if (a === 'pstore') { DV.pstore = t.value; const c = $('#list-prices'); if (c) c.innerHTML = priceListHTML(); }
   else if (a === 'fstore') { F.storeId = t.value; F.setVisit = false; if (F.presId !== 'new') fillFromPres(getPres(F.presId)); renderCargar(); }
   else if (a === 'vpay') { if (!t.value) return; S.visit.payId = t.value; S.visit.payByStore = { ...(S.visit.payByStore || {}), [S.visit.storeId]: t.value }; save(); render(); }
