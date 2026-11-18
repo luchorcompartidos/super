@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.5.19">
+<meta name="app-version" content="v0.6.0">
 <title>Góndola Comparador</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#132033">
@@ -185,6 +185,17 @@ nav.tabs a[aria-current="page"]::before{content:"";position:absolute;top:0;left:
 .sim-btn{color:var(--sim);border-color:var(--sim)}
 .simbox{grid-column:1/-1;display:grid;gap:8px;border:2px dashed var(--sim);border-radius:12px;padding:10px;background:var(--surface)}
 .simbanner{border:2px dashed var(--sim);background:var(--sim-bg);border-radius:12px;padding:10px;font-size:14px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.prodpick-wrap{display:grid;gap:8px}
+.prodpick{display:flex;justify-content:space-between;align-items:center;gap:10px;width:100%;text-align:left;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:12px;padding:8px 12px;font:inherit;cursor:pointer;min-height:52px}
+.prodpick b{font-size:17px}
+.ppov{position:fixed;inset:0;z-index:40;background:var(--bg);display:flex;flex-direction:column;padding-top:env(safe-area-inset-top)}
+.ppov[hidden]{display:none}
+.pp-head{display:flex;gap:8px;padding:12px 16px;background:var(--surface);border-bottom:1px solid var(--line)}
+.pp-body{flex:1;overflow:auto;padding:8px 16px calc(24px + env(safe-area-inset-bottom));max-width:520px;width:100%;margin:0 auto;box-sizing:border-box}
+.pp-sec{background:var(--surface);border:1px solid var(--line);border-radius:12px;margin-top:10px;overflow:hidden}
+.pp-title{padding:10px 12px;font-weight:700;cursor:pointer;list-style:none}
+.pp-item{display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;text-align:left;border:0;border-top:1px solid var(--line);background:transparent;color:var(--ink);font:inherit;padding:12px;cursor:pointer;min-height:48px}
+.pp-item.on{background:var(--bg);font-weight:700;box-shadow:inset 3px 0 0 var(--accent)}
 .pvl{display:grid;gap:2px;padding:8px 0;border-bottom:1px solid var(--line)}
 .storebar{display:grid;gap:6px;padding:10px;border-radius:12px;background:var(--bg)}
 .storebar.other{background:var(--warn-bg);box-shadow:inset 0 0 0 2px var(--warn)}
@@ -229,7 +240,7 @@ details.more summary{cursor:pointer;color:var(--muted)}
 <div class="app">
   <header class="top">
     <div class="syncbar" id="syncBar" hidden aria-hidden="true"><i></i></div>
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.5.19</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.6.0</button></span></div>
     <div class="symsg" id="syncMsg" role="status" hidden></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
@@ -259,6 +270,7 @@ details.more summary{cursor:pointer;color:var(--muted)}
 
 <div class="toast" id="toast" role="status" hidden></div>
 <dialog class="cdlg" id="confDlg" aria-labelledby="confTitle"></dialog>
+<div class="ppov" id="ppOv" role="dialog" aria-label="Elegir producto" hidden></div>
 <div class="scan" id="scanOv" hidden><video id="scanVideo" playsinline muted autoplay></video><div class="guide" aria-hidden="true"></div><p class="scan-tip">Apuntá al código de barras dentro del recuadro</p><button class="btn primary" id="scanClose">Cerrar cámara</button></div>
 
 <script>
@@ -295,6 +307,8 @@ const BASES = {
   un: { short: 'un', units: { un: 1 }, def: 'un', chips: [[1, 'un'], [6, 'un'], [12, 'un'], [30, 'un']] },
   m:  { short: 'm', units: { m: 1 }, def: 'm', chips: [[30, 'm'], [50, 'm'], [80, 'm']] }
 };
+/* Categorías iniciales de productos (se pueden editar en Datos → Productos) */
+const DEFAULT_CATS = ['Almacén', 'Bebidas', 'Lácteos y frescos', 'Carnes', 'Frutas y verduras', 'Panadería', 'Congelados', 'Limpieza', 'Perfumería e higiene', 'Bebés', 'Mascotas', 'Otros'];
 const baseOf = prod => BASES[prod?.base] || { short: prod?.base || 'u', units: { [prod?.base || 'u']: 1 }, def: prod?.base || 'u', chips: [] };
 const getProd = id => S.prods.find(x => x.id === id);
 const getPres = id => S.pres.find(x => x.id === id);
@@ -395,8 +409,8 @@ function seed() {
       { id: 'p3', name: 'Banco Rojo débito', pct: 25, tope: 10000, usado: 0, minimo: null, dias: [(dow + 2) % 7], stores: [s2], modo: 'reintegro' }
     ],
     prods: [
-      { id: 'ac', name: 'Aceite de girasol', base: 'L' }, { id: 'ye', name: 'Yerba mate', base: 'kg' },
-      { id: 'ph', name: 'Papel higiénico', base: 'm' }, { id: 'le', name: 'Leche entera', base: 'L' }
+      { id: 'ac', name: 'Aceite de girasol', base: 'L', cat: 'Almacén' }, { id: 'ye', name: 'Yerba mate', base: 'kg', cat: 'Almacén' },
+      { id: 'ph', name: 'Papel higiénico', base: 'm', cat: 'Perfumería e higiene' }, { id: 'le', name: 'Leche entera', base: 'L', cat: 'Lácteos y frescos' }
     ],
     pres: [], prices: [], visit: { storeId: s1, payId: 'p1' }, cart: []
   };
@@ -445,6 +459,8 @@ function migrate(d) {
   COLLS.forEach(c => (d[c] = d[c] || []).forEach(r => { r.upd = r.upd || t; }));
   d.pays.forEach(p => { if (p.minimo === undefined) p.minimo = null; });
   d.tomb = d.tomb || []; d.need = d.need || []; d.remind = d.remind || [];
+  if (!Array.isArray(d.cats)) d.cats = DEFAULT_CATS.slice();
+  d.prods.forEach(p => { if (p.cat && !d.cats.includes(p.cat)) d.cats.push(p.cat); });
   // Listas: de cantidad en kg/L a unidades de una presentación
   d.need.forEach(n => {
     if (n.units != null && n.presId) return;
@@ -469,7 +485,7 @@ function lastProd() {
   return r ? r.id : null;
 }
 const lastUseProdSafe = pr => S.prices.reduce((m, p) => (getPres(p.presId)?.prodId === pr.id && (p.upd || '') > m ? p.upd : m), pr.upd || '');
-const setLastProd = id => { if (id && id !== '__new') try { localStorage.setItem(LASTPROD_LS, id); } catch (e) {} };
+const setLastProd = id => { if (id && id !== '__new') { try { localStorage.setItem(LASTPROD_LS, id); } catch (e) {} pushRecent(id); } };
 function resetForm(prodId) {
   const pid = prodId ?? F?.prodId ?? lastProd() ?? S.prods[0]?.id ?? '__new';
   F = { prodId: pid, presId: 'new', ean: '', marca: '', desc: '', cont: '', unit: defUnit(getProd(pid)), pack: '1', precio: '', promo: { t: 'none' }, acum: false,
@@ -479,7 +495,7 @@ function resetForm(prodId) {
 const formStore = () => { const st = getStore(F.storeId); return st && !st.archived ? st.id : S.visit.storeId; };
 const formPay = () => formStore() === S.visit.storeId ? getPay(S.visit.payId) : getPay(pickPay(formStore()));
 resetForm();
-let NP = { name: '', base: 'kg', custom: '' };
+let NP = { name: '', base: 'kg', custom: '', cat: '' };
 const CMP = { prodId: S.prods[0]?.id, mode: 'visit' };
 let lastSaved = null;
 
@@ -613,7 +629,7 @@ function renderCargar() {
     ${!lock && eanOk((F.ean || '').trim()) && F.look?.st !== 'loading' ? `<button type="button" class="btn sm ghost" style="justify-self:start" data-act="lookup">Buscar datos de este código en internet</button>` : ''}
     ${lookNote()}
     <label class="fl" for="fProd">Producto a comparar
-      <select id="fProd" data-chg="fprod">${sortList('selProd', S.prods).map(p => `<option value="${p.id}" ${p.id === F.prodId ? 'selected' : ''}>${esc(p.name)} (por ${baseOf(p).short})</option>`).join('')}<option value="__new" ${F.prodId === '__new' ? 'selected' : ''}>+ Nuevo producto…</option></select></label>${S.prods.length > 1 ? sortBar('selProd') : ''}`;
+      <select id="fProd" data-chg="fprod">${prodGroups(S.prods).map(([c, ps]) => `<optgroup label="${esc(c)}">${sortList('selProd', ps).map(p => `<option value="${p.id}" ${p.id === F.prodId ? 'selected' : ''}>${esc(p.name)} (por ${baseOf(p).short})</option>`).join('')}</optgroup>`).join('')}<option value="__new" ${F.prodId === '__new' ? 'selected' : ''}>+ Nuevo producto…</option></select></label>${S.prods.length > 1 ? sortBar('selProd') : ''}`;
   if (F.prodId === '__new' || !prod) {
     h += newProdForm('createprod') + `</div>`;
     el.innerHTML = h; return;
@@ -653,6 +669,7 @@ function newProdForm(act) {
     <label class="fl" for="npName">Nombre genérico (agrupa marcas y tamaños)<input id="npName" data-np="name" value="${esc(NP.name)}" placeholder="Ej.: Detergente"></label>
     <label class="fl" for="npBase">Se compara por<select id="npBase" data-np="base">${[['kg', 'Kilo (kg)'], ['L', 'Litro (L)'], ['un', 'Unidad'], ['m', 'Metro'], ['otro', 'Otra unidad…']].map(([v, l]) => `<option value="${v}" ${NP.base === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
     <label class="fl" for="npCustom">Otra unidad (ej.: lavado, hoja, pañal)<input id="npCustom" data-np="custom" value="${esc(NP.custom)}"></label>
+    <label class="fl" for="npCat">Categoría${NP.cat ? '' : ' (opcional)'}${catInput('npCat', NP.cat, 'data-np="cat"')}</label>
     <button class="btn primary" data-act="${act}">Crear producto</button></div>`;
 }
 /* Lo que se paga por la presentación (no solo por kg/L) */
@@ -687,7 +704,9 @@ function renderComparar() {
   if (!prod) { el.innerHTML = `<div class="card">Todavía no hay productos. Creá uno en Cargar.</div>`; return; }
   const u = baseOf(prod).short, here = S.visit.storeId, rows = rowsFor(prod.id, CMP.mode, true);
   const nSim = rows.filter(r => r.sim).length;
-  let h = `<div class="chips" role="group" aria-label="Producto">${sortList('selProd', S.prods).map(p => `<button class="chip" aria-pressed="${p.id === prod.id}" data-act="cprod" data-id="${p.id}">${esc(p.name)}</button>`).join('')}</div>
+  const recs = recentProds().filter(p => p.id !== prod.id).slice(0, 8);
+  let h = `<div class="prodpick-wrap"><button type="button" class="prodpick" data-act="ppopen" aria-haspopup="dialog"><span><span class="small muted">${esc(catOf(prod) || SIN_CAT)}</span><br><b>${esc(prod.name)}</b></span><span aria-hidden="true">▾</span></button>
+    ${recs.length ? `<div class="dtabs" role="group" aria-label="Recientes">${recs.map(p => `<button class="chip sm" data-act="cprod" data-id="${p.id}">${esc(p.name)}</button>`).join('')}</div>` : ''}</div>
     <div class="row small"><span class="muted">Calcular con:</span><div class="chips"><button class="chip" aria-pressed="${CMP.mode === 'visit'}" data-act="cmode" data-m="visit">El de mi visita</button><button class="chip" aria-pressed="${CMP.mode === 'best'}" data-act="cmode" data-m="best">El mejor de cada tienda hoy</button><button class="chip" aria-pressed="${CMP.mode === 'week'}" data-act="cmode" data-m="week">Mejor día y medio</button></div></div>`;
   const W = new Map(rows.map(r => [r.p.id, CMP.mode === 'week' ? r.c : bestWeek(r.p)]));
   const top = rows[0], bestHere = rows.find(r => r.p.storeId === here);
@@ -819,7 +838,7 @@ const edBtns = label => `<div class="btns"><button class="btn sm primary" data-a
 const isEd = (k, id) => ED && ED.kind === k && ED.id === id;
 const editBtn = (k, id) => `<button class="btn sm" data-act="editstart" data-k="${k}" data-id="${id}">Editar</button>`;
 function edData(k, id) {
-  if (k === 'prod') { const p = getProd(id); return BASES[p.base] ? { name: p.name, base: p.base, custom: '' } : { name: p.name, base: 'otro', custom: p.base }; }
+  if (k === 'prod') { const p = getProd(id); return BASES[p.base] ? { name: p.name, base: p.base, custom: '', cat: catOf(p) } : { name: p.name, base: 'otro', custom: p.base, cat: catOf(p) }; }
   if (k === 'pres') { const x = getPres(id); return { prodId: x.prodId, marca: x.marca, desc: x.desc || '', cont: nfx.format(x.cont), unit: x.unit, pack: String(x.pack || 1), ean: x.ean || '' }; }
   const p = getPrice(id);
   return { precio: nfx.format(p.precio), promo: { ...p.promo }, acum: !!p.acum, fecha: p.fecha, modo: 'fix', orig: p.fecha, hasta: p.hasta || '', storeId: p.storeId, movePick: null, visitToo: false, fromCargar: false };
@@ -834,6 +853,7 @@ function prodForm(p) {
   const d = ED.d, nb = d.base === 'otro' ? (d.custom || '').trim() : d.base, info = baseChangeInfo(p, nb || p.base), n = info.priced.length;
   return `<div class="paybox" id="edform"><h3>Editar producto comparable</h3>
     <label class="fl" for="ed-name">Nombre<input id="ed-name" data-ed="name" value="${esc(d.name)}"></label>
+    <label class="fl" for="ed-cat">Categoría${catInput('ed-cat', d.cat, 'data-ed="cat"')}</label>
     <label class="fl" for="ed-base">Se compara por<select id="ed-base" data-ed="base" ${n ? 'disabled' : ''}>${[['kg', 'Kilo (kg)'], ['L', 'Litro (L)'], ['un', 'Unidad'], ['m', 'Metro'], ['otro', 'Otra unidad…']].map(([v, l]) => `<option value="${v}" ${d.base === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
     ${d.base === 'otro' ? `<label class="fl" for="ed-custom">Otra unidad<input id="ed-custom" data-ed="custom" value="${esc(d.custom)}" ${n ? 'disabled' : ''}></label>` : ''}
     ${n ? `<div class="small muted">La unidad no se puede cambiar: ${n} presentaci${n === 1 ? 'ón tiene' : 'ones tienen'} precios cargados en ${esc(baseOf(p).short)} (${info.priced.map(x => esc(presLabel(x))).join(', ')}). Para cambiarla, mové esas presentaciones a otro producto o borrá sus precios.</div>` : ''}
@@ -902,7 +922,7 @@ function renderDatos() {
       <div class="small muted">Los cambios se guardan al tipear y recalculan al instante todas las comparaciones y el carrito.</div>
       <div class="btns"><button class="btn sm ghost" data-act="payreset" data-id="${p.id}">Reiniciar tope usado</button><button class="btn sm danger" data-act="delpay" data-id="${p.id}" data-confirm="1">Eliminar</button></div></div>`).join('') || noHits('pays') || '<span class="muted">Todavía no hay medios de pago.</span>');
   B.stores = storesBody();
-  B.prods = (searchBox('prods', 'Buscar producto') + (S.prods.length > 1 ? sortBar('dProds') : '') + sortList('dProds', qf('prods', S.prods, p => (isEd('prod', p.id) ? Q.prods : `${p.name} ${baseOf(p).short}`))).map(p => isEd('prod', p.id) ? prodForm(p) : `<div class="drow"><span><b>${esc(p.name)}</b> <span class="muted">por ${esc(baseOf(p).short)}</span><br><span class="small muted">${S.pres.filter(x => x.prodId === p.id).length} presentaciones</span></span><span class="btns">${editBtn('prod', p.id)}<button class="btn sm danger" data-act="delprod" data-id="${p.id}" data-confirm="1">Eliminar</button></span></div>`).join('') || noHits('prods') || '<span class="muted">Todavía no hay productos.</span>');
+  B.prods = (catsAdminHTML() + searchBox('prods', 'Buscar producto') + (S.prods.length > 1 ? sortBar('dProds') : '') + sortList('dProds', qf('prods', S.prods, p => (isEd('prod', p.id) ? Q.prods : `${p.name} ${baseOf(p).short} ${catOf(p)}`))).map(p => isEd('prod', p.id) ? prodForm(p) : `<div class="drow"><span><b>${esc(p.name)}</b> <span class="muted">por ${esc(baseOf(p).short)}</span><br><span class="small muted">${S.pres.filter(x => x.prodId === p.id).length} presentaciones · ${catOf(p) ? esc(catOf(p)) : '<span style="color:var(--warn)">sin categoría</span>'}</span></span><span class="btns">${editBtn('prod', p.id)}<button class="btn sm danger" data-act="delprod" data-id="${p.id}" data-confirm="1">Eliminar</button></span></div>`).join('') || noHits('prods') || '<span class="muted">Todavía no hay productos.</span>');
   B.pres = (searchBox('pres', 'Buscar marca, producto o código de barras') + sortBar('dPres') + `<div id="list-pres" style="display:grid;gap:10px">${presListHTML()}</div>`);
   B.prices = (searchBox('prices', 'Buscar presentación, tienda o producto') + sortBar('dPrices') + `<div id="list-prices" style="display:grid;gap:10px">${priceListHTML()}</div>`);
   B.calc = sec('calc', 'Cómo calcula', `<div class="small" style="display:grid;gap:10px">
@@ -931,7 +951,8 @@ function edSave() {
       S.need = S.need.filter(nd => !info.reset.some(x => x.id === nd.presId));
       if (info.reset.length) toast(`${info.reset.length} presentación${info.reset.length === 1 ? '' : 'es'} quedó pendiente de cargar el contenido (Datos → Pendientes).`, 4500);
     }
-    p.name = name; p.base = base; touch(p);
+    const cat = (d.cat || '').trim(); if (cat && !S.cats.includes(cat)) S.cats.push(cat);
+    p.name = name; p.base = base; p.cat = cat; touch(p);
   } else if (ED.kind === 'pres') {
     const x = getPres(ED.id), cont = num(d.cont), pack = Math.round(num(d.pack));
     if (!(cont > 0)) return toast('El contenido tiene que ser mayor a 0');
@@ -1006,7 +1027,7 @@ async function syncTest() {
   catch (e) { toast('No se pudo conectar: ' + e.message + '.', 5000); }
 }
 /* Sincronizar: 1) leer la planilla, 2) detectar conflictos y preguntar, 3) enviar y recibir todo */
-const SFIELDS = { stores: ['name', 'archived'], pays: ['name', 'pct', 'minimo', 'tope', 'usado', 'dias', 'stores', 'modo'], prods: ['name', 'base'], pres: ['prodId', 'marca', 'desc', 'cont', 'unit', 'pack', 'ean', 'pend', 'nota'], prices: ['presId', 'storeId', 'precio', 'promo', 'acum', 'fecha', 'hasta', 'hist'] };
+const SFIELDS = { stores: ['name', 'archived'], pays: ['name', 'pct', 'minimo', 'tope', 'usado', 'dias', 'stores', 'modo'], prods: ['name', 'base', 'cat'], pres: ['prodId', 'marca', 'desc', 'cont', 'unit', 'pack', 'ean', 'pend', 'nota'], prices: ['presId', 'storeId', 'precio', 'promo', 'acum', 'fecha', 'hasta', 'hist'] };
 const ENT = { stores: 'Tienda', pays: 'Medio de pago', prods: 'Producto', pres: 'Presentación', prices: 'Precio' };
 /* Comparación tolerante: vacío = inexistente, "35" = 35, mismo objeto aunque cambie el orden de sus claves */
 function canon(v) {
@@ -1213,10 +1234,10 @@ const SORTS = {
   selPres: { def: 'rec', o: { rec: ['Recientes', lastUsePres, -1], az: ['A-Z', presLabel, 1], cont: ['Contenido', contentOf, 1] } },
   cmp: { def: 'best', o: { best: ['Mejor precio', r => r.c.best.per, 1], gond: ['Precio góndola', r => r.p.precio, 1], age: ['Más viejos', r => r.p.fecha, 1], store: ['Tienda', r => getStore(r.p.storeId)?.name || '', 1], marca: ['Marca', r => presLabel(r.pres), 1] } },
   cart: { def: 'add', o: { add: ['Agregado', x => x.idx, 1], sub: ['Subtotal', x => x.sub, -1], name: ['Nombre', x => presLabel(getPres(x.p.presId)), 1] } },
-  plan: { def: 'save', o: { save: ['Mayor ahorro', x => x.save, -1], az: ['Producto A-Z', x => x.prod.name, 1], store: ['Tienda y día', x => x.best ? (getStore(x.best.p.storeId)?.name || '') + ' ' + x.best.c.at.k : '~', 1] } },
+  plan: { def: 'save', o: { save: ['Mayor ahorro', x => x.save, -1], az: ['Producto A-Z', x => x.prod.name, 1], cat: ['Categoría', x => String(catIdx(catOf(x.prod))).padStart(3, '0') + ' ' + x.prod.name, 1], store: ['Tienda y día', x => x.best ? (getStore(x.best.p.storeId)?.name || '') + ' ' + x.best.c.at.k : '~', 1] } },
   dStores: { def: 'az', o: { az: ['A-Z', s => s.name, 1], add: ['Orden de carga', s => S.stores.indexOf(s), 1] } },
   dPays: { def: 'az', o: { az: ['A-Z', p => p.name, 1], add: ['Orden de carga', p => S.pays.indexOf(p), 1] } },
-  dProds: { def: 'az', o: { az: ['A-Z', p => p.name, 1], npres: ['Presentaciones', p => S.pres.filter(x => x.prodId === p.id).length, -1], mod: ['Modificados', p => p.upd || '', -1] } },
+  dProds: { def: 'az', o: { az: ['A-Z', p => p.name, 1], cat: ['Categoría', p => String(catIdx(catOf(p))).padStart(3, '0') + ' ' + p.name, 1], npres: ['Presentaciones', p => S.pres.filter(x => x.prodId === p.id).length, -1], mod: ['Modificados', p => p.upd || '', -1] } },
   dPres: { def: 'az', o: { az: ['Marca A-Z', presLabel, 1], cont: ['Contenido', contentOf, 1], np: ['Cant. de precios', nPricesPres, -1] } },
   dPrices: { def: 'age', o: { age: ['Más viejos', p => p.fecha, 1], precio: ['Precio', p => p.precio, 1], store: ['Tienda', p => getStore(p.storeId)?.name || '', 1], pres: ['Presentación', p => presLabel(getPres(p.presId)), 1] } }
 };
@@ -1311,7 +1332,7 @@ function datosHome(demo) {
   return demo + `<div class="dgrid">
     ${tile('pays', 'Pagos', S.pays.length, `${hoy} aplica${hoy === 1 ? '' : 'n'} hoy`, topeBajo ? alertBtn('dgo', `${topeBajo} con tope casi agotado`, 'pays') : '')}
     ${(() => { const a = activeStores().length, ar = S.stores.length - a; return tile('stores', 'Tiendas', a, `activa${a === 1 ? '' : 's'}${ar ? ` · ${ar} archivada${ar === 1 ? '' : 's'}` : ''} · ${S.prices.length} precios`); })()}
-    ${tile('prods', 'Productos', S.prods.length, `${S.pres.length} presentaciones`)}
+    ${(() => { const sc = S.prods.filter(p => !catOf(p)).length; return tile('prods', 'Productos', S.prods.length, `${S.pres.length} presentaciones${sc ? ` · ${sc} sin categoría` : ''}`); })()}
     ${(() => { const P = pendData(); return tile('pend', 'Pendientes', P.n, P.n ? `${P.pres.length} por completar · ${P.rem.length} precios para cargar` : 'Nada pendiente', P.n ? alertBtn('dgo', `${P.n} cargas pendientes`, 'pend') : ''); })()}
     ${tile('pres', 'Presentaciones', S.pres.length, sinEan ? `${sinEan} sin código de barras` : 'Todas con código de barras')}
     ${tile('prices', 'Precios', S.prices.length, `${fresh} actualizado${fresh === 1 ? '' : 's'} en la última semana`, old ? alertBtn('dold', `${old} con más de 3 semanas`) : '', true)}
@@ -1541,7 +1562,7 @@ function renderListas() {
     return `<div class="card"><div class="pv-row"><h3>${esc(dayTxt(v.at).replace(/^el /, '').replace(/^./, m => m.toUpperCase()))} · ${esc(v.st.name)}</h3><span class="pill ${ev.d > 0 && !ev.minFalta ? 'p-good' : 'p-neutral'}">${ev.d > 0 ? esc(ev.pay.name) + ' ' + ev.pay.pct + '%' : 'Sin descuento'}</span></div>
       ${ev.d > 0 && ev.pay.minimo ? `<div class="small">${ev.minFalta ? `<b style="color:var(--bad)">Compra mínima ${money(ev.pay.minimo)}: faltan ${money(ev.minFalta)}</b> · sin llegar, el descuento no aplica` : `<span style="color:var(--good)">✓ Compra mínima ${money(ev.pay.minimo)} alcanzada</span>`}</div>` : ''}
       ${ev.capped ? `<div class="small"><b style="color:var(--warn)">Tope:</b> el descuento queda en ${money(ev.disc)}.</div>` : ''}
-      ${ev.lines.map(({ n, l }) => { const pr = getProd(n.prodId), u = baseOf(pr).short, own = getPres(n.presId), other = l.pres.id !== n.presId, hint = promoHint(l), pin = n.pin === v.key; return `<div class="lline">
+      ${ev.lines.slice().sort((a, b) => catIdx(catOf(getProd(a.n.prodId))) - catIdx(catOf(getProd(b.n.prodId))) || getProd(a.n.prodId).name.localeCompare(getProd(b.n.prodId).name, 'es')).map(({ n, l }) => { const pr = getProd(n.prodId), u = baseOf(pr).short, own = getPres(n.presId), other = l.pres.id !== n.presId, hint = promoHint(l), pin = n.pin === v.key; return `<div class="lline">
         <div class="row" style="align-items:flex-start"><input type="checkbox" aria-label="Marcar ${esc(pr.name)} como comprado" data-act="needdone" data-id="${n.id}" style="width:22px;height:22px;min-height:0;margin-top:2px;flex:none">
           <span style="flex:1"><b>${esc(pr.name)}</b><br><span class="small muted">${esc(presLabel(l.pres))}${l.pr.on ? ' · ' + esc(l.pr.label) : ''} · ${money((ev.d > 0 && !ev.minFalta ? l.net : l.gross) / l.qtyBase)}/${esc(u)}</span>
           ${other ? `<br><span class="small" style="color:var(--accent)">En lugar de ${n.units} × ${esc(presLabel(own))} (≈ ${nfx.format(needAmt(n))} ${esc(u)}): conviene esta presentación</span>` : ''}</span>
@@ -1736,7 +1757,7 @@ async function lookupFill(manual) {
       else {
         // Ningún producto coincide: "+ Nuevo producto…" con nombre por categoría y unidad por envase (si se conoce)
         const nm = res.catEs ? res.catEs.replace(/^es:/, '').replace(/-/g, ' ') : ((res.name.split(/\s+/).find(w => w.length > 2 && !/\d/.test(w)) || res.name).toLowerCase());
-        NP = { name: nm.charAt(0).toUpperCase() + nm.slice(1), base: res.qty ? res.qty.fam : (prev?.base || 'un'), custom: '' }; F.prodId = '__new';
+        NP = { name: nm.charAt(0).toUpperCase() + nm.slice(1), base: res.qty ? res.qty.fam : (prev?.base || 'un'), custom: '', cat: suggestCat(`${res.name} ${res.cats}`) }; F.prodId = '__new';
         notes.push(`Ningún producto tuyo coincide con este artículo${prev ? ` (estaba "${prev.name}")` : ''}: revisá el nombre${res.qty ? '' : ' y la unidad de comparación'} sugeridos y tocá "Crear producto", o elegí otro en el desplegable.`);
       }
     }
@@ -1754,6 +1775,76 @@ function lookNote() {
   if (L.st === 'err') return `<div class="note">No se pudieron buscar datos (${esc(L.msg)}). <button type="button" class="btn sm ghost" data-act="lookup">Reintentar</button></div>`;
   return `<div class="note" style="border:2px solid var(--accent)"><b>Datos completados desde <a href="${esc(L.url)}" target="_blank" rel="noopener">${esc(L.src)}</a>.</b> Revisalos antes de guardar, sobre todo el contenido.${L.warn ? `<br><b style="color:var(--warn)">${esc(L.warn)}</b>` : ''}</div>`;
 }
+
+/* ============ Categorías de productos y selector de producto ============ */
+const SIN_CAT = 'Sin categoría';
+const catOf = p => (p && p.cat) || '';
+const catIdx = c => { const i = S.cats.indexOf(c); return i < 0 ? 999 : i; };
+function ensureCats() { S.prods.forEach(p => { if (p.cat && !S.cats.includes(p.cat)) S.cats.push(p.cat); }); }
+/* Sugerencia de categoría por palabras (nombre del producto o categorías de Open Food Facts) */
+const CAT_KW = [
+  ['Bebidas', 'beverages drinks bebida bebidas gin vino vinos cerveza cervezas gaseosa gaseosas agua aguas jugo jugos fernet vermut vermouth whisky vodka ron aperitivo aperitivos sidra champagne espumante licor soda tonica energizante isotonica'],
+  ['Lácteos y frescos', 'dairies dairy lacteos leche leches yogur yogurt queso quesos manteca crema dulce-de-leche postre postres huevos fiambre fiambres jamon salame'],
+  ['Carnes', 'meats carne carnes pollo cerdo vacuna milanesa hamburguesa hamburguesas chorizo salchicha salchichas pescado'],
+  ['Frutas y verduras', 'fruits vegetables fruta frutas verdura verduras papa papas tomate cebolla manzana banana naranja lechuga'],
+  ['Panadería', 'breads bread pan panes facturas tostadas budin bizcochuelo prepizza'],
+  ['Congelados', 'frozen congelado congelados helado helados'],
+  ['Limpieza', 'cleaning household detergente lavandina limpiador limpieza suavizante jabon-en-polvo desengrasante esponja trapo bolsas residuos insecticida'],
+  ['Perfumería e higiene', 'hygiene beauty cosmetics shampoo acondicionador jabon jabones desodorante pasta dental cepillo papel higienico toallitas toallas algodon afeitar crema-de-enjuague'],
+  ['Bebés', 'baby bebe bebes panal panales pañal pañales mamadera'],
+  ['Mascotas', 'pet pets perro perros gato gatos alimento-para-mascotas'],
+  ['Almacén', 'groceries snacks cereals aceite aceites yerba arroz fideos pasta pastas harina azucar cafe te mate galletitas galletas conservas atun arvejas lentejas cereales condimentos sal mayonesa ketchup mostaza vinagre caldo pure tomate-triturado mermelada miel chocolate golosinas']
+];
+function suggestCat(text) {
+  const t = fold(text).replace(/[^a-z0-9ñ\s-]/g, ' '), toks = t.split(/[\s]+/);
+  for (const [c, kw] of CAT_KW) {
+    if (kw.split(' ').some(k => (k.includes('-') ? t.includes(k.replace(/-/g, ' ')) || t.includes(k) : toks.includes(k)))) return S.cats.includes(c) ? c : (S.cats.find(x => fold(x) === fold(c)) || c);
+  }
+  return '';
+}
+/* Recientes: últimos productos usados en Comparar, Cargar o al guardar */
+const RECENT_LS = 'gondola.recent';
+let RECENT = []; try { RECENT = JSON.parse(localStorage.getItem(RECENT_LS) || '[]'); } catch (e) {}
+function pushRecent(id) {
+  if (!id || id === '__new') return;
+  RECENT = [id, ...RECENT.filter(x => x !== id)].slice(0, 10);
+  try { localStorage.setItem(RECENT_LS, JSON.stringify(RECENT)); } catch (e) {}
+}
+const recentProds = () => RECENT.map(getProd).filter(Boolean);
+/* Productos agrupados por categoría, en el orden de las categorías */
+function prodGroups(list) {
+  const g = new Map(); S.cats.forEach(c => g.set(c, []));
+  list.forEach(p => { const c = catOf(p) && S.cats.includes(catOf(p)) ? catOf(p) : SIN_CAT; if (!g.has(c)) g.set(c, []); g.get(c).push(p); });
+  return [...g.entries()].filter(([, ps]) => ps.length).map(([c, ps]) => [c, ps.sort((a, b) => a.name.localeCompare(b.name, 'es'))]);
+}
+/* Selector de producto a pantalla completa (Comparar) */
+const PP = { open: false, q: '', target: 'cmp' };
+function prodPickerHTML() {
+  const q = fold(PP.q), list = q ? S.prods.filter(p => matchAll(q, `${p.name} ${catOf(p)}`)) : S.prods;
+  const cur = PP.target === 'cmp' ? CMP.prodId : F.prodId;
+  const item = p => `<button type="button" class="pp-item${p.id === cur ? ' on' : ''}" data-act="pppick" data-id="${p.id}"><span>${esc(p.name)}</span><span class="small muted">por ${esc(baseOf(p).short)}${S.prices.some(x => getPres(x.presId)?.prodId === p.id) ? '' : ' · sin precios'}</span></button>`;
+  const rec = !q ? recentProds().slice(0, 6) : [];
+  const nSin = S.prods.filter(p => !catOf(p)).length;
+  return `<div class="pp-head"><input type="search" class="search" id="ppSearch" data-ppq="1" value="${esc(PP.q)}" placeholder="Buscar producto" aria-label="Buscar producto" autocomplete="off"><button type="button" class="btn ghost" data-act="ppclose">Cerrar</button></div>
+    <div class="pp-body">
+      ${rec.length ? `<div class="pp-sec"><div class="pp-title">Recientes</div>${rec.map(item).join('')}</div>` : ''}
+      ${prodGroups(list).map(([c, ps]) => `<details class="pp-sec" ${q || ps.some(p => p.id === cur) || prodGroups(list).length <= 2 ? 'open' : ''}><summary class="pp-title">${esc(c)} <span class="muted">${ps.length}</span></summary>${ps.map(item).join('')}</details>`).join('') || '<div class="muted" style="padding:12px">Nada coincide con la búsqueda.</div>'}
+      ${nSin && !q ? `<div class="small muted" style="padding:8px 4px">${nSin} producto${nSin === 1 ? '' : 's'} sin categoría: asignala en Datos → Productos.</div>` : ''}
+    </div>`;
+}
+function openPicker(target) { PP.open = true; PP.q = ''; PP.target = target || 'cmp'; const o = $('#ppOv'); o.innerHTML = prodPickerHTML(); o.hidden = false; setTimeout(() => $('#ppSearch')?.focus(), 50); }
+function closePicker() { PP.open = false; const o = $('#ppOv'); o.hidden = true; o.innerHTML = ''; }
+/* Categorías: administración en Datos → Productos */
+let CATNEW = '';
+function catsAdminHTML() {
+  const used = c => S.prods.filter(p => catOf(p) === c).length;
+  return `<details class="sec" data-sec="cats" ${OPEN.has('cats') ? 'open' : ''}><summary>Categorías (${S.cats.length})</summary><div class="body">
+    ${S.cats.map((c, i) => `<div class="drow"><input aria-label="Nombre de la categoría" data-catname="${i}" value="${esc(c)}"><span class="small muted" style="white-space:nowrap">${used(c)} prod.</span>
+      <span class="btns"><button class="btn sm ghost" aria-label="Subir" data-act="catmove" data-i="${i}" data-d="-1" ${i === 0 ? 'disabled' : ''}>↑</button><button class="btn sm ghost" aria-label="Bajar" data-act="catmove" data-i="${i}" data-d="1" ${i === S.cats.length - 1 ? 'disabled' : ''}>↓</button><button class="btn sm danger" aria-label="Eliminar categoría" data-act="catdel" data-i="${i}" data-confirm="1">×</button></span></div>`).join('')}
+    <div class="row"><input id="catNew" data-catnew="1" value="${esc(CATNEW)}" placeholder="Nueva categoría" aria-label="Nueva categoría"><button class="btn sm" data-act="catadd">Agregar</button></div>
+    <div class="small muted">El orden de las categorías es el que se usa en el selector de producto y en las listas de compra (por sector). Al renombrar se actualizan sus productos; al eliminarla, sus productos quedan sin categoría.</div></div></details>`;
+}
+const catInput = (id, val, dataAttr) => `<input id="${id}" ${dataAttr} value="${esc(val || '')}" list="dlCats" placeholder="Ej.: Bebidas" autocomplete="off"><datalist id="dlCats">${S.cats.map(c => `<option value="${esc(c)}">`).join('')}</datalist>`;
 
 /* ============ navegación ============ */
 const VIEWS = ['cargar', 'comparar', 'planificar', 'carrito', 'datos'];
@@ -1823,7 +1914,13 @@ const ACT = {
   edhastaclr: () => { if (ED) { ED.d.hasta = ''; renderDatos(); } },
   dismiss: () => { lastSaved = null; renderCargar(); $('#fEan')?.focus(); },
   gocmp: el => { CMP.prodId = el.dataset.id; lastSaved = null; go('comparar'); },
-  cprod: el => { CMP.prodId = el.dataset.id; renderComparar(); },
+  cprod: el => { CMP.prodId = el.dataset.id; pushRecent(CMP.prodId); renderComparar(); },
+  ppopen: () => openPicker('cmp'),
+  ppclose: () => closePicker(),
+  pppick: el => { const id = el.dataset.id; closePicker(); CMP.prodId = id; pushRecent(id); renderComparar(); window.scrollTo(0, 0); },
+  catmove: el => { const i = +el.dataset.i, j = i + +el.dataset.d; if (j < 0 || j >= S.cats.length) return; [S.cats[i], S.cats[j]] = [S.cats[j], S.cats[i]]; save(); renderDatos(); },
+  catdel: el => { const c = S.cats[+el.dataset.i]; S.cats.splice(+el.dataset.i, 1); S.prods.forEach(p => { if (p.cat === c) { p.cat = ''; touch(p); } }); save(); renderDatos(); toast(`Categoría "${c}" eliminada`); },
+  catadd: () => { const v = (CATNEW || '').trim(); if (!v) return toast('Escribí el nombre de la categoría'); if (S.cats.some(c => fold(c) === fold(v))) return toast('Esa categoría ya existe'); S.cats.push(v); CATNEW = ''; save(); renderDatos(); },
   cmode: el => { CMP.mode = el.dataset.m; renderComparar(); },
   addcart: el => { const id = el.dataset.id, q = +el.dataset.q || 1; const it = S.cart.find(x => x.priceId === id); if (it) it.qty += q; else S.cart.push({ priceId: id, qty: q }); save(); renderVisit(); toast(`Agregado al carrito (${q})`); },
   qty: el => { const it = S.cart.find(x => x.priceId === el.dataset.id); if (!it) return; it.qty += +el.dataset.d; if (it.qty <= 0) S.cart = S.cart.filter(x => x !== it); save(); render(); },
@@ -1938,7 +2035,9 @@ function dropPrices(fn) {
 function createProd(toForm) {
   const name = (NP.name || '').trim(); if (!name) return toast('Poné un nombre genérico');
   const base = NP.base === 'otro' ? (NP.custom || '').trim() : NP.base; if (!base) return toast('Indicá la unidad de comparación');
-  const p = touch({ id: uid(), name, base }); S.prods.push(p); NP = { name: '', base: 'kg', custom: '' }; save();
+  const cat = (NP.cat || '').trim() || suggestCat(name);
+  if (cat && !S.cats.includes(cat)) S.cats.push(cat);
+  const p = touch({ id: uid(), name, base, cat }); S.prods.push(p); NP = { name: '', base: 'kg', custom: '', cat: '' }; save();
   if (toForm) {
     const keep = { ean: F.ean, marca: F.marca, desc: F.desc, cont: F.cont, unit: F.unit, pack: F.pack, nota: F.nota, look: F.look };
     resetForm(p.id); Object.assign(F, keep); setLastProd(p.id);
@@ -2043,6 +2142,8 @@ document.addEventListener('input', e => {
   else if (t.dataset.edp && ED) { ED.d.promo[t.dataset.edp] = t.value; }
   else if (t.dataset.sf) { SF[t.dataset.sf] = t.value; }
   else if (t.dataset.needflex) { const n = S.need.find(x => x.id === t.dataset.needflex); if (n) { n.flex = t.checked; save(); renderPlanificar(); } }
+  else if (t.dataset.ppq) { PP.q = t.value; const o = $('#ppOv'); const pos = t.selectionStart; o.innerHTML = prodPickerHTML(); const i = $('#ppSearch'); if (i) { i.focus(); try { i.setSelectionRange(pos, pos); } catch (e) {} } }
+  else if (t.dataset.catnew) { CATNEW = t.value; }
   else if (t.dataset.planq) { PREF.q = t.value; savePref(); const c2 = $('#planList'); if (c2) c2.innerHTML = planListHTML(); }
   else if (t.dataset.prefmulti) { PREF.allowMulti = t.checked; savePref(); renderPlanificar(); }
   else if (t.dataset.q) {
@@ -2062,6 +2163,7 @@ document.addEventListener('input', e => {
 document.addEventListener('toggle', e => { const d = e.target; if (d.dataset && d.dataset.pref) { PREF.open = d.open; savePref(); } if (d.dataset && d.dataset.more) F.more = d.open; if (d.dataset && d.dataset.sec) d.open ? OPEN.add(d.dataset.sec) : OPEN.delete(d.dataset.sec); }, true);
 document.addEventListener('change', e => {
   const t = e.target, a = t.dataset.chg;
+  if (t.dataset.catname !== undefined) { const i = +t.dataset.catname, old = S.cats[i], v = t.value.trim(); if (!v || S.cats.some((c, j) => j !== i && fold(c) === fold(v))) { toast('Nombre vacío o repetido'); renderDatos(); return; } S.cats[i] = v; S.prods.forEach(p => { if (p.cat === old) { p.cat = v; touch(p); } }); save(); renderDatos(); return; }
   if (t.id === 'fileImp' && t.files[0]) { t.files[0].text().then(importData); return; }
   if (t.dataset.needpres) { const n = S.need.find(x => x.id === t.dataset.needpres); if (n) { const oldAmt = needAmt(n); n.presId = t.value; n.units = Math.max(1, Math.round(oldAmt / contentOf(getPres(n.presId)))); n.pin = null; save(); renderPlanificar(); } return; }
   if (t.dataset.edsel === 'ptype' && ED) { const v = t.value; ED.d.promo = v === 'nth' ? { t: v, n: 2, v: 50 } : v === 'nxm' ? { t: v, n: 3, m: 2 } : v === 'nfor' ? { t: v, n: 2 } : { t: v }; renderDatos(); return; }
@@ -2091,6 +2193,8 @@ try {
   }
 } catch (e) {}
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && autoOn() && pendientes() && (!SYNC.lastOk || Date.now() - new Date(SYNC.lastOk) > 5 * 60000)) syncNow(true); });
+/* Una sola vez: categoría sugerida para los productos que todavía no tienen (se puede cambiar después) */
+if (!S.catsAuto) { S.prods.forEach(p => { if (!p.cat) { const c = suggestCat(p.name); if (c) { p.cat = c; touch(p); } } }); ensureCats(); S.catsAuto = true; save(); }
 render();
 if (autoOn() && pendientes()) setTimeout(() => syncNow(true), 1500);
 // En iPhone (sin lector nativo) se descarga el lector una vez para que después funcione sin señal
