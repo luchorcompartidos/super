@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.5.9">
+<meta name="app-version" content="v0.5.10">
 <title>Góndola Comparador</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#132033">
@@ -171,8 +171,10 @@ nav.tabs a[aria-current="page"]::before{content:"";position:absolute;top:0;left:
 .vs-ver.sy-ok{color:var(--good);border-color:var(--good);background:var(--good-bg)}
 .vs-ver.sy-err{color:var(--bad);border-color:var(--bad);background:var(--bad-bg)}
 @media (prefers-reduced-motion:reduce){.sy-ic.spin{animation:none}.syncbar i{animation:none;left:0;width:100%;opacity:.6}}
-.needrow{display:grid;grid-template-columns:1fr auto auto;gap:8px}
-.needrow .stepper span{min-width:72px}
+.needbox{display:grid;gap:6px;padding:8px 0;border-bottom:1px solid var(--line)}
+.needbox select{min-height:40px}
+.needbox .stepper span,.lline .stepper span{min-width:44px}
+.lline{display:grid;gap:6px;padding:10px 0;border-bottom:1px solid var(--line)}
 .item.sim{border-style:dashed;border-left-style:solid;border-left-color:var(--sim);background:var(--sim-bg)}
 .p-sim{background:var(--sim);color:var(--surface)}
 .pct{font-size:.85em;font-weight:500;color:var(--muted)}
@@ -227,7 +229,7 @@ details.more summary{cursor:pointer;color:var(--muted)}
 <div class="app">
   <header class="top">
     <div class="syncbar" id="syncBar" hidden aria-hidden="true"><i></i></div>
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.5.9</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.5.10</button></span></div>
     <div class="symsg" id="syncMsg" role="status" hidden></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
@@ -442,7 +444,16 @@ function migrate(d) {
   const t = nowISO();
   COLLS.forEach(c => (d[c] = d[c] || []).forEach(r => { r.upd = r.upd || t; }));
   d.pays.forEach(p => { if (p.minimo === undefined) p.minimo = null; });
-  d.tomb = d.tomb || []; d.need = d.need || []; d.schema = 2; return d;
+  d.tomb = d.tomb || []; d.need = d.need || [];
+  // Listas: de cantidad en kg/L a unidades de una presentación
+  d.need.forEach(n => {
+    if (n.units != null && n.presId) return;
+    const ps = d.pres.filter(x => x.prodId === n.prodId); if (!ps.length) return;
+    const cOf = x => { const pr = d.prods.find(q => q.id === x.prodId); const b = BASES[pr?.base] || { units: {} }; return x.cont * (b.units[x.unit] ?? 1) * (x.pack || 1); };
+    const amt = n.amt || cOf(ps[0]); const fit = ps.filter(x => cOf(x) <= amt + 1e-9).sort((a, b) => cOf(b) - cOf(a))[0] || ps.sort((a, b) => cOf(a) - cOf(b))[0];
+    n.presId = fit.id; n.units = Math.max(1, Math.round(amt / cOf(fit))); n.flex = false; n.pin = null; delete n.amt;
+  });
+  d.schema = 2; return d;
 }
 S = migrate(load());
 
@@ -1379,19 +1390,22 @@ function lineCost(p, pres, amt, d, date) {
   const promoPart = groups * pr.total, remPart = rem * p.precio, gross = promoPart + remPart, base = remPart + (p.acum ? promoPart : 0);
   return { p, pres, pr, units, gross, base, net: gross - base * d, qtyBase: units * C };
 }
+/* Cantidad en la unidad del producto: unidades × contenido de la presentación elegida */
+const needAmt = n => { const pr = getPres(n.presId); return pr ? n.units * contentOf(pr) : 0; };
 function bestLine(n, v, d) {
-  let b = null;
+  let b = null; const amt = needAmt(n);
   S.prices.forEach(p => {
     if (p.storeId !== v.st.id) return; const pres = getPres(p.presId);
     if (!pres || pres.prodId !== n.prodId || (PREF.maxAge && ageDays(p.fecha) > PREF.maxAge)) return;
-    const l = lineCost(p, pres, n.amt, d, v.at.date); if (!b || l.net < b.net) b = l;
+    if (!n.flex && pres.id !== n.presId) return; // misma presentación, salvo que aceptes otra
+    const l = lineCost(p, pres, pres.id === n.presId ? n.units * contentOf(pres) : amt, d, v.at.date); if (!b || l.net < b.net) b = l;
   });
   return b;
 }
 function candVisits() {
   const out = [];
   activeStores().filter(st => !PREF.stores.length || PREF.stores.includes(st.id)).forEach(st => {
-    for (let k = 0; k < 7; k++) { const at = dayInfo(k); if (PREF.days.length && !PREF.days.includes(at.dow)) continue; out.push({ st, at, key: st.id + '|' + k }); }
+    for (let k = 0; k < 7; k++) { const at = dayInfo(k); if (PREF.days.length && !PREF.days.includes(at.dow)) continue; out.push({ st, at, key: st.id + '|' + at.date }); }
   });
   return out;
 }
@@ -1421,18 +1435,23 @@ function buildPlan() {
   const cost = new Map(); // n.id|visit -> costo
   const c = (n, v) => { const k = n.id + '|' + v.key; if (!cost.has(k)) cost.set(k, soloCost(n, v)); return cost.get(k); };
   const assign = new Map(), missing = [];
-  needs.forEach(n => { let bv = null; V.forEach(v => { if (c(n, v) < Infinity && (!bv || c(n, v) < c(n, bv) - 0.5)) bv = v; }); if (bv) assign.set(n.id, bv.key); else missing.push(n); });
+  const pinned = new Set(), unpinned = [];
+  needs.forEach(n => {
+    if (n.pin) { const pv = byKey.get(n.pin); if (pv && c(n, pv) < Infinity) { assign.set(n.id, n.pin); pinned.add(n.id); return; } unpinned.push(n); n.pin = null; }
+    let bv = null; V.forEach(v => { if (c(n, v) < Infinity && (!bv || c(n, v) < c(n, bv) - 0.5)) bv = v; }); if (bv) assign.set(n.id, bv.key); else missing.push(n);
+  });
   const groups = () => { const g = new Map(); needs.forEach(n => { const k = assign.get(n.id); if (k) { if (!g.has(k)) g.set(k, []); g.get(k).push(n); } }); return g; };
   // Concentrar: lo que ahorra menos que el umbral pasa a la visita principal
   let g = groups();
   const main = () => [...groups().entries()].sort((a, b) => b[1].reduce((s2, n) => s2 + c(n, byKey.get(a[0])), 0) - a[1].reduce((s2, n) => s2 + c(n, byKey.get(b[0])), 0))[0]?.[0];
-  if (PREF.cons > 0) { const mk = main(); if (mk) needs.forEach(n => { const k = assign.get(n.id); if (!k || k === mk) return; const cm = c(n, byKey.get(mk)); if (cm < Infinity && cm <= c(n, byKey.get(k)) * (1 + PREF.cons / 100)) assign.set(n.id, mk); }); }
+  if (PREF.cons > 0) { const mk = main(); if (mk) needs.forEach(n => { const k = assign.get(n.id); if (!k || k === mk || pinned.has(n.id)) return; const cm = c(n, byKey.get(mk)); if (cm < Infinity && cm <= c(n, byKey.get(k)) * (1 + PREF.cons / 100)) assign.set(n.id, mk); }); }
   // Máximo de visitas: se elimina la visita cuyo reparto encarece menos el total
   g = groups();
   while (PREF.maxVisits > 0 && g.size > PREF.maxVisits) {
     let bestDrop = null;
     for (const [k, items] of g) {
       const others = [...g.keys()].filter(x => x !== k); let extra = 0, moves = [];
+      if (items.some(n => pinned.has(n.id))) continue; // una visita con productos fijados no se elimina
       for (const n of items) { let bk = null; others.forEach(o => { if (c(n, byKey.get(o)) < Infinity && (!bk || c(n, byKey.get(o)) < c(n, byKey.get(bk)))) bk = o; }); if (!bk) { extra = Infinity; break; } extra += c(n, byKey.get(bk)) - c(n, byKey.get(k)); moves.push([n.id, bk]); }
       if (extra < Infinity && (!bestDrop || extra < bestDrop.extra)) bestDrop = { k, extra, moves };
     }
@@ -1446,9 +1465,16 @@ function buildPlan() {
   const here = { st: getStore(S.visit.storeId), at: dayInfo(0), key: 'here' };
   let baseline = null;
   if (here.st && needs.length && !missing.length) { const vp = getPay(S.visit.payId), d = payRate(vp, here.st.id); const ls = needs.map(n => bestLine(n, here, d)); if (ls.every(Boolean)) baseline = ls.reduce((a, l) => a + l.net, 0); }
-  return { needs, visits, missing, total, baseline };
+  if (unpinned.length) save();
+  return { needs, visits, missing, total, baseline, unpinned };
 }
-const needStep = n => { const pb = planBest(getProd(n.prodId)); const pres = pb ? pb.pres : S.pres.find(x => x.prodId === n.prodId); return pres ? contentOf(pres) : 1; };
+/* "Sumando 1 más pagás lo mismo" / "+$X completás la promo", como en el Carrito */
+function promoHint(l) {
+  if (!(l.pr.on && l.pr.N > 1)) return '';
+  const rem = l.units % l.pr.N; if (!rem) return '';
+  const add = l.pr.N - rem, extra = l.pr.total - rem * l.p.precio;
+  return extra <= 0.5 ? `Sumando ${add} más pagás lo mismo` : `Sumando ${add} más completás la promo: +${money(extra)}`;
+}
 function addToListBtn(x) {
   return S.need.some(n => n.prodId === x.prod.id && !n.done) ? `<button class="btn sm" data-act="pltab" data-t="list">En la lista ✓</button>` : `<button class="btn sm" data-act="needadd" data-id="${x.prod.id}">+ Lista</button>`;
 }
@@ -1456,9 +1482,13 @@ function renderListas() {
   const P = buildPlan(), notIn = S.prods.filter(pr => !S.need.some(n => n.prodId === pr.id && !n.done));
   let h = `<div class="dhead"><h2>Listas de compra</h2></div>
     <div class="card"><h3>Qué necesito</h3>
-    ${S.need.filter(n => !n.done && getProd(n.prodId)).map(n => { const pr = getProd(n.prodId), u = baseOf(pr).short; return `<div class="drow needrow"><span><b>${esc(pr.name)}</b></span><span class="stepper"><button aria-label="Menos" data-act="needamt" data-id="${n.id}" data-d="-1">−</button><span style="min-width:64px">${nfx.format(n.amt)} ${esc(u)}</span><button aria-label="Más" data-act="needamt" data-id="${n.id}" data-d="1">+</button></span><button class="btn sm ghost" aria-label="Quitar de la lista" data-act="needdel" data-id="${n.id}">×</button></div>`; }).join('') || '<span class="muted small">Todavía no agregaste productos. Usá "+ Lista" en Sugerencias o elegí uno acá.</span>'}
+    ${S.need.filter(n => !n.done && getProd(n.prodId)).map(n => { const pr = getProd(n.prodId), u = baseOf(pr).short, ps = S.pres.filter(x => x.prodId === n.prodId); return `<div class="needbox">
+      <div class="row" style="justify-content:space-between"><b>${esc(pr.name)}</b><button class="btn sm ghost" aria-label="Quitar de la lista" data-act="needdel" data-id="${n.id}">×</button></div>
+      <div class="row"><select aria-label="Presentación" data-needpres="${n.id}" class="grow">${ps.map(x => `<option value="${x.id}" ${x.id === n.presId ? 'selected' : ''}>${esc(presLabel(x))}</option>`).join('')}</select>
+        <span class="stepper"><button aria-label="Una unidad menos" data-act="needunits" data-id="${n.id}" data-d="-1">−</button><span>× ${n.units}</span><button aria-label="Una unidad más" data-act="needunits" data-id="${n.id}" data-d="1">+</button></span></div>
+      <div class="row small" style="justify-content:space-between"><span class="muted">≈ ${nfx.format(needAmt(n))} ${esc(u)}${n.pin ? ' · fijado en una visita' : ''}</span><label class="switch" for="nf-${n.id}" style="font-size:13px"><input type="checkbox" id="nf-${n.id}" data-needflex="${n.id}" ${n.flex ? 'checked' : ''}> Aceptar otra presentación si conviene</label></div></div>`; }).join('') || '<span class="muted small">Todavía no agregaste productos. Usá "+ Lista" en Sugerencias o elegí uno acá.</span>'}
     ${notIn.length ? `<div class="row"><select id="needSel" aria-label="Producto a agregar">${sortList('selProd', notIn).map(pr => `<option value="${pr.id}">${esc(pr.name)}</option>`).join('')}</select><button class="btn sm" data-act="needaddsel">Agregar</button></div>` : ''}
-    <div class="small muted">La cantidad está en la unidad del producto; cada toque suma una presentación sugerida.</div></div>
+    <div class="small muted">El + y el − suman o restan unidades de la presentación elegida; las listas por tienda muestran y cambian la misma cantidad.</div></div>
     <details class="sec" data-pref="1" ${PREF.open ? 'open' : ''}><summary>Cómo armar las visitas</summary><div class="body">
       <div class="fl">Máximo de visitas<div class="chips">${[[1, '1'], [2, '2'], [3, '3'], [0, 'Sin límite']].map(([v, l]) => `<button type="button" class="chip sm" aria-pressed="${PREF.maxVisits === v}" data-act="prefset" data-k="maxVisits" data-v="${v}">${l}</button>`).join('')}</div></div>
       <div class="fl">Concentrar en la visita principal si el ahorro es menor a<div class="chips">${[[0, 'No concentrar'], [3, '3%'], [5, '5%'], [10, '10%']].map(([v, l]) => `<button type="button" class="chip sm" aria-pressed="${PREF.cons === v}" data-act="prefset" data-k="cons" data-v="${v}">${l}</button>`).join('')}</div></div>
@@ -1473,10 +1503,18 @@ function renderListas() {
     return `<div class="card"><div class="pv-row"><h3>${esc(dayTxt(v.at).replace(/^el /, '').replace(/^./, m => m.toUpperCase()))} · ${esc(v.st.name)}</h3><span class="pill ${ev.d > 0 && !ev.minFalta ? 'p-good' : 'p-neutral'}">${ev.d > 0 ? esc(ev.pay.name) + ' ' + ev.pay.pct + '%' : 'Sin descuento'}</span></div>
       ${ev.d > 0 && ev.pay.minimo ? `<div class="small">${ev.minFalta ? `<b style="color:var(--bad)">Compra mínima ${money(ev.pay.minimo)}: faltan ${money(ev.minFalta)}</b> · sin llegar, el descuento no aplica` : `<span style="color:var(--good)">✓ Compra mínima ${money(ev.pay.minimo)} alcanzada</span>`}</div>` : ''}
       ${ev.capped ? `<div class="small"><b style="color:var(--warn)">Tope:</b> el descuento queda en ${money(ev.disc)}.</div>` : ''}
-      ${ev.lines.map(({ n, l }) => { const pr = getProd(n.prodId), u = baseOf(pr).short; return `<div class="drow"><label class="switch" style="flex:1"><input type="checkbox" data-act="needdone" data-id="${n.id}"> <span><b>${esc(pr.name)}</b><br><span class="small muted">${esc(presLabel(l.pres))} × ${l.units}${l.pr.on ? ' · ' + esc(l.pr.label) : ''} · ${money((ev.d > 0 && !ev.minFalta ? l.net : l.gross) / l.qtyBase)}/${esc(u)}</span></span></label><b>${money(ev.d > 0 && !ev.minFalta ? l.net : l.gross)}</b></div>`; }).join('')}
+      ${ev.lines.map(({ n, l }) => { const pr = getProd(n.prodId), u = baseOf(pr).short, own = getPres(n.presId), other = l.pres.id !== n.presId, hint = promoHint(l), pin = n.pin === v.key; return `<div class="lline">
+        <div class="row" style="align-items:flex-start"><input type="checkbox" aria-label="Marcar ${esc(pr.name)} como comprado" data-act="needdone" data-id="${n.id}" style="width:22px;height:22px;min-height:0;margin-top:2px;flex:none">
+          <span style="flex:1"><b>${esc(pr.name)}</b><br><span class="small muted">${esc(presLabel(l.pres))}${l.pr.on ? ' · ' + esc(l.pr.label) : ''} · ${money((ev.d > 0 && !ev.minFalta ? l.net : l.gross) / l.qtyBase)}/${esc(u)}</span>
+          ${other ? `<br><span class="small" style="color:var(--accent)">En lugar de ${n.units} × ${esc(presLabel(own))} (≈ ${nfx.format(needAmt(n))} ${esc(u)}): conviene esta presentación</span>` : ''}</span>
+          <b>${money(ev.d > 0 && !ev.minFalta ? l.net : l.gross)}</b></div>
+        <div class="row" style="justify-content:space-between;padding-left:30px"><span class="stepper"><button aria-label="Una unidad menos" data-act="needunits" data-id="${n.id}" data-d="-1">−</button><span>× ${other ? l.units : n.units}</span><button aria-label="Una unidad más" data-act="needunits" data-id="${n.id}" data-d="1">+</button></span>
+          <button class="chip sm" aria-pressed="${pin}" data-act="needpin" data-id="${n.id}" data-key="${v.key}" title="${pin ? 'Fijado en esta visita: tocá para soltarlo' : 'Fijar en esta visita para que no se mueva al recalcular'}">${pin ? 'Fijado aquí' : 'Fijar aquí'}</button></div>
+        ${hint ? `<div style="padding-left:30px"><span class="pill p-warn">${esc(hint)}</span></div>` : ''}</div>`; }).join('')}
       <table class="calc"><tr><td>Subtotal</td><td>${money(ev.gross)}</td></tr>${ev.disc ? `<tr><td>${esc(ev.pay.name)} ${ev.pay.pct}%${ev.pay.modo === 'reintegro' ? ' (reintegro)' : ''}</td><td>− ${money(ev.disc)}</td></tr>` : ''}<tr class="total"><td>Total</td><td>${money(ev.total)}</td></tr></table>
       <div class="btns"><button class="btn sm primary" data-act="tocart" data-key="${v.key}">Pasar al carrito${now ? '' : ' (para ' + esc(dayTxt(v.at)) + ')'}</button></div></div>`;
   }).join('');
+  if (P.unpinned?.length) h += `<div class="note">Se soltó la fijación de ${P.unpinned.map(n => esc(getProd(n.prodId).name)).join(', ')}: esa visita ya no está disponible (día pasado o fuera de tus preferencias).</div>`;
   if (P.missing.length) h += `<div class="note">Sin precio que cumpla tus preferencias: ${P.missing.map(n => esc(getProd(n.prodId).name)).join(', ')}.</div>`;
   const done = S.need.filter(n => n.done && getProd(n.prodId));
   if (done.length) h += `<div class="card"><h3>Ya comprados (${done.length})</h3>${done.map(n => `<div class="drow"><span>${esc(getProd(n.prodId).name)}</span><button class="btn sm ghost" data-act="needundo" data-id="${n.id}">Deshacer</button></div>`).join('')}<button class="btn sm ghost" data-act="needclear" data-confirm="1">Quitar los comprados</button></div>`;
@@ -1601,9 +1639,10 @@ const ACT = {
   editpres: el => { startEdit('pres', el.dataset.id); go('datos'); scrollForm(); },
   edcancel: () => { ED = null; renderDatos(); },
   edsave: () => edSave(),
-  needadd: el => { const pr = getProd(el.dataset.id); if (!pr) return; const pb = planBest(pr); const pres = pb ? pb.pres : S.pres.find(x => x.prodId === pr.id); const amt = pres ? contentOf(pres) * (pb ? pb.b.N : 1) : 1; S.need.push({ id: uid(), prodId: pr.id, amt, done: false }); save(); render(); toast(`${pr.name} agregado a la lista`); },
+  needadd: el => { const pr = getProd(el.dataset.id); if (!pr) return; const pb = planBest(pr); const pres = pb ? pb.pres : S.pres.find(x => x.prodId === pr.id); if (!pres) return toast('Ese producto todavía no tiene presentaciones'); S.need.push({ id: uid(), prodId: pr.id, presId: pres.id, units: pb ? pb.b.N : 1, flex: false, pin: null, done: false }); save(); render(); toast(`${pr.name} agregado a la lista`); },
+  needunits: el => { const n = S.need.find(x => x.id === el.dataset.id); if (!n) return; n.units = Math.max(1, n.units + +el.dataset.d); save(); renderPlanificar(); },
+  needpin: el => { const n = S.need.find(x => x.id === el.dataset.id); if (!n) return; n.pin = n.pin === el.dataset.key ? null : el.dataset.key; save(); renderPlanificar(); toast(n.pin ? 'Fijado en esta visita: no se mueve al recalcular' : 'Fijación quitada'); },
   needaddsel: () => { const id = $('#needSel')?.value; if (id) ACT.needadd({ dataset: { id } }); },
-  needamt: el => { const n = S.need.find(x => x.id === el.dataset.id); if (!n) return; const st = needStep(n); n.amt = Math.max(st, Math.round((n.amt + st * +el.dataset.d) * 1000) / 1000); save(); renderPlanificar(); },
   needdel: el => { S.need = S.need.filter(x => x.id !== el.dataset.id); save(); renderPlanificar(); },
   needdone: el => { const n = S.need.find(x => x.id === el.dataset.id); if (n) { n.done = true; save(); renderPlanificar(); toast('Marcado como comprado'); } },
   needundo: el => { const n = S.need.find(x => x.id === el.dataset.id); if (n) { n.done = false; save(); renderPlanificar(); } },
@@ -1787,6 +1826,7 @@ document.addEventListener('input', e => {
   else if (t.dataset.ed && ED) { ED.d[t.dataset.ed] = t.type === 'checkbox' ? t.checked : t.value; }
   else if (t.dataset.edp && ED) { ED.d.promo[t.dataset.edp] = t.value; }
   else if (t.dataset.sf) { SF[t.dataset.sf] = t.value; }
+  else if (t.dataset.needflex) { const n = S.need.find(x => x.id === t.dataset.needflex); if (n) { n.flex = t.checked; save(); renderPlanificar(); } }
   else if (t.dataset.planq) { PREF.q = t.value; savePref(); const c2 = $('#planList'); if (c2) c2.innerHTML = planListHTML(); }
   else if (t.dataset.prefmulti) { PREF.allowMulti = t.checked; savePref(); renderPlanificar(); }
   else if (t.dataset.q) { Q[t.dataset.q] = t.value; const c = $('#list-' + t.dataset.q); if (c) c.innerHTML = t.dataset.q === 'pres' ? presListHTML() : priceListHTML(); }
@@ -1803,6 +1843,7 @@ document.addEventListener('toggle', e => { const d = e.target; if (d.dataset && 
 document.addEventListener('change', e => {
   const t = e.target, a = t.dataset.chg;
   if (t.id === 'fileImp' && t.files[0]) { t.files[0].text().then(importData); return; }
+  if (t.dataset.needpres) { const n = S.need.find(x => x.id === t.dataset.needpres); if (n) { const oldAmt = needAmt(n); n.presId = t.value; n.units = Math.max(1, Math.round(oldAmt / contentOf(getPres(n.presId)))); n.pin = null; save(); renderPlanificar(); } return; }
   if (t.dataset.edsel === 'ptype' && ED) { const v = t.value; ED.d.promo = v === 'nth' ? { t: v, n: 2, v: 50 } : v === 'nxm' ? { t: v, n: 3, m: 2 } : v === 'nfor' ? { t: v, n: 2 } : { t: v }; renderDatos(); return; }
   if (t.dataset.ed === 'base' && ED) { renderDatos(); return; }
   if (t.dataset.ed === 'storeId' && ED) { ED.d.movePick = null; renderDatos(); return; }
