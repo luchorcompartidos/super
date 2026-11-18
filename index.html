@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.5.7">
+<meta name="app-version" content="v0.5.8">
 <title>Góndola Comparador</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#132033">
@@ -175,6 +175,7 @@ nav.tabs a[aria-current="page"]::before{content:"";position:absolute;top:0;left:
 .needrow .stepper span{min-width:72px}
 .item.sim{border-style:dashed;border-left-style:solid;border-left-color:var(--sim);background:var(--sim-bg)}
 .p-sim{background:var(--sim);color:var(--surface)}
+.pct{font-size:.85em;font-weight:500;color:var(--muted)}
 .p-day{background:var(--accent);color:var(--accent-ink)}
 .pill.age{background:transparent;border:1px solid currentColor;font-weight:600}
 .simreal{border-left:3px solid var(--sim);padding-left:8px}
@@ -225,7 +226,7 @@ details.more summary{cursor:pointer;color:var(--muted)}
 <div class="app">
   <header class="top">
     <div class="syncbar" id="syncBar" hidden aria-hidden="true"><i></i></div>
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.5.7</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.5.8</button></span></div>
     <div class="symsg" id="syncMsg" role="status" hidden></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
@@ -355,10 +356,15 @@ function bestWeek(p, pres = getPres(p.presId)) {
 const promoTxt = p => { const pr = promo(p); return pr.expired ? `promo vencida (${esc(p.promo.t === 'none' ? '' : promo(p, p.hasta).label)})` : esc(pr.label) + (p.hasta ? ' hasta ' + ddmm(p.hasta) : ''); };
 const conPay = c => (c.d > 0 && (c.best.payOn || !c.best.promoOn) ? `con ${c.pay.name} ${c.pay.pct}%` : 'sin descuento de pago');
 const payName = c => (c.d > 0 && (c.best.payOn || !c.best.promoOn) ? `${c.pay.name} ${c.pay.pct}%` : 'sin descuento de pago');
+/* Diferencias en pesos sobre la MISMA cantidad: la que comprarías con la opción de referencia (N × contenido) */
+const qtyOf = c => (c.best.N || 1) * c.C;
+const qtyTxt = (c, u) => `${nfx.format(qtyOf(c))} ${u}`;
+const pctS = f => `<span class="pct">(${f >= 0 ? '−' : '+'}${nf0.format(Math.abs(f) * 100)}%)</span>`;
 function weekHint(cNow, w, u) {
   if (!w || w.at.k === 0 || !(w.best.per < cNow.best.per * 0.995)) return '';
   const pct = (1 - w.best.per / cNow.best.per) * 100;
-  return `Mejor ${dayTxt(w.at)} ${esc(conPay(w))}: ${money(w.best.per)}/${u}${w.best.N > 1 ? ` llevando ${w.best.N}` : ''} (−${nf0.format(pct)}%)`;
+  const ah = (cNow.best.per - w.best.per) * qtyOf(w);
+  return `Mejor ${dayTxt(w.at)} ${esc(conPay(w))}: ${money(w.best.per)}/${u}${w.best.N > 1 ? ` llevando ${w.best.N}` : ''} · ahorrás ${money(ah)} en ${qtyTxt(w, u)} ${pctS(pct / 100)}`;
 }
 function bestPay(p) {
   let bc = calc(p, NOPAY);
@@ -568,7 +574,7 @@ function renderCargar() {
     h += `<div class="card result" role="status"><div class="pv-row"><h3>Guardado en ${esc(getStore(p.storeId)?.name || '')}: ${esc(presLabel(pres))}</h3></div>
       <div class="pv-row"><span>Queda <b>${i + 1}º de ${rows.length}</b> en ${esc(prod.name)}</span><span class="big per">${money(me.c.best.per)}<small>/${u}</small></span></div>
       <div class="pv-row small"><span class="muted">${me.c.best.promoOn ? esc(me.c.pr.label) : 'Góndola ' + money(p.precio)}${me.c.best.payOn ? ` − ${me.c.pay.pct}% ${esc(me.c.pay.name)}` : ''}</span><b>Pagás ${payUnits(me.c.best, me.c.best.N, me.pres)}</b></div>
-      <div class="small">${i === 0 ? 'Es la mejor opción registrada.' : `+${nf0.format(diff)}% vs la mejor: ${esc(presLabel(top.pres))} en ${esc(getStore(top.p.storeId).name)}${top.c.best.N > 1 ? ' (llevando ' + top.c.best.N + ')' : ''}.`}</div>
+      <div class="small">${i === 0 ? 'Es la mejor opción registrada.' : `+${money((me.c.best.per - top.c.best.per) * qtyOf(top.c))} en ${qtyTxt(top.c, u)} ${pctS(-diff / 100)} vs la mejor: ${esc(presLabel(top.pres))} en ${esc(getStore(top.p.storeId).name)}${top.c.best.N > 1 ? ' (llevando ' + top.c.best.N + ')' : ''}.`}</div>
       <div class="btns"><button class="btn sm primary" data-act="gocmp" data-id="${prod.id}">Ver comparación</button><button class="btn sm ghost" data-act="movefromcargar" data-id="${p.id}">Era otra tienda</button><button class="btn sm" data-act="addcart" data-id="${p.id}" data-q="${me.c.best.N}">+ Carrito (${me.c.best.N})</button><button class="btn sm ghost" data-act="dismiss">Cargar otro</button></div></div>`;
   }
   const prod = getProd(F.prodId), b = baseOf(prod);
@@ -662,15 +668,16 @@ function renderComparar() {
     const pct = today ? (1 - w.c.best.per / today.c.best.per) * 100 : 0;
     h += `<div class="verdict ${now ? 'good' : 'warn'}"><b class="head">${now ? 'Conviene acá, hoy' : `Conviene ${dayTxt(w.c.at)} en ${esc(getStore(w.p.storeId).name)}`}</b>
       <span>${esc(presLabel(w.pres))} a <b>${money(w.c.best.per)}/${u}</b> ${esc(conPay(w.c))}${w.c.best.N > 1 ? ` llevando ${w.c.best.N}` : ''} · pagás ${payUnits(w.c.best, w.c.best.N, w.pres)}.</span>
-      ${!now && today && pct > 0.5 ? `<span class="small">${nf0.format(pct)}% menos que lo mejor de hoy acá (${money(today.c.best.per)}/${u}).${pct < 5 ? ' Diferencia chica.' : ''}</span>` : ''}
+      ${!now && today && pct > 0.5 ? `<span class="small">Ahorrás <b>${money((today.c.best.per - w.c.best.per) * qtyOf(w.c))}</b> en ${qtyTxt(w.c, u)} frente a lo mejor de hoy acá (${money(today.c.best.per)}/${u}) ${pctS(pct / 100)}.${pct < 5 ? ' Diferencia chica.' : ''}</span>` : ''}
       <span class="small muted">Precio de ${ageTxt(w.p.fecha)}. Las promos de la tienda se toman como vigentes salvo que tengan fecha "hasta".</span></div>`;
   }
   else if (!rows.length) h += `<div class="verdict none"><b class="head">Sin precios todavía</b><span>Cargá el primero para ${esc(prod.name)}.</span></div>`;
   else if (!bestHere) h += `<div class="verdict none"><b class="head">Sin precios en ${esc(getStore(here).name)}</b><span>La mejor registrada está en ${esc(getStore(top.p.storeId).name)}: ${esc(presLabel(top.pres))} a ${money(top.c.best.per)}/${u}. Cargá los de acá para comparar.</span></div>`;
-  else if (top.p.storeId === here) h += `<div class="verdict good"><b class="head">Conviene acá</b><span>${esc(presLabel(top.pres))} a <b>${money(top.c.best.per)}/${u}</b>${top.c.best.N > 1 ? ` <b>llevando ${top.c.best.N}</b>` : ''}.</span>${rows[1] ? `<span class="small">Le sigue ${esc(presLabel(rows[1].pres))} (${esc(getStore(rows[1].p.storeId).name)}) a +${nf0.format((rows[1].c.best.per / top.c.best.per - 1) * 100)}%.</span>` : ''}</div>`;
+  else if (top.p.storeId === here) h += `<div class="verdict good"><b class="head">Conviene acá</b><span>${esc(presLabel(top.pres))} a <b>${money(top.c.best.per)}/${u}</b>${top.c.best.N > 1 ? ` <b>llevando ${top.c.best.N}</b>` : ''}.</span>${rows[1] ? `<span class="small">Le sigue ${esc(presLabel(rows[1].pres))} (${esc(getStore(rows[1].p.storeId).name)}) a +${money((rows[1].c.best.per - top.c.best.per) * qtyOf(top.c))} en ${qtyTxt(top.c, u)} ${pctS(1 - rows[1].c.best.per / top.c.best.per)}.</span>` : ''}</div>`;
   else {
     const pct = (1 - top.c.best.per / bestHere.c.best.per) * 100;
-    h += `<div class="verdict warn"><b class="head">En ${esc(getStore(top.p.storeId).name)} sale ${nf0.format(pct)}% menos</b>
+    h += `<div class="verdict warn"><b class="head">En ${esc(getStore(top.p.storeId).name)} ahorrás ${money((bestHere.c.best.per - top.c.best.per) * qtyOf(top.c))} ${pctS(pct / 100)}</b>
+      <span class="small">En ${qtyTxt(top.c, u)}, lo que comprarías con esta opción.</span>
       <span>${esc(presLabel(top.pres))} a ${money(top.c.best.per)}/${u}${top.c.best.N > 1 ? ` llevando ${top.c.best.N}` : ''} · precio de ${ageTxt(top.p.fecha)}.</span>
       <span class="small">Lo mejor acá: ${esc(presLabel(bestHere.pres))} a ${money(bestHere.c.best.per)}/${u}${bestHere.c.best.N > 1 ? ` llevando ${bestHere.c.best.N}` : ''}.${pct < 5 ? ' Diferencia chica: puede no justificar el viaje.' : ''}</span></div>`;
   }
@@ -679,7 +686,7 @@ function renderComparar() {
     const bw = [...W.values()].sort((a, b) => a.best.per - b.best.per)[0];
     if (bw && bw.at.k > 0 && bw.best.per < top.c.best.per * 0.99) {
       const r = rows.find(x => W.get(x.p.id) === bw);
-      h += `<div class="note" style="border:2px solid var(--accent)"><b>Mejor ${dayTxt(bw.at)}:</b> ${esc(presLabel(r.pres))} en ${esc(getStore(r.p.storeId).name)} ${esc(conPay(bw))}, ${money(bw.best.per)}/${u} (−${nf0.format((1 - bw.best.per / top.c.best.per) * 100)}% vs lo mejor de hoy). <button class="btn sm ghost" data-act="cmode" data-m="week">Ver por mejor día</button></div>`;
+      h += `<div class="note" style="border:2px solid var(--accent)"><b>Mejor ${dayTxt(bw.at)}:</b> ${esc(presLabel(r.pres))} en ${esc(getStore(r.p.storeId).name)} ${esc(conPay(bw))}, ${money(bw.best.per)}/${u} · ahorrás ${money((top.c.best.per - bw.best.per) * qtyOf(bw))} en ${qtyTxt(bw, u)} frente a lo mejor de hoy ${pctS(1 - bw.best.per / top.c.best.per)}. <button class="btn sm ghost" data-act="cmode" data-m="week">Ver por mejor día</button></div>`;
     }
   }
   if (SIM.size) h += `<div class="simbanner"><b>El día que…</b> ${SIM.size} ${SIM.size === 1 ? 'simulación activa' : 'simulaciones activas'}${nSim < SIM.size ? ` (${nSim} en este producto)` : ''}. No se guardan. <button class="btn sm ghost" data-act="simclear">Quitar todas</button></div>`;
@@ -695,7 +702,7 @@ function renderComparar() {
         <div class="it-meta">${r.sim ? `<span class="pill p-sim">El día que… ${esc(simLabel(r.sim))}</span>` : ''}<span class="store">${esc(getStore(p.storeId).name)}${isHere ? ' · acá' : ''}</span>${agePill(p.fecha)}${!r.sim && c.pr.on ? `<span class="tag">${esc(c.pr.label)}${p.hasta ? ' · hasta ' + ddmm(p.hasta) : ''}</span>` : ''}${!r.sim && c.pr.expired ? '<span class="pill p-neutral">promo vencida</span>' : ''}${CMP.mode === 'week' ? `<span class="pill p-day">${buyTxt(c.at)}</span>` : ''}</div></div>
       <div class="it-price"><div class="big per">${money(c.best.per)}<small>/${u}</small></div><span class="final">${c.best.N > 1 ? `${money(c.best.total)} por ${c.best.N}` : `${money(c.best.total)}${cu(pres)}`}</span>
         ${c.best.N > 1 ? `<span class="pill p-warn">Llevando ${c.best.N}</span>` : `<span class="pill p-neutral">Llevando 1</span>`}
-        <span class="small" style="font-weight:700;color:var(--${r === top ? 'good' : diff <= 5 ? 'warn' : 'bad'})">${r === top ? 'Mejor' : '+' + nf0.format(diff) + '%'}</span></div>
+        <span class="small" style="font-weight:700;color:var(--${r === top ? 'good' : diff <= 5 ? 'warn' : 'bad'})">${r === top ? 'Mejor' : '+' + money((c.best.per - top.c.best.per) * qtyOf(top.c)) + ' ' + pctS(-diff / 100)}</span></div>
       ${r.sim ? simRealTxt(r, u) : ''}
       <div class="it-sub">${!r.sim && CMP.mode !== 'week' && weekHint(c, W.get(p.id), u) ? `<b style="color:var(--accent)">${weekHint(c, W.get(p.id), u)}</b><br>` : ''}Góndola ${money(p.precio)} · ${payTxt}${alt ? ' · ' + alt : ''}${p.hist?.length ? ` · antes ${money(p.hist[p.hist.length - 1].precio)} (${ageTxt(p.hist[p.hist.length - 1].fecha)})` : ''}</div>
       ${SIMED === p.id ? simForm(r, rows, u) : ''}
@@ -1346,7 +1353,7 @@ function planListHTML() {
     const u = baseOf(x.prod).short;
     if (!x.best) return `<article class="item"><div><div class="it-title">${esc(x.prod.name)}</div><div class="small muted">Sin precios que cumplan tus preferencias (tiendas, días, medios o antigüedad).</div></div></article>`;
     const { p, pres, c, b } = x.best, at = c.at, now = at.k === 0 && p.storeId === S.visit.storeId;
-    const sv = x.save, svTxt = x.base ? (sv > 0.005 ? `<span style="color:var(--good);font-weight:700">−${nf0.format(sv * 100)}% vs hoy acá (${money(x.base.b.per)}/${u})</span>` : now ? '<span class="muted">Es la opción de hoy acá</span>' : '<span class="muted">Igual que hoy acá</span>') : '<span class="muted">Sin precio hoy acá para comparar</span>';
+    const sv = x.save, svTxt = x.base ? (sv > 0.005 ? `<span style="color:var(--good);font-weight:700">−${money((x.base.b.per - b.per) * b.N * contentOf(pres))} vs hoy acá en ${nfx.format(b.N * contentOf(pres))} ${u} ${pctS(sv)} · hoy acá ${money(x.base.b.per)}/${u}</span>` : now ? '<span class="muted">Es la opción de hoy acá</span>' : '<span class="muted">Igual que hoy acá</span>') : '<span class="muted">Sin precio hoy acá para comparar</span>';
     return `<article class="item ${sv > 0.05 ? 's-good' : sv > 0.005 ? 's-warn' : ''}">
       <div><div class="it-title">${esc(x.prod.name)}</div>
         <div class="it-meta"><span class="pill p-day">${buyTxt(at)}</span><span class="store">${esc(getStore(p.storeId).name)}</span><span class="pill p-neutral">${esc(conPay({ ...c, best: b }).replace(/^con /, ''))}</span></div></div>
