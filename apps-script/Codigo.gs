@@ -1,5 +1,5 @@
 /**
- * Góndola · sincronización con Google Sheets (script v0.1.3: agrega la acción "pull" para detectar conflictos)
+ * Góndola · sincronización con Google Sheets (script v0.2.1: tiendas archivadas; v0.1.3: acción "pull" para conflictos)
  * Repo: https://github.com/luchorcompartidos/super
  *
  * Instalación (una sola vez):
@@ -14,7 +14,7 @@ const CLAVE = 'cambiá-esta-clave';
 
 const TABS = { stores: 'Tiendas', pays: 'MediosPago', prods: 'Productos', pres: 'Presentaciones', prices: 'Precios' };
 const FIELDS = {
-  stores: ['id', 'name', 'upd'],
+  stores: ['id', 'name', 'archived', 'upd'],
   pays:   ['id', 'name', 'pct', 'minimo', 'tope', 'usado', 'dias', 'stores', 'modo', 'upd'],
   prods:  ['id', 'name', 'base', 'upd'],
   pres:   ['id', 'prodId', 'marca', 'desc', 'cont', 'unit', 'pack', 'ean', 'upd'],
@@ -39,7 +39,7 @@ function doPost(e) {
   try { req = JSON.parse(e.postData.contents); } catch (err) { return json_({ ok: false, error: 'Pedido inválido' }); }
   if (req.token !== CLAVE) return json_({ ok: false, error: 'Clave incorrecta' });
   const ss = SpreadsheetApp.getActive();
-  if (req.action === 'ping') return json_({ ok: true, planilla: ss.getName(), script: '0.1.3' });
+  if (req.action === 'ping') return json_({ ok: true, planilla: ss.getName(), script: '0.2.1' });
   if (req.action === 'pull') {
     // Solo lectura: la app compara y te pregunta qué hacer con los conflictos antes de enviar.
     const out = {};

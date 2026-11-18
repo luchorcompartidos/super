@@ -24,6 +24,6 @@
 
 ## Actualizar el script
 
-Cuando cambie `Codigo.gs` (por ejemplo, de la versión 0.1.2 a la 0.1.3): pegá el código nuevo, conservá tu CLAVE,
+Cuando cambie `Codigo.gs` (por ejemplo, de la 0.1.3 a la 0.2.1, que agrega las tiendas archivadas): pegá el código nuevo, conservá tu CLAVE,
 guardá y en **Implementar → Gestionar implementaciones → editar (lápiz) → Versión: Nueva versión → Implementar**.
 La URL /exec no cambia.
