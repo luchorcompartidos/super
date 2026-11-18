@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.2.4">
+<meta name="app-version" content="v0.2.5">
 <title>Góndola Comparador</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#132033">
@@ -148,6 +148,11 @@ nav.tabs a[aria-current="page"]::before{content:"";position:absolute;top:0;left:
 .scan button{position:absolute;bottom:calc(24px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%)}
 .result{border:2px solid var(--good);background:var(--good-bg)}
 .sortbar{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.storebar{display:grid;gap:6px;padding:10px;border-radius:12px;background:var(--bg)}
+.storebar.other{background:var(--warn-bg);box-shadow:inset 0 0 0 2px var(--warn)}
+.storebar select{font-weight:700}
+.pstores{border:1px solid var(--line);border-radius:12px;padding:8px 10px}
+details.more summary{cursor:pointer;color:var(--muted)}
 .dgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .tile-d{background:var(--surface);border:1px solid var(--line);border-radius:14px;display:grid;overflow:hidden;align-content:start}
 .tile-d.wide{grid-column:1/-1}
@@ -185,7 +190,7 @@ nav.tabs a[aria-current="page"]::before{content:"";position:absolute;top:0;left:
 <body>
 <div class="app">
   <header class="top">
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button> <button id="verBtn" class="vs-ver" type="button">v0.2.4</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button> <button id="verBtn" class="vs-ver" type="button">v0.2.5</button></span></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
       <label for="vPay">Pago con<select id="vPay" data-chg="vpay"></select></label>
@@ -377,8 +382,12 @@ const defUnit = prod => baseOf(prod).def;
 let F; // formulario de carga
 function resetForm(prodId) {
   const pid = prodId ?? F?.prodId ?? S.prods[0]?.id ?? '__new';
-  F = { prodId: pid, presId: 'new', ean: '', marca: '', desc: '', cont: '', unit: defUnit(getProd(pid)), pack: '1', precio: '', promo: { t: 'none' }, acum: false };
+  F = { prodId: pid, presId: 'new', ean: '', marca: '', desc: '', cont: '', unit: defUnit(getProd(pid)), pack: '1', precio: '', promo: { t: 'none' }, acum: false,
+    storeId: F?.storeId || S.visit.storeId, fecha: F?.fecha || todayISO(), more: !!F?.more, setVisit: false };
 }
+/* Tienda del formulario de carga: por defecto "Estoy en", pero se puede cambiar solo para esta carga */
+const formStore = () => { const st = getStore(F.storeId); return st && !st.archived ? st.id : S.visit.storeId; };
+const formPay = () => formStore() === S.visit.storeId ? getPay(S.visit.payId) : getPay(pickPay(formStore()));
 resetForm();
 let NP = { name: '', base: 'kg', custom: '' };
 const CMP = { prodId: S.prods[0]?.id, mode: 'visit' };
@@ -447,12 +456,14 @@ function buildTemp() {
   if (!(precio > 0)) return { err: 'Falta el precio de góndola' };
   const pr = normPromo(F.promo); if (pr.err) return { err: pr.err };
   const pres = { id: F.presId === 'new' ? '_tmp' : F.presId, prodId: prod.id, marca: (F.marca || '').trim() || 'Sin marca', desc: (F.desc || '').trim(), cont, unit: F.unit, pack, ean: (F.ean || '').trim() };
-  const price = { id: '_tmp', presId: pres.id, storeId: S.visit.storeId, precio, promo: pr.p, acum: !!F.acum, fecha: todayISO() };
+  const fecha = /^\d{4}-\d{2}-\d{2}$/.test(F.fecha || '') ? F.fecha : todayISO();
+  if (fecha > todayISO()) return { err: 'La fecha del precio no puede ser futura' };
+  const price = { id: '_tmp', presId: pres.id, storeId: formStore(), precio, promo: pr.p, acum: !!F.acum, fecha };
   return { pres, price, prod };
 }
 function fillFromPres(pres) {
   Object.assign(F, { prodId: pres.prodId, presId: pres.id, ean: pres.ean || '', marca: pres.marca, desc: pres.desc || '', cont: nfx.format(pres.cont), unit: pres.unit, pack: String(pres.pack || 1), precio: '' });
-  const ex = S.prices.find(x => x.presId === pres.id && x.storeId === S.visit.storeId);
+  const ex = S.prices.find(x => x.presId === pres.id && x.storeId === formStore());
   F.promo = ex ? { ...ex.promo } : { t: 'none' }; F.acum = ex ? !!ex.acum : false;
 }
 const PTYPES = [['none', 'Sin promo'], ['fixed', 'Oferta $'], ['pct', '% off'], ['nth', '2ª al %'], ['nxm', 'Lleva N paga M'], ['nfor', 'N por $']];
@@ -474,6 +485,15 @@ function rankInfo(priceId, prodId) {
   const rows = rowsFor(prodId, 'visit'); const i = rows.findIndex(r => r.p.id === priceId);
   return { rows, i, me: rows[i], top: rows[0] };
 }
+function presStoresHTML(presId, fsid) {
+  const ps = S.prices.filter(p => p.presId === presId);
+  const sts = activeStores().slice().sort((a, b) => (a.id === fsid ? -1 : b.id === fsid ? 1 : a.name.localeCompare(b.name, 'es')));
+  if (sts.length < 2) return '';
+  return `<div class="pstores"><div class="small" style="font-weight:700">Esta presentación en tus tiendas</div>${sts.map(st => {
+    const p = ps.find(x => x.storeId === st.id);
+    return `<div class="drow"><span>${esc(st.name)}${st.id === S.visit.storeId ? ' <span class="small muted">(Estoy en)</span>' : ''}<br><span class="small muted">${p ? `${money(p.precio)}${p.promo?.t !== 'none' ? ' · ' + esc(promo(p).label) : ''} · ${ageTxt(p.fecha)}` : 'sin precio cargado'}</span></span>${st.id === fsid ? '<span class="pill p-good">Cargando acá</span>' : `<button type="button" class="btn sm" data-act="fsetstore" data-id="${st.id}">Cargar acá</button>`}</div>`;
+  }).join('')}</div>`;
+}
 function renderCargar() {
   const el = $('#view-cargar'); const store = getStore(S.visit.storeId), pay = getPay(S.visit.payId);
   let h = '';
@@ -487,7 +507,12 @@ function renderCargar() {
       <div class="btns"><button class="btn sm primary" data-act="gocmp" data-id="${prod.id}">Ver comparación</button><button class="btn sm ghost" data-act="movefromcargar" data-id="${p.id}">Era otra tienda</button><button class="btn sm" data-act="addcart" data-id="${p.id}" data-q="${me.c.best.N}">+ Carrito (${me.c.best.N})</button><button class="btn sm ghost" data-act="dismiss">Cargar otro</button></div></div>`;
   }
   const prod = getProd(F.prodId), b = baseOf(prod);
-  h += `<div class="card"><div class="small muted">Cargando en <b>${esc(store?.name || '—')}</b> · ${esc(pay.name)}</div>
+  const fsid = formStore(), other = fsid !== S.visit.storeId, fpay = formPay();
+  h += `<div class="card"><div class="storebar${other ? ' other' : ''}">
+      <label class="fl" for="fStore">Cargando en<select id="fStore" data-chg="fstore">${[getStore(S.visit.storeId), ...activeStores().filter(x => x.id !== S.visit.storeId).sort((a, b) => a.name.localeCompare(b.name, 'es'))].filter(Boolean).map(x => `<option value="${x.id}" ${x.id === fsid ? 'selected' : ''}>${esc(x.name)}${x.id === S.visit.storeId ? ' (Estoy en)' : ''}</option>`).join('')}</select></label>
+      <div class="small muted">Pago con ${esc(fpay.name)}${fpay.pct ? ' · ' + fpay.pct + '%' : ''}${other ? ' (el que corresponde a esta tienda)' : ''}</div>
+      ${other ? `<div class="small">Solo para esta carga: "Estoy en" sigue siendo <b>${esc(store?.name || '')}</b>.</div><label class="switch" for="fSetVisit"><input type="checkbox" id="fSetVisit" data-f="setVisit" ${F.setVisit ? 'checked' : ''}> Usar ${esc(getStore(fsid).name)} también como "Estoy en"</label>` : ''}
+    </div>
     <label class="fl" for="fProd">Producto a comparar
       <select id="fProd" data-chg="fprod">${sortList('selProd', S.prods).map(p => `<option value="${p.id}" ${p.id === F.prodId ? 'selected' : ''}>${esc(p.name)} (por ${baseOf(p).short})</option>`).join('')}<option value="__new" ${F.prodId === '__new' ? 'selected' : ''}>+ Nuevo producto…</option></select></label>${S.prods.length > 1 ? sortBar('selProd') : ''}`;
   if (F.prodId === '__new' || !prod) {
@@ -495,11 +520,12 @@ function renderCargar() {
     el.innerHTML = h; return;
   }
   const presList = S.pres.filter(x => x.prodId === F.prodId);
-  const exHere = F.presId !== 'new' ? S.prices.find(x => x.presId === F.presId && x.storeId === S.visit.storeId) : null;
+  const exHere = F.presId !== 'new' ? S.prices.find(x => x.presId === F.presId && x.storeId === fsid) : null;
   const units = Object.keys(b.units);
   const lock = F.presId !== 'new' ? 'disabled' : '';
   h += `<div class="row"><label class="fl grow" for="fEan">Código de barras (opcional)<input id="fEan" data-f="ean" inputmode="numeric" ${lock} value="${esc(F.ean)}" placeholder="Ej.: 7791234000017"></label><button type="button" class="btn ghost" style="align-self:end" data-act="scan" ${lock}>Escanear</button></div>
     <label class="fl" for="fPres">Presentación<select id="fPres" data-chg="fpres"><option value="new">Nueva presentación</option>${sortList('selPres', presList).map(x => `<option value="${x.id}" ${x.id === F.presId ? 'selected' : ''}>${esc(presLabel(x))}</option>`).join('')}</select></label>${presList.length > 1 ? sortBar('selPres') : ''}
+    ${F.presId !== 'new' ? presStoresHTML(F.presId, fsid) : ''}
     ${exHere ? `<div class="note">Último precio acá: <b>${money(exHere.precio)}</b> ${exHere.promo?.t !== 'none' ? '<span class="tag">' + esc(promo(exHere).label) + '</span>' : ''} · ${ageTxt(exHere.fecha)}. Tipeá el precio nuevo: el anterior pasa al historial. Si fue un error de carga, <button type="button" class="btn sm ghost" data-act="editprice" data-id="${exHere.id}">Corregilo</button> sin guardar historial.</div>` : ''}
     ${lock ? `<div class="small muted">Los datos de la presentación se cambian desde Datos, porque afectan sus precios en todas las tiendas. <button type="button" class="btn sm ghost" data-act="editpres" data-id="${F.presId}">Editar presentación</button></div>` : ''}
     <div class="grid2"><label class="fl" for="fMarca">Marca<input id="fMarca" data-f="marca" ${lock} value="${esc(F.marca)}" autocomplete="off" list="dlMarcas"></label><label class="fl" for="fDesc">Variedad / detalle<input id="fDesc" data-f="desc" ${lock} value="${esc(F.desc)}" autocomplete="off"></label></div>
@@ -514,6 +540,9 @@ function renderCargar() {
     <div class="fl">Promoción de la tienda<div class="chips">${PTYPES.map(([t, l]) => `<button type="button" class="chip" aria-pressed="${F.promo.t === t}" data-act="ptype" data-t="${t}">${l}</button>`).join('')}</div></div>
     ${promoParams()}
     ${F.promo.t !== 'none' ? `<label class="switch" for="fAcum"><input type="checkbox" id="fAcum" data-f="acum" ${F.acum ? 'checked' : ''}> La promo se acumula con el descuento del medio de pago</label>` : ''}
+    <details class="more" ${F.more ? 'open' : ''} data-more="1"><summary class="small">Más opciones · fecha del precio: <b>${F.fecha === todayISO() ? 'hoy' : esc(F.fecha.split('-').reverse().join('/'))}</b></summary>
+      <label class="fl" for="fFecha" style="margin-top:8px">Fecha del precio (si lo cargás desde un ticket o un folleto)<input type="date" id="fFecha" data-f="fecha" value="${esc(F.fecha)}" max="${todayISO()}"></label>
+      ${F.fecha !== todayISO() ? `<button type="button" class="btn sm ghost" data-act="fhoy">Volver a hoy</button>` : ''}</details>
     <div id="preview" class="preview" aria-live="polite"></div>
     <button class="btn primary block" data-act="save">Guardar precio</button></div>`;
   el.innerHTML = h; updatePreview();
@@ -529,7 +558,7 @@ function updatePreview() {
   const box = $('#preview'); if (!box) return;
   const t = buildTemp();
   if (t.err) { box.innerHTML = `<span class="muted">${esc(t.err)}</span>`; return; }
-  const pay = getPay(S.visit.payId), c = calc(t.price, pay, t.pres), u = baseOf(t.prod).short;
+  const pay = formPay(), c = calc(t.price, pay, t.pres), u = baseOf(t.prod).short;
   let h = `<div class="small muted">Pagando con ${esc(pay.name)}${c.d > 0 ? ` (${pay.pct}%${pay.minimo ? ', con compra mínima ' + money(pay.minimo) : ''})` : ''}${c.d > 0 && c.pr.on && !t.price.acum ? ' · no se suma a la promo' : ''}</div>`;
   const line = (lbl, s, best) => `<div class="pv-row"><span>${lbl}${best ? ' <span class="pill p-good">Conviene</span>' : ''}</span><span class="big">${money(s.per)}<small>/${u}</small></span></div>`;
   h += line(c.pr.on && c.pr.N === 1 ? `Con ${esc(c.pr.label)}` : 'Llevando 1', c.one, c.many && c.best.N === 1);
@@ -1117,12 +1146,21 @@ const ACT = {
     if (t.pres.ean && S.pres.some(x => x.ean === t.pres.ean && x.id !== pres?.id)) return toast('Ese código de barras ya pertenece a otra presentación');
     if (!pres) { pres = touch({ ...t.pres, id: uid() }); S.pres.push(pres); }
     else if (F.presId === 'new' && !pres.ean && t.pres.ean) { pres.ean = t.pres.ean; touch(pres); }
-    let price = S.prices.find(x => x.presId === pres.id && x.storeId === S.visit.storeId);
+    let price = S.prices.find(x => x.presId === pres.id && x.storeId === t.price.storeId);
     const np = { ...t.price, presId: pres.id };
-    if (price) { const hist = [...(price.hist || []), { precio: price.precio, fecha: price.fecha }].slice(-12); Object.assign(price, np, { id: price.id, hist }); touch(price); }
+    let msg = '';
+    if (price && np.fecha < price.fecha) {
+      // Un precio más viejo que el actual (ej.: de un ticket) va al historial y no reemplaza al vigente
+      price.hist = [...(price.hist || []), { precio: np.precio, fecha: np.fecha }].sort((a, b) => (a.fecha < b.fecha ? -1 : 1)).slice(-12); touch(price);
+      msg = `Ese precio es más viejo que el vigente (${ageTxt(price.fecha)}): se guardó en el historial.`;
+    } else if (price) { const hist = [...(price.hist || []), { precio: price.precio, fecha: price.fecha }].slice(-12); Object.assign(price, np, { id: price.id, hist }); touch(price); }
     else { price = touch({ ...np, id: uid(), hist: [] }); S.prices.push(price); }
+    if (F.setVisit && t.price.storeId !== S.visit.storeId) { S.visit.storeId = t.price.storeId; F.storeId = t.price.storeId; }
     save(); lastSaved = price.id; CMP.prodId = pres.prodId; resetForm(pres.prodId); render(); window.scrollTo(0, 0);
+    if (msg) toast(msg, 5000);
   },
+  fsetstore: el => { F.storeId = el.dataset.id; F.setVisit = false; const keep = F.presId; if (keep !== 'new') fillFromPres(getPres(keep)); renderCargar(); $('#fPrecio')?.focus(); },
+  fhoy: () => { F.fecha = todayISO(); renderCargar(); },
   dismiss: () => { lastSaved = null; renderCargar(); $('#fEan')?.focus(); },
   gocmp: el => { CMP.prodId = el.dataset.id; lastSaved = null; go('comparar'); },
   cprod: el => { CMP.prodId = el.dataset.id; renderComparar(); },
@@ -1305,7 +1343,7 @@ document.addEventListener('input', e => {
     touch(p); save(); renderVisit();
   }
 });
-document.addEventListener('toggle', e => { const d = e.target; if (d.dataset && d.dataset.sec) d.open ? OPEN.add(d.dataset.sec) : OPEN.delete(d.dataset.sec); }, true);
+document.addEventListener('toggle', e => { const d = e.target; if (d.dataset && d.dataset.more) F.more = d.open; if (d.dataset && d.dataset.sec) d.open ? OPEN.add(d.dataset.sec) : OPEN.delete(d.dataset.sec); }, true);
 document.addEventListener('change', e => {
   const t = e.target, a = t.dataset.chg;
   if (t.id === 'fileImp' && t.files[0]) { t.files[0].text().then(importData); return; }
@@ -1313,7 +1351,9 @@ document.addEventListener('change', e => {
   if (t.dataset.ed === 'base' && ED) { renderDatos(); return; }
   if (t.dataset.ed === 'storeId' && ED) { ED.d.movePick = null; renderDatos(); return; }
   if (t.dataset.store && !t.value.trim()) { toast('La tienda necesita un nombre'); t.value = getStore(t.dataset.store).name = 'Tienda sin nombre'; save(); renderVisit(); return; }
-  if (a === 'vstore') { S.visit.storeId = t.value; save(); lastSaved = null; render(); }
+  if (a === 'vstore') { S.visit.storeId = t.value; F.storeId = t.value; save(); lastSaved = null; render(); }
+  else if (t.dataset.f === 'fecha') { renderCargar(); }
+  else if (a === 'fstore') { F.storeId = t.value; F.setVisit = false; if (F.presId !== 'new') fillFromPres(getPres(F.presId)); renderCargar(); }
   else if (a === 'vpay') { if (!t.value) return; S.visit.payId = t.value; S.visit.payByStore = { ...(S.visit.payByStore || {}), [S.visit.storeId]: t.value }; save(); render(); }
   else if (a === 'fprod') { resetForm(t.value); lastSaved = null; renderCargar(); }
   else if (a === 'fpres') { if (t.value === 'new') resetForm(F.prodId); else fillFromPres(getPres(t.value)); renderCargar(); if (t.value !== 'new') $('#fPrecio')?.focus(); }
