@@ -1,0 +1,15 @@
+{
+ "fecha": "2026-11-18",
+ "fuente": "Precios Claros - SEPA (datos.produccion.gob.ar)",
+ "recurso": "local",
+ "productos": 78471,
+ "filas": 14206032,
+ "archivos": 1867,
+ "zonas": 8,
+ "sucursales": 230,
+ "sucursales_con_precios": 227,
+ "nombres": 50127,
+ "omitidos": [
+  "2026-11-18/sepa_2_comercio-sepa-36_2026-11-18_01-05-07.zip: File is not a zip file"
+ ]
+}
