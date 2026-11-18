@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.2.8">
+<meta name="app-version" content="v0.3.0">
 <title>Góndola Comparador</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#132033">
@@ -210,7 +210,7 @@ details.more summary{cursor:pointer;color:var(--muted)}
 <div class="app">
   <header class="top">
     <div class="syncbar" id="syncBar" hidden aria-hidden="true"><i></i></div>
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.2.8</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.3.0</button></span></div>
     <div class="symsg" id="syncMsg" role="status" hidden></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
@@ -290,8 +290,15 @@ const presLabel = pres => `${pres.marca}${pres.desc ? ' ' + pres.desc : ''} · $
 
 /* ============ motor de promociones ============
    Toda promo se expresa como: "llevando N unidades, el total es T".  */
-function promo(p) {
+/* Días de la semana próxima: k = 0 es hoy */
+const DOW_L = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+const dayInfo = k => { const d = new Date(); d.setDate(d.getDate() + k); return { k, dow: d.getDay(), date: isoOf(d) }; };
+const ddmm = iso => iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) : '';
+const dayTxt = a => (a.k === 0 ? 'hoy' : a.k === 1 ? 'mañana' : `el ${DOW_L[a.dow]} ${ddmm(a.date)}`);
+function promo(p, date = todayISO()) {
   const P = p.precio, r = p.promo || { t: 'none' };
+  // Promo con vigencia: después de la fecha "hasta" ya no aplica
+  if (r.t !== 'none' && p.hasta && date > p.hasta) return { N: 1, total: P, label: '', on: false, expired: true };
   switch (r.t) {
     case 'fixed': return { N: 1, total: r.v, label: 'Oferta ' + money(r.v), on: true };
     case 'pct':   return { N: 1, total: P * (1 - r.v / 100), label: r.v + '% off', on: true };
@@ -302,15 +309,15 @@ function promo(p) {
   }
 }
 const NOPAY = { id: 'none', name: 'Sin descuento', pct: 0 };
-function payRate(pay, storeId) {
+function payRate(pay, storeId, dow = new Date().getDay()) {
   if (!pay || pay.id === 'none') return 0;
   if (pay.stores?.length && !pay.stores.includes(storeId)) return 0;
-  if (pay.dias?.length && !pay.dias.includes(new Date().getDay())) return 0;
+  if (pay.dias?.length && !pay.dias.includes(dow)) return 0;
   return (pay.pct || 0) / 100;
 }
 /* Precio efectivo por unidad base, para "llevando 1" y "llevando N" */
-function calc(p, pay, pres = getPres(p.presId)) {
-  const C = contentOf(pres), d = payRate(pay, p.storeId), pr = promo(p);
+function calc(p, pay, pres = getPres(p.presId), at = null) {
+  const C = contentOf(pres), d = payRate(pay, p.storeId, at ? at.dow : undefined), pr = promo(p, at ? at.date : undefined);
   let one;
   if (pr.on && pr.N === 1) one = { total: pr.total * (p.acum ? 1 - d : 1), payOn: !!p.acum && d > 0, promoOn: true };
   else one = { total: p.precio * (1 - d), payOn: d > 0, promoOn: false };
@@ -318,7 +325,21 @@ function calc(p, pay, pres = getPres(p.presId)) {
   let many = null;
   if (pr.N > 1) { many = { total: pr.total * (p.acum ? 1 - d : 1), payOn: !!p.acum && d > 0, promoOn: true }; many.per = many.total / (pr.N * C); }
   const best = many && many.per < one.per - 1e-9 ? { ...many, N: pr.N } : { ...one, N: 1 };
-  return { one, many, best, pr, d, C, lista: p.precio / C, pay };
+  return { one, many, best, pr, d, C, lista: p.precio / C, pay, at: at || dayInfo(0) };
+}
+/* El mejor precio de los próximos 7 días, probando cada medio de pago (a igual precio gana el día más cercano) */
+function bestWeek(p, pres = getPres(p.presId)) {
+  let bc = null;
+  for (let k = 0; k < 7; k++) { const at = dayInfo(k); for (const pay of [NOPAY, ...S.pays]) { const c = calc(p, pay, pres, at); if (!bc || c.best.per < bc.best.per - 0.005) bc = c; } }
+  return bc;
+}
+const promoTxt = p => { const pr = promo(p); return pr.expired ? `promo vencida (${esc(p.promo.t === 'none' ? '' : promo(p, p.hasta).label)})` : esc(pr.label) + (p.hasta ? ' hasta ' + ddmm(p.hasta) : ''); };
+const conPay = c => (c.d > 0 && (c.best.payOn || !c.best.promoOn) ? `con ${c.pay.name} ${c.pay.pct}%` : 'sin descuento de pago');
+const payName = c => (c.d > 0 && (c.best.payOn || !c.best.promoOn) ? `${c.pay.name} ${c.pay.pct}%` : 'sin descuento de pago');
+function weekHint(cNow, w, u) {
+  if (!w || w.at.k === 0 || !(w.best.per < cNow.best.per * 0.995)) return '';
+  const pct = (1 - w.best.per / cNow.best.per) * 100;
+  return `Mejor ${dayTxt(w.at)} ${esc(conPay(w))}: ${money(w.best.per)}/${u}${w.best.N > 1 ? ` llevando ${w.best.N}` : ''} (−${nf0.format(pct)}%)`;
 }
 function bestPay(p) {
   let bc = calc(p, NOPAY);
@@ -328,7 +349,7 @@ function bestPay(p) {
 function rowsFor(prodId, mode) {
   const vpay = getPay(S.visit.payId);
   return S.prices.filter(p => getPres(p.presId)?.prodId === prodId && getStore(p.storeId) && !getStore(p.storeId).archived)
-    .map(p => ({ p, pres: getPres(p.presId), c: mode === 'best' ? bestPay(p) : calc(p, vpay) }))
+    .map(p => ({ p, pres: getPres(p.presId), c: mode === 'week' ? bestWeek(p) : mode === 'best' ? bestPay(p) : calc(p, vpay) }))
     .sort((a, b) => a.c.best.per - b.c.best.per);
 }
 
@@ -368,7 +389,7 @@ function seed() {
   R('a3', s1, 3200, { t: 'pct', v: 15 }, 1); R('a3', s2, 3100, null, 26);
   R('a4', s1, 2750, null, 0);
   R('y1', s1, 4200, null, 0); R('y1', s2, 3890, { t: 'nth', n: 2, v: 50 }, 3);
-  const ry2 = R('y2', s1, 2300, { t: 'nxm', n: 3, m: 2 }, 0); R('y2', s2, 2250, null, 3);
+  const ry2 = R('y2', s1, 2300, { t: 'nxm', n: 3, m: 2 }, 0); D.prices.find(x => x.id === ry2).hasta = daysAgo(-1); R('y2', s2, 2250, null, 3);
   R('y3', s1, 4050, { t: 'fixed', v: 3600 }, 1); R('y3', s2, 4100, null, 3);
   R('h1', s1, 2400, null, 2); R('h1', s2, 2300, { t: 'nth', n: 2, v: 50 }, 5);
   R('h2', s1, 5200, { t: 'pct', v: 20 }, 2); R('h2', s2, 5500, null, 5);
@@ -404,7 +425,7 @@ let F; // formulario de carga
 function resetForm(prodId) {
   const pid = prodId ?? F?.prodId ?? S.prods[0]?.id ?? '__new';
   F = { prodId: pid, presId: 'new', ean: '', marca: '', desc: '', cont: '', unit: defUnit(getProd(pid)), pack: '1', precio: '', promo: { t: 'none' }, acum: false,
-    storeId: F?.storeId || S.visit.storeId, fecha: F?.fecha || todayISO(), more: !!F?.more, setVisit: false };
+    storeId: F?.storeId || S.visit.storeId, fecha: F?.fecha || todayISO(), more: !!F?.more, setVisit: false, hasta: '' };
 }
 /* Tienda del formulario de carga: por defecto "Estoy en", pero se puede cambiar solo para esta carga */
 const formStore = () => { const st = getStore(F.storeId); return st && !st.archived ? st.id : S.visit.storeId; };
@@ -479,13 +500,15 @@ function buildTemp() {
   const pres = { id: F.presId === 'new' ? '_tmp' : F.presId, prodId: prod.id, marca: (F.marca || '').trim() || 'Sin marca', desc: (F.desc || '').trim(), cont, unit: F.unit, pack, ean: (F.ean || '').trim() };
   const fecha = /^\d{4}-\d{2}-\d{2}$/.test(F.fecha || '') ? F.fecha : todayISO();
   if (fecha > todayISO()) return { err: 'La fecha del precio no puede ser futura' };
-  const price = { id: '_tmp', presId: pres.id, storeId: formStore(), precio, promo: pr.p, acum: !!F.acum, fecha };
+  const hasta = pr.p.t !== 'none' && /^\d{4}-\d{2}-\d{2}$/.test(F.hasta || '') ? F.hasta : '';
+  if (hasta && hasta < fecha) return { err: 'La promo no puede vencer antes de la fecha del precio' };
+  const price = { id: '_tmp', presId: pres.id, storeId: formStore(), precio, promo: pr.p, acum: !!F.acum, fecha, hasta };
   return { pres, price, prod };
 }
 function fillFromPres(pres) {
   Object.assign(F, { prodId: pres.prodId, presId: pres.id, ean: pres.ean || '', marca: pres.marca, desc: pres.desc || '', cont: nfx.format(pres.cont), unit: pres.unit, pack: String(pres.pack || 1), precio: '' });
   const ex = S.prices.find(x => x.presId === pres.id && x.storeId === formStore());
-  F.promo = ex ? { ...ex.promo } : { t: 'none' }; F.acum = ex ? !!ex.acum : false;
+  F.promo = ex ? { ...ex.promo } : { t: 'none' }; F.acum = ex ? !!ex.acum : false; F.hasta = ex?.hasta || '';
 }
 const PTYPES = [['none', 'Sin promo'], ['fixed', 'Oferta $'], ['pct', '% off'], ['nth', '2ª al %'], ['nxm', 'Lleva N paga M'], ['nfor', 'N por $']];
 function promoParams() {
@@ -512,7 +535,7 @@ function presStoresHTML(presId, fsid) {
   if (sts.length < 2) return '';
   return `<div class="pstores"><div class="small" style="font-weight:700">Esta presentación en tus tiendas</div>${sts.map(st => {
     const p = ps.find(x => x.storeId === st.id);
-    return `<div class="drow"><span>${esc(st.name)}${st.id === S.visit.storeId ? ' <span class="small muted">(Estoy en)</span>' : ''}<br><span class="small muted">${p ? `${money(p.precio)}${p.promo?.t !== 'none' ? ' · ' + esc(promo(p).label) : ''} · ${ageTxt(p.fecha)}` : 'sin precio cargado'}</span></span>${st.id === fsid ? '<span class="pill p-good">Cargando acá</span>' : `<button type="button" class="btn sm" data-act="fsetstore" data-id="${st.id}">Cargar acá</button>`}</div>`;
+    return `<div class="drow"><span>${esc(st.name)}${st.id === S.visit.storeId ? ' <span class="small muted">(Estoy en)</span>' : ''}<br><span class="small muted">${p ? `${money(p.precio)}${p.promo?.t !== 'none' ? ' · ' + promoTxt(p) : ''} · ${ageTxt(p.fecha)}` : 'sin precio cargado'}</span></span>${st.id === fsid ? '<span class="pill p-good">Cargando acá</span>' : `<button type="button" class="btn sm" data-act="fsetstore" data-id="${st.id}">Cargar acá</button>`}</div>`;
   }).join('')}</div>`;
 }
 function renderCargar() {
@@ -561,6 +584,7 @@ function renderCargar() {
     <label class="fl" for="fPrecio">Precio de góndola por unidad (sin promo)<input id="fPrecio" data-f="precio" inputmode="decimal" class="price-in" value="${esc(F.precio)}" placeholder="$ 0"></label>
     <div class="fl">Promoción de la tienda<div class="chips">${PTYPES.map(([t, l]) => `<button type="button" class="chip" aria-pressed="${F.promo.t === t}" data-act="ptype" data-t="${t}">${l}</button>`).join('')}</div></div>
     ${promoParams()}
+    ${F.promo.t !== 'none' ? `<label class="fl" for="fHasta">Promo vigente hasta (opcional)<input type="date" id="fHasta" data-f="hasta" value="${esc(F.hasta || '')}" min="${esc(F.fecha || todayISO())}"></label>` : ''}
     ${F.promo.t !== 'none' ? `<label class="switch" for="fAcum"><input type="checkbox" id="fAcum" data-f="acum" ${F.acum ? 'checked' : ''}> La promo se acumula con el descuento del medio de pago</label>` : ''}
     <details class="more" ${F.more ? 'open' : ''} data-more="1"><summary class="small">Más opciones · fecha del precio: <b>${F.fecha === todayISO() ? 'hoy' : esc(F.fecha.split('-').reverse().join('/'))}</b></summary>
       <label class="fl" for="fFecha" style="margin-top:8px">Fecha del precio (si lo cargás desde un ticket o un folleto)<input type="date" id="fFecha" data-f="fecha" value="${esc(F.fecha)}" max="${todayISO()}"></label>
@@ -591,6 +615,8 @@ function updatePreview() {
   h += line(c.pr.on && c.pr.N === 1 ? 'Con la promo' : 'Llevando 1', c.one, 1, c.many && c.best.N === 1);
   if (c.many) h += line(`Llevando ${c.pr.N}`, c.many, c.pr.N, c.best.N > 1);
   h += `<div class="small muted">Góndola ${money(t.price.precio)} c/u · ${money(c.lista)}/${u} sin descuentos · contenido ${nfx.format(c.C)} ${u}</div>`;
+  const w = bestWeek(t.price, t.pres), hint = weekHint(c, w, u);
+  if (hint) h += `<div class="note" style="border:2px solid var(--accent)"><b>${hint}</b> · pagás ${payUnits(w.best, w.best.N)}${t.price.hasta && w.at.date > t.price.hasta ? ` (ese día ya sin la promo, que vence el ${ddmm(t.price.hasta)})` : ''}.</div>`;
   box.innerHTML = h;
 }
 const ageTxt = iso => { const a = ageDays(iso); return a === 0 ? 'hoy' : a === 1 ? 'ayer' : `hace ${a} d`; };
@@ -604,9 +630,19 @@ function renderComparar() {
   if (!prod) { el.innerHTML = `<div class="card">Todavía no hay productos. Creá uno en Cargar.</div>`; return; }
   const u = baseOf(prod).short, here = S.visit.storeId, rows = rowsFor(prod.id, CMP.mode);
   let h = `<div class="chips" role="group" aria-label="Producto">${sortList('selProd', S.prods).map(p => `<button class="chip" aria-pressed="${p.id === prod.id}" data-act="cprod" data-id="${p.id}">${esc(p.name)}</button>`).join('')}</div>
-    <div class="row small"><span class="muted">Descuento de pago:</span><div class="chips"><button class="chip" aria-pressed="${CMP.mode === 'visit'}" data-act="cmode" data-m="visit">El de mi visita</button><button class="chip" aria-pressed="${CMP.mode === 'best'}" data-act="cmode" data-m="best">El mejor en cada tienda</button></div></div>`;
+    <div class="row small"><span class="muted">Calcular con:</span><div class="chips"><button class="chip" aria-pressed="${CMP.mode === 'visit'}" data-act="cmode" data-m="visit">El de mi visita</button><button class="chip" aria-pressed="${CMP.mode === 'best'}" data-act="cmode" data-m="best">El mejor de cada tienda hoy</button><button class="chip" aria-pressed="${CMP.mode === 'week'}" data-act="cmode" data-m="week">Mejor día y medio</button></div></div>`;
+  const W = new Map(rows.map(r => [r.p.id, CMP.mode === 'week' ? r.c : bestWeek(r.p)]));
   const top = rows[0], bestHere = rows.find(r => r.p.storeId === here);
-  if (!rows.length) h += `<div class="verdict none"><b class="head">Sin precios todavía</b><span>Cargá el primero para ${esc(prod.name)}.</span></div>`;
+  if (rows.length && CMP.mode === 'week') {
+    const w = top, today = rowsFor(prod.id, 'visit').find(r => r.p.storeId === here);
+    const now = w.c.at.k === 0 && w.p.storeId === here;
+    const pct = today ? (1 - w.c.best.per / today.c.best.per) * 100 : 0;
+    h += `<div class="verdict ${now ? 'good' : 'warn'}"><b class="head">${now ? 'Conviene acá, hoy' : `Conviene ${dayTxt(w.c.at)} en ${esc(getStore(w.p.storeId).name)}`}</b>
+      <span>${esc(presLabel(w.pres))} a <b>${money(w.c.best.per)}/${u}</b> ${esc(conPay(w.c))}${w.c.best.N > 1 ? ` llevando ${w.c.best.N}` : ''} · pagás ${payUnits(w.c.best, w.c.best.N)}.</span>
+      ${!now && today && pct > 0.5 ? `<span class="small">${nf0.format(pct)}% menos que lo mejor de hoy acá (${money(today.c.best.per)}/${u}).${pct < 5 ? ' Diferencia chica.' : ''}</span>` : ''}
+      <span class="small muted">Precio de ${ageTxt(w.p.fecha)}. Las promos de la tienda se toman como vigentes salvo que tengan fecha "hasta".</span></div>`;
+  }
+  else if (!rows.length) h += `<div class="verdict none"><b class="head">Sin precios todavía</b><span>Cargá el primero para ${esc(prod.name)}.</span></div>`;
   else if (!bestHere) h += `<div class="verdict none"><b class="head">Sin precios en ${esc(getStore(here).name)}</b><span>La mejor registrada está en ${esc(getStore(top.p.storeId).name)}: ${esc(presLabel(top.pres))} a ${money(top.c.best.per)}/${u}. Cargá los de acá para comparar.</span></div>`;
   else if (top.p.storeId === here) h += `<div class="verdict good"><b class="head">Conviene acá</b><span>${esc(presLabel(top.pres))} a <b>${money(top.c.best.per)}/${u}</b>${top.c.best.N > 1 ? ` <b>llevando ${top.c.best.N}</b>` : ''}.</span>${rows[1] ? `<span class="small">Le sigue ${esc(presLabel(rows[1].pres))} (${esc(getStore(rows[1].p.storeId).name)}) a +${nf0.format((rows[1].c.best.per / top.c.best.per - 1) * 100)}%.</span>` : ''}</div>`;
   else {
@@ -614,6 +650,14 @@ function renderComparar() {
     h += `<div class="verdict warn"><b class="head">En ${esc(getStore(top.p.storeId).name)} sale ${nf0.format(pct)}% menos</b>
       <span>${esc(presLabel(top.pres))} a ${money(top.c.best.per)}/${u}${top.c.best.N > 1 ? ` llevando ${top.c.best.N}` : ''} · precio de ${ageTxt(top.p.fecha)}.</span>
       <span class="small">Lo mejor acá: ${esc(presLabel(bestHere.pres))} a ${money(bestHere.c.best.per)}/${u}${bestHere.c.best.N > 1 ? ` llevando ${bestHere.c.best.N}` : ''}.${pct < 5 ? ' Diferencia chica: puede no justificar el viaje.' : ''}</span></div>`;
+  }
+  if (rows.length && CMP.mode !== 'week') {
+    // ¿Hay un día mejor en la semana? Se avisa sin que tengas que elegir el día
+    const bw = [...W.values()].sort((a, b) => a.best.per - b.best.per)[0];
+    if (bw && bw.at.k > 0 && bw.best.per < top.c.best.per * 0.99) {
+      const r = rows.find(x => W.get(x.p.id) === bw);
+      h += `<div class="note" style="border:2px solid var(--accent)"><b>Mejor ${dayTxt(bw.at)}:</b> ${esc(presLabel(r.pres))} en ${esc(getStore(r.p.storeId).name)} ${esc(conPay(bw))}, ${money(bw.best.per)}/${u} (−${nf0.format((1 - bw.best.per / top.c.best.per) * 100)}% vs lo mejor de hoy). <button class="btn sm ghost" data-act="cmode" data-m="week">Ver por mejor día</button></div>`;
+    }
   }
   if (rows.length > 1) h += sortBar('cmp');
   h += `<div class="list">` + sortList('cmp', rows).map(r => {
@@ -624,11 +668,11 @@ function renderComparar() {
     const payTxt = c.d > 0 && c.best.payOn ? `${esc(c.pay.name)} ${c.pay.pct}%${c.pay.minimo ? ` <b>(requiere compra mínima ${money(c.pay.minimo)})</b>` : ''}` : c.d > 0 ? `${esc(c.pay.name)} no se suma a la promo` : 'sin descuento de pago';
     return `<article class="item ${s} ${isHere ? 'here' : ''}">
       <div><div class="it-title">${esc(presLabel(pres))}</div>
-        <div class="it-meta"><span class="store">${esc(getStore(p.storeId).name)}${isHere ? ' · acá' : ''}</span><span class="pill ${ageCls(p.fecha)}">${ageTxt(p.fecha)}</span>${c.pr.on ? `<span class="tag">${esc(c.pr.label)}</span>` : ''}</div></div>
+        <div class="it-meta"><span class="store">${esc(getStore(p.storeId).name)}${isHere ? ' · acá' : ''}</span><span class="pill ${ageCls(p.fecha)}">${ageTxt(p.fecha)}</span>${c.pr.on ? `<span class="tag">${esc(c.pr.label)}${p.hasta ? ' · hasta ' + ddmm(p.hasta) : ''}</span>` : ''}${c.pr.expired ? '<span class="pill p-neutral">promo vencida</span>' : ''}${CMP.mode === 'week' ? `<span class="pill ${c.at.k === 0 ? 'p-good' : 'p-warn'}">${c.at.k === 0 ? 'Hoy' : dayTxt(c.at).replace(/^el /, '').replace(/^./, m => m.toUpperCase())}</span>` : ''}</div></div>
       <div class="it-price"><div class="big">${money(c.best.per)}<small>/${u}</small></div><span class="small" style="font-weight:700">${c.best.N > 1 ? `${money(c.best.total)} por ${c.best.N}` : `${money(c.best.total)} c/u`}</span>
         ${c.best.N > 1 ? `<span class="pill p-warn">Llevando ${c.best.N}</span>` : `<span class="pill p-neutral">Llevando 1</span>`}
         <span class="small" style="font-weight:700;color:var(--${r === top ? 'good' : diff <= 5 ? 'warn' : 'bad'})">${r === top ? 'Mejor' : '+' + nf0.format(diff) + '%'}</span></div>
-      <div class="it-sub">Góndola ${money(p.precio)} · ${payTxt}${alt ? ' · ' + alt : ''}${p.hist?.length ? ` · antes ${money(p.hist[p.hist.length - 1].precio)} (${ageTxt(p.hist[p.hist.length - 1].fecha)})` : ''}</div>
+      <div class="it-sub">${CMP.mode !== 'week' && weekHint(c, W.get(p.id), u) ? `<b style="color:var(--accent)">${weekHint(c, W.get(p.id), u)}</b><br>` : ''}Góndola ${money(p.precio)} · ${payTxt}${alt ? ' · ' + alt : ''}${p.hist?.length ? ` · antes ${money(p.hist[p.hist.length - 1].precio)} (${ageTxt(p.hist[p.hist.length - 1].fecha)})` : ''}</div>
       <div class="it-actions"><button class="btn sm ghost" data-act="editprice" data-id="${p.id}">Corregir</button>${isHere ? `<button class="btn sm" data-act="addcart" data-id="${p.id}" data-q="${c.best.N}">+ Carrito (${c.best.N})</button>` : ''}</div>
     </article>`;
   }).join('') + `</div>`;
@@ -715,7 +759,7 @@ function edData(k, id) {
   if (k === 'prod') { const p = getProd(id); return BASES[p.base] ? { name: p.name, base: p.base, custom: '' } : { name: p.name, base: 'otro', custom: p.base }; }
   if (k === 'pres') { const x = getPres(id); return { prodId: x.prodId, marca: x.marca, desc: x.desc || '', cont: nfx.format(x.cont), unit: x.unit, pack: String(x.pack || 1), ean: x.ean || '' }; }
   const p = getPrice(id);
-  return { precio: nfx.format(p.precio), promo: { ...p.promo }, acum: !!p.acum, fecha: p.fecha, modo: 'fix', orig: p.fecha, storeId: p.storeId, movePick: null, visitToo: false, fromCargar: false };
+  return { precio: nfx.format(p.precio), promo: { ...p.promo }, acum: !!p.acum, fecha: p.fecha, modo: 'fix', orig: p.fecha, hasta: p.hasta || '', storeId: p.storeId, movePick: null, visitToo: false, fromCargar: false };
 }
 function prodForm(p) {
   const n = S.pres.filter(x => x.prodId === p.id).length, d = ED.d;
@@ -765,6 +809,7 @@ function priceForm(p) {
       <span class="small muted" style="font-weight:500">${d.modo === 'fix' ? 'Pisa el dato actual sin dejarlo en el historial.' : `El precio actual (${money(p.precio)}, ${ageTxt(p.fecha)}) pasa al historial.`}</span></div>
     <label class="fl" for="ed-precio">Precio de góndola por unidad<input id="ed-precio" data-ed="precio" inputmode="decimal" class="price-in" value="${esc(d.precio)}"></label>
     ${promoEd(d.promo)}
+    ${d.promo.t !== 'none' ? `<label class="fl" for="ed-hasta">Promo vigente hasta (opcional)<input type="date" id="ed-hasta" data-ed="hasta" value="${esc(d.hasta || '')}"></label>` : ''}
     ${d.promo.t !== 'none' ? `<label class="switch" for="ed-acum"><input type="checkbox" id="ed-acum" data-ed="acum" ${d.acum ? 'checked' : ''}> La promo se acumula con el descuento del medio de pago</label>` : ''}
     <label class="fl" for="ed-fecha">Fecha del precio<input type="date" id="ed-fecha" data-ed="fecha" value="${esc(d.fecha)}" max="${todayISO()}"></label>
     ${p.hist?.length ? `<div class="small muted">Historial: ${p.hist.slice().reverse().map(h => `${money(h.precio)} (${ageTxt(h.fecha)})`).join(' · ')} <button class="btn sm ghost" data-act="clearhist" data-id="${p.id}" data-confirm="1">Borrar historial</button></div>` : ''}
@@ -827,7 +872,9 @@ function edSave() {
     const dest = moving ? S.prices.find(x => x.presId === p.presId && x.storeId === d.storeId) : null;
     if (dest && !d.movePick) return toast('Esa tienda ya tiene un precio para esta presentación: elegí cuál queda');
     if (d.modo === 'new') p.hist = [...(p.hist || []), { precio: p.precio, fecha: p.fecha }].slice(-12);
-    Object.assign(p, { precio, promo: pr.p, acum: pr.p.t !== 'none' && !!d.acum, fecha: d.fecha }); touch(p);
+    const hasta = pr.p.t !== 'none' && /^\d{4}-\d{2}-\d{2}$/.test(d.hasta || '') ? d.hasta : '';
+    if (hasta && hasta < d.fecha) return toast('La promo no puede vencer antes de la fecha del precio');
+    Object.assign(p, { precio, promo: pr.p, acum: pr.p.t !== 'none' && !!d.acum, fecha: d.fecha, hasta }); touch(p);
     if (moving) {
       const to = getStore(d.storeId);
       if (dest && d.movePick === 'dest') { mergeHist(dest, p); touch(dest); dropPrices(x => x.id === p.id); }
@@ -855,6 +902,7 @@ function norm(c, r) {
   (NUMF[c] || []).forEach(k => { const v = num(o[k]); o[k] = isNaN(v) ? (NULLF.includes(k) ? null : 0) : (NULLF.includes(k) && v <= 0 ? null : v); });
   (JSONF[c] || []).forEach(k => { const def = k === 'promo' ? { t: 'none' } : []; try { o[k] = typeof o[k] === 'string' ? (o[k] ? JSON.parse(o[k]) : def) : (o[k] ?? def); } catch (e) { o[k] = def; } });
   if (c === 'prices') o.acum = o.acum === true || /^(true|verdadero|si|sí)$/i.test(String(o.acum));
+  if (c === 'prices') o.hasta = /^\d{4}-\d{2}-\d{2}$/.test(String(o.hasta || '')) ? o.hasta : '';
   if (c === 'stores') o.archived = o.archived === true || /^(true|verdadero|si|sí)$/i.test(String(o.archived));
   if (c === 'pres') o.pack = Math.max(1, Math.round(o.pack || 1));
   if (c === 'pays' && !o.modo) o.modo = 'caja';
@@ -881,7 +929,7 @@ async function syncTest() {
   catch (e) { toast('No se pudo conectar: ' + e.message + '.', 5000); }
 }
 /* Sincronizar: 1) leer la planilla, 2) detectar conflictos y preguntar, 3) enviar y recibir todo */
-const SFIELDS = { stores: ['name', 'archived'], pays: ['name', 'pct', 'minimo', 'tope', 'usado', 'dias', 'stores', 'modo'], prods: ['name', 'base'], pres: ['prodId', 'marca', 'desc', 'cont', 'unit', 'pack', 'ean'], prices: ['presId', 'storeId', 'precio', 'promo', 'acum', 'fecha', 'hist'] };
+const SFIELDS = { stores: ['name', 'archived'], pays: ['name', 'pct', 'minimo', 'tope', 'usado', 'dias', 'stores', 'modo'], prods: ['name', 'base'], pres: ['prodId', 'marca', 'desc', 'cont', 'unit', 'pack', 'ean'], prices: ['presId', 'storeId', 'precio', 'promo', 'acum', 'fecha', 'hasta', 'hist'] };
 const ENT = { stores: 'Tienda', pays: 'Medio de pago', prods: 'Producto', pres: 'Presentación', prices: 'Precio' };
 const sameRec = (c, a, b) => SFIELDS[c].every(f => JSON.stringify(a[f] ?? null) === JSON.stringify(b[f] ?? null));
 let CONF = null;
@@ -1100,7 +1148,7 @@ function priceListHTML() {
     let ps = S.prices.filter(p => getPres(p.presId)?.prodId === prod.id);
     if (DV.old) ps = ps.filter(p => ageDays(p.fecha) > OLD_DAYS || isEd('price', p.id));
     if (q) ps = ps.filter(p => isEd('price', p.id) || matchAll(q, `${presLabel(getPres(p.presId))} ${getStore(p.storeId)?.name || ''} ${prod.name} ${getPres(p.presId).ean || ''}`));
-    return ps.length ? `<h3>${esc(prod.name)}</h3>` + sortList('dPrices', ps).map(p => isEd('price', p.id) ? priceForm(p) : `<div class="drow"><span>${esc(presLabel(getPres(p.presId)))}<br><span class="small muted">${esc(getStore(p.storeId)?.name || '')}${getStore(p.storeId)?.archived ? ' (archivada)' : ''} · ${money(p.precio)} ${p.promo?.t !== 'none' ? '· ' + esc(promo(p).label) : ''}${p.acum ? ' · acumula' : ''}</span></span><span class="pill ${ageCls(p.fecha)}">${ageTxt(p.fecha)}</span><span class="btns">${editBtn('price', p.id)}<button class="btn sm danger" aria-label="Eliminar precio" data-act="delprice" data-id="${p.id}" data-confirm="1">×</button></span></div>`).join('') : '';
+    return ps.length ? `<h3>${esc(prod.name)}</h3>` + sortList('dPrices', ps).map(p => isEd('price', p.id) ? priceForm(p) : `<div class="drow"><span>${esc(presLabel(getPres(p.presId)))}<br><span class="small muted">${esc(getStore(p.storeId)?.name || '')}${getStore(p.storeId)?.archived ? ' (archivada)' : ''} · ${money(p.precio)} ${p.promo?.t !== 'none' ? '· ' + promoTxt(p) : ''}${p.acum ? ' · acumula' : ''}</span></span><span class="pill ${ageCls(p.fecha)}">${ageTxt(p.fecha)}</span><span class="btns">${editBtn('price', p.id)}<button class="btn sm danger" aria-label="Eliminar precio" data-act="delprice" data-id="${p.id}" data-confirm="1">×</button></span></div>`).join('') : '';
   }).join('');
   return h || `<span class="muted">${q ? 'Ningún precio coincide con la búsqueda.' : 'Todavía no hay precios.'}</span>`;
 }
