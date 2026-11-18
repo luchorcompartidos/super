@@ -14,9 +14,13 @@ Se generan todas las sucursales de esas zonas: así no queda publicado a cuáles
 Solo usa la biblioteca estándar de Python.
 Variables opcionales: SEPA_URL (zip a usar), SEPA_ZIP (zip ya descargado, para pruebas), ZONAS (archivo de zonas).
 """
-import csv, io, json, os, re, sys, unicodedata, urllib.request, zipfile, collections, datetime
+import csv, io, json, os, re, sys, time, unicodedata, urllib.request, zipfile, collections, datetime
 
-CKAN = "https://datos.gob.ar/api/3/action/package_show?id=produccion-precios-claros---base-sepa"
+# Portal de origen (CKAN de datos.produccion.gob.ar); datos.gob.ar replica el mismo dataset
+CKAN = ["https://datos.produccion.gob.ar/api/3/action/package_show?id=sepa-precios",
+        "https://datos.produccion.gob.ar/api/3/action/package_show?id=6f47ec76-d1ce-4e34-a7e1-621fe9b1d0b5",
+        "https://datos.gob.ar/api/3/action/package_show?id=produccion-precios-claros---base-sepa"]
+PAGINA = "https://datos.produccion.gob.ar/dataset/sepa-precios"
 UA = {"User-Agent": "gondola-catalogo/1.1 (+https://github.com/luchorcompartidos/super)"}
 csv.field_size_limit(1 << 20)
 
@@ -34,15 +38,49 @@ def fold(t):
     return " ".join(re.sub(r"[^a-z0-9]+", " ", t).split())
 
 
+def _get(url, timeout=60):
+    ultimo = None
+    for intento in range(3):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=timeout) as r: return r.read()
+        except Exception as e:
+            ultimo = e; print(f"  {url}: {e}")
+            if getattr(e, "code", 0) == 404: break
+            time.sleep(5 * (intento + 1))
+    raise ultimo
+
+
+def _fecha(*textos):
+    for t in textos:
+        m = re.search(r"\d{4}-\d{2}-\d{2}", str(t or ""))
+        if m: return m.group(0)
+    return ""
+
+
 def ultimo_zip():
+    """Cada día de la semana tiene su archivo (sepa_lunes.zip, …), que se reemplaza con el de esa fecha: se elige el más reciente."""
     if os.environ.get("SEPA_URL"): return os.environ["SEPA_URL"]
-    with urllib.request.urlopen(urllib.request.Request(CKAN, headers=UA), timeout=60) as r:
-        pkg = json.load(r)["result"]
-    res = [x for x in pkg["resources"] if str(x.get("url", "")).lower().endswith(".zip")]
-    if not res: sys.exit("No se encontraron archivos .zip en el dataset SEPA")
-    res.sort(key=lambda x: x.get("last_modified") or x.get("created") or "", reverse=True)
-    print("Recurso:", res[0].get("name"), res[0].get("last_modified") or res[0].get("created"))
-    return res[0]["url"]
+    cands = []
+    for api in CKAN:
+        try: pkg = json.loads(_get(api))["result"]
+        except Exception: continue
+        for x in pkg.get("resources", []):
+            u = str(x.get("url", ""))
+            if u.lower().endswith(".zip"):
+                cands.append((_fecha(x.get("description"), x.get("name")) or str(x.get("last_modified") or x.get("created") or "")[:10], u, x.get("description") or x.get("name")))
+        if cands: break
+    if not cands:
+        # Sin API: se leen los enlaces de descarga de la página del dataset
+        html = _get(PAGINA).decode("utf-8", "replace")
+        for m in re.finditer(r'"schema:description":"([^"]*)","schema:encodingFormat":"ZIP","schema:url":"([^"]+\.zip)"', html):
+            cands.append((_fecha(m.group(1)), m.group(2), m.group(1)))
+        if not cands:
+            for u in sorted(set(re.findall(r'https://datos\.produccion\.gob\.ar/dataset/[^"\s]+/download/sepa_[a-z]+\.zip', html))): cands.append(("", u, u))
+    cands = [c for c in cands if "sepa" in c[1].lower()] or cands
+    if not cands: sys.exit("No se encontraron archivos .zip en el dataset SEPA")
+    cands.sort(reverse=True)
+    print("Recurso:", cands[0][2], cands[0][0])
+    return cands[0][1]
 
 
 def bajar(url, destino):
@@ -256,7 +294,7 @@ def main():
             escribir(os.path.join(salida, "precios", "s", clave + ".json"),
                      {"k": clave, "f": info["f"] or hoy, "i": [info["b"], info["n"], info["d"], info["z"]], "l": [t for t, _ in ley], "p": p})
     escribir(os.path.join(salida, "precios", "sucursales.json"), {"fecha": hoy, "zonas": [f"{z['prov']}: {z['zona']}" for z in zonas], "s": sucs})
-    meta = {"fecha": hoy, "fuente": "Precios Claros - SEPA (datos.gob.ar)", "recurso": url, "productos": len(E.cat), "filas": E.filas,
+    meta = {"fecha": hoy, "fuente": "Precios Claros - SEPA (datos.produccion.gob.ar)", "recurso": url, "productos": len(E.cat), "filas": E.filas,
             "archivos": len(shards), "zonas": len(zonas), "sucursales": len(sucs), "sucursales_con_precios": sum(1 for s in sucs if s["np"])}
     escribir(os.path.join(salida, "meta.json"), meta, indent=1)
     with open(os.path.join(salida, "README.md"), "w", encoding="utf-8") as f:
