@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.5.16">
+<meta name="app-version" content="v0.5.17">
 <title>Góndola Comparador</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#132033">
@@ -229,7 +229,7 @@ details.more summary{cursor:pointer;color:var(--muted)}
 <div class="app">
   <header class="top">
     <div class="syncbar" id="syncBar" hidden aria-hidden="true"><i></i></div>
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.5.16</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.5.17</button></span></div>
     <div class="symsg" id="syncMsg" role="status" hidden></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
@@ -1697,31 +1697,30 @@ async function lookupFill(manual) {
     let brand = res.brand, desc = res.name;
     if (brand && desc.toLowerCase().startsWith(brand.toLowerCase())) desc = desc.slice(brand.length).trim();
     if (!F.marca) F.marca = brand; if (!F.desc) F.desc = desc;
-    let warn = '';
-    if (res.qty) {
-      // Producto comparable: el actual si la unidad coincide; si no, uno que coincida por nombre y unidad
-      const fits = p => (BASES[p.base] ? p.base : null) === res.qty.fam;
-      const txt = fold(`${res.name} ${res.cats}`);
-      if (F.presId === 'new') {
-        // El producto comparable tiene que coincidir con el artículo (todas las palabras de su nombre y la misma unidad);
-        // si el seleccionado no coincide, se elige el que sí, o "+ Nuevo producto…"
-        const STOP = new Set(['de', 'del', 'la', 'las', 'el', 'los', 'con', 'sin', 'para', 'y', 'en', 'x']);
-        const words = p => fold(p.name).split(/\s+/).filter(w => w.length > 1 && !STOP.has(w));
-        const matches = p => fits(p) && words(p).length > 0 && words(p).every(w => txt.split(/[^a-z0-9ñ]+/).some(t => t === w || t === w + 's' || t + 's' === w || (w.length > 4 && t.startsWith(w))));
-        const curOk = getProd(F.prodId) && matches(getProd(F.prodId));
-        const cand = curOk ? getProd(F.prodId) : S.prods.filter(matches).sort((a, b) => words(b).length - words(a).length)[0];
-        const prev = getProd(F.prodId);
-        if (cand) { if (cand.id !== F.prodId) warn = `Se eligió el producto "${cand.name}"${prev ? ` (estaba "${prev.name}")` : ''}: revisalo.`; F.prodId = cand.id; }
-        else {
-          // Ningún producto comparable encaja: se sugiere crear uno, con nombre por categoría y unidad por envase
-          const nm = res.catEs ? res.catEs.replace(/^es:/, '').replace(/-/g, ' ') : ((res.name.split(/\s+/).find(w => w.length > 2 && !/\d/.test(w)) || res.name).toLowerCase());
-          NP = { name: nm.charAt(0).toUpperCase() + nm.slice(1), base: res.qty.fam, custom: '' }; F.prodId = '__new';
-          warn = `Ningún producto tuyo coincide con este artículo${prev ? ` (estaba "${prev.name}")` : ''}: revisá el nombre sugerido y tocá "Crear producto", o elegí otro en el desplegable.`;
-        }
+    const notes = [];
+    // Producto comparable: tiene que coincidir con el artículo (todas las palabras de su nombre y, si se conoce
+    // la cantidad, la misma unidad). Se decide aunque el servicio no informe la cantidad.
+    const fits = p => !res.qty || (BASES[p.base] ? p.base : null) === res.qty.fam;
+    const txt = fold(`${res.name} ${res.brand} ${res.cats}`);
+    if (F.presId === 'new') {
+      const STOP = new Set(['de', 'del', 'la', 'las', 'el', 'los', 'con', 'sin', 'para', 'y', 'en', 'x']);
+      const words = p => fold(p.name).split(/\s+/).filter(w => w.length > 1 && !STOP.has(w));
+      const toks = txt.split(/[^a-z0-9ñ]+/);
+      const matches = p => fits(p) && words(p).length > 0 && words(p).every(w => toks.some(t => t === w || t === w + 's' || t + 's' === w || (w.length > 4 && t.startsWith(w))));
+      const prev = getProd(F.prodId);
+      const cand = prev && matches(prev) ? prev : S.prods.filter(matches).sort((a, b) => words(b).length - words(a).length)[0];
+      if (cand) { if (cand.id !== F.prodId) notes.push(`Se eligió el producto "${cand.name}"${prev ? ` (estaba "${prev.name}")` : ''}: revisalo.`); F.prodId = cand.id; }
+      else {
+        // Ningún producto coincide: "+ Nuevo producto…" con nombre por categoría y unidad por envase (si se conoce)
+        const nm = res.catEs ? res.catEs.replace(/^es:/, '').replace(/-/g, ' ') : ((res.name.split(/\s+/).find(w => w.length > 2 && !/\d/.test(w)) || res.name).toLowerCase());
+        NP = { name: nm.charAt(0).toUpperCase() + nm.slice(1), base: res.qty ? res.qty.fam : (prev?.base || 'un'), custom: '' }; F.prodId = '__new';
+        notes.push(`Ningún producto tuyo coincide con este artículo${prev ? ` (estaba "${prev.name}")` : ''}: revisá el nombre${res.qty ? '' : ' y la unidad de comparación'} sugeridos y tocá "Crear producto", o elegí otro en el desplegable.`);
       }
+    }
+    if (res.qty) {
       if (!(num(F.cont) > 0) && (!getProd(F.prodId) || fits(getProd(F.prodId)))) { F.cont = nfx.format(res.qty.cont); F.unit = res.qty.unit; F.pack = String(res.qty.pack); }
-    } else warn = 'No trae el contenido: completalo a mano.';
-    F.look = { st: 'ok', src: res.src, url: res.url, warn };
+    } else notes.push('No trae el contenido: completalo a mano.');
+    F.look = { st: 'ok', src: res.src, url: res.url, warn: notes.join(' ') };
     renderCargar();
   } catch (e) { F.look = { st: 'err', msg: e.message }; renderCargar(); }
 }
