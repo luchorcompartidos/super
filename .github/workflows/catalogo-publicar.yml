@@ -5,6 +5,8 @@ name: Catálogo SEPA · publicar (desde tu computadora)
 # y dispara este flujo, que lo publica en la rama "catalogo" (la que lee la app).
 
 on:
+  push:
+    branches: [prueba-publicar]
   workflow_dispatch:
     inputs:
       origen:
@@ -28,7 +30,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.origen || 'catalogo-subida' }}
+          ref: ${{ inputs.origen || github.ref_name }}
       - name: Revisar el paquete
         run: |
           test -f catalogo.zip || { echo "::error::No está catalogo.zip en la rama catalogo-subida"; exit 1; }
@@ -37,7 +39,7 @@ jobs:
       - name: Publicar en la rama catalogo
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DESTINO: ${{ inputs.destino || 'catalogo' }}
+          DESTINO: ${{ inputs.destino || 'catalogo-prueba' }}
         run: |
           cd out
           git init -q
