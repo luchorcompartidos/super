@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.5.6">
+<meta name="app-version" content="v0.5.7">
 <title>Góndola Comparador</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#132033">
@@ -225,7 +225,7 @@ details.more summary{cursor:pointer;color:var(--muted)}
 <div class="app">
   <header class="top">
     <div class="syncbar" id="syncBar" hidden aria-hidden="true"><i></i></div>
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.5.6</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.5.7</button></span></div>
     <div class="symsg" id="syncMsg" role="status" hidden></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
@@ -973,7 +973,8 @@ function findConflicts(pj, last) {
   const out = [];
   if (!last) return out;
   COLLS.forEach(c => {
-    const srv = new Map((pj.data[c] || []).map(x => [x.id, norm(c, x)]));
+    const miss = missingCols(c, pj.data[c]), loc = new Map(S[c].map(r => [r.id, r]));
+    const srv = new Map((pj.data[c] || []).map(x => [x.id, keepLocal(norm(c, x), loc.get(x.id), miss)]));
     const stomb = new Map((pj.tombs || []).filter(t => t.c === c && t.upd > last).map(t => [t.id, t.upd]));
     S[c].filter(r => (r.upd || '') > last).forEach(r => {
       const sv = srv.get(r.id);
@@ -988,6 +989,9 @@ function findConflicts(pj, last) {
   });
   return out;
 }
+/* Columnas que la planilla no tiene (script anterior): se detectan en los datos recibidos */
+function missingCols(c, raw) { if (!raw || !raw.length) return []; return SFIELDS[c].filter(f => !(f in raw[0])); }
+function keepLocal(x, local, miss) { if (local) miss.forEach(f => { if (local[f] !== undefined) x[f] = local[f]; }); return x; }
 async function syncNow(auto) {
   if (syncing) return;
   if (!syncReady(auto)) return;
@@ -1009,7 +1013,7 @@ async function syncNow(auto) {
   } finally { if (!keepOpen) { syncing = false; render(); } }
 }
 async function pushSync(auto) {
-  const t0 = nowISO(), last = SYNC.last || '';
+  const t0 = nowISO(), last = SYNC.last || '', old = [];
   const data = {}; COLLS.forEach(c => { data[c] = S[c].filter(r => !last || (r.upd || '') > last); });
   const tombs = S.tomb.filter(t => !last || t.upd > last);
   const sent = COLLS.reduce((a, c) => a + data[c].length, 0) + tombs.length;
@@ -1018,7 +1022,10 @@ async function pushSync(auto) {
   syPhase('Actualizando…');
   COLLS.forEach(c => {
     const local = S[c].filter(r => (r.upd || '') > t0); // cambios hechos mientras se sincronizaba
-    const m = new Map((j.data[c] || []).map(x => [x.id, norm(c, x)]));
+    // Si la planilla no tiene alguna columna (script viejo), se conserva el dato del celular
+    const miss = missingCols(c, j.data[c]), loc = new Map(S[c].map(r => [r.id, r]));
+    if (miss.length) old.push(...miss.map(f => FIELD_TXT[f] || f));
+    const m = new Map((j.data[c] || []).map(x => [x.id, keepLocal(norm(c, x), loc.get(x.id), miss)]));
     local.forEach(r => m.set(r.id, r));
     S[c] = [...m.values()];
   });
@@ -1028,7 +1035,8 @@ async function pushSync(auto) {
   if (!getStore(S.visit.storeId)) S.visit.storeId = S.stores[0].id;
   if (S.visit.payId !== 'none' && !S.pays.some(p => p.id === S.visit.payId)) S.visit.payId = 'none';
   if (ED && !(ED.kind === 'price' ? getPrice(ED.id) : ED.kind === 'pres' ? getPres(ED.id) : getProd(ED.id))) ED = null;
-  SYNC.last = t0; SYNC.planilla = j.planilla; SYNC.lastOk = nowISO(); SYNC.conflicts = 0; saveSync(); save();
+  SYNC.last = t0; SYNC.planilla = j.planilla; SYNC.lastOk = nowISO(); SYNC.conflicts = 0; SYNC.oldScript = [...new Set(old)]; saveSync(); save();
+  if (SYNC.oldScript.length) setTimeout(() => toast(`El script de la planilla está desactualizado: no guarda ${SYNC.oldScript.join(', ')}. Los datos quedan en el celular; actualizalo (Ajustes → Sincronización).`, 7000), 3600);
   syDone(true);
   const n = COLLS.reduce((a, c) => a + S[c].length, 0);
   toast(auto ? `Sincronizado automáticamente (${sent} cambio${sent === 1 ? '' : 's'} enviado${sent === 1 ? '' : 's'}).` : `Sincronizado con "${j.planilla}": enviaste ${sent} cambio${sent === 1 ? '' : 's'}, la planilla tiene ${n} registros.`, 3500);
@@ -1132,6 +1140,7 @@ function syncSection() {
       <li>Ejecutá la función <b>preparar</b> y aceptá los permisos.</li>
       <li>Implementar → Nueva implementación → Aplicación web. Ejecutar como: Yo. Acceso: Cualquier usuario.</li>
       <li>Pegá acá la URL /exec y la clave, y tocá Probar conexión.</li></ol></details>
+    ${SYNC.oldScript?.length ? `<div class="note" style="border:2px solid var(--warn)"><b>El script de la planilla está desactualizado:</b> no guarda ${esc(SYNC.oldScript.join(', '))}. Esos datos quedan en el celular pero no en la planilla. Pegá el <a href="https://github.com/luchorcompartidos/super/blob/main/apps-script/Codigo.gs" target="_blank" rel="noopener">Codigo.gs actual</a> (conservando tu CLAVE) y en Implementar → Gestionar implementaciones → editar → Nueva versión.</div>` : ''}
     <div class="small muted">La URL y la clave quedan solo en este celular (no van en el respaldo).</div>`);
 }
 
