@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.4.0">
+<meta name="app-version" content="v0.5.0">
 <title>Góndola Comparador</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#132033">
@@ -166,6 +166,8 @@ nav.tabs a[aria-current="page"]::before{content:"";position:absolute;top:0;left:
 .vs-ver.sy-ok{color:var(--good);border-color:var(--good);background:var(--good-bg)}
 .vs-ver.sy-err{color:var(--bad);border-color:var(--bad);background:var(--bad-bg)}
 @media (prefers-reduced-motion:reduce){.sy-ic.spin{animation:none}.syncbar i{animation:none;left:0;width:100%;opacity:.6}}
+.needrow{display:grid;grid-template-columns:1fr auto auto;gap:8px}
+.needrow .stepper span{min-width:72px}
 .pvl{display:grid;gap:2px;padding:8px 0;border-bottom:1px solid var(--line)}
 .storebar{display:grid;gap:6px;padding:10px;border-radius:12px;background:var(--bg)}
 .storebar.other{background:var(--warn-bg);box-shadow:inset 0 0 0 2px var(--warn)}
@@ -210,7 +212,7 @@ details.more summary{cursor:pointer;color:var(--muted)}
 <div class="app">
   <header class="top">
     <div class="syncbar" id="syncBar" hidden aria-hidden="true"><i></i></div>
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.4.0</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.5.0</button></span></div>
     <div class="symsg" id="syncMsg" role="status" hidden></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
@@ -417,7 +419,7 @@ function migrate(d) {
   const t = nowISO();
   COLLS.forEach(c => (d[c] = d[c] || []).forEach(r => { r.upd = r.upd || t; }));
   d.pays.forEach(p => { if (p.minimo === undefined) p.minimo = null; });
-  d.tomb = d.tomb || []; d.schema = 2; return d;
+  d.tomb = d.tomb || []; d.need = d.need || []; d.schema = 2; return d;
 }
 S = migrate(load());
 
@@ -1234,7 +1236,7 @@ function datosSection(B, demo) {
    Para cada producto, dónde, qué día, con qué medio de pago y en qué presentación conviene comprarlo,
    según tus preferencias (que quedan guardadas en el celular). */
 const PREF_LS = 'gondola.plan';
-const PREF_DEF = { stores: [], days: [], pays: [], maxAge: 30, allowMulti: true, q: '', open: false };
+const PREF_DEF = { stores: [], days: [], pays: [], maxAge: 30, allowMulti: true, q: '', open: false, maxVisits: 2, cons: 5 };
 let PREF = { ...PREF_DEF }; try { Object.assign(PREF, JSON.parse(localStorage.getItem(PREF_LS) || '{}')); } catch (e) {}
 const savePref = () => { try { localStorage.setItem(PREF_LS, JSON.stringify(PREF)); } catch (e) {} };
 const PL = { tab: 'sug' };
@@ -1314,6 +1316,122 @@ function planListHTML() {
   return h || '<div class="card muted">Todavía no hay productos cargados.</div>';
 }
 
+/* ============ Planificar: listas de compra por tienda y día ============
+   "Qué necesito" se expresa en la unidad del producto (kg, L…); para cada visita posible (tienda × día)
+   se elige la presentación más barata, un solo medio de pago por visita (controlando compra mínima y tope),
+   y se concentran las compras según el máximo de visitas y el umbral de ahorro. */
+const ALLOWED_PAYS = () => [NOPAY, ...S.pays.filter(p => !PREF.pays.length || PREF.pays.includes(p.id))];
+function lineCost(p, pres, amt, d, date) {
+  const C = contentOf(pres), units = Math.max(1, Math.ceil(amt / C - 1e-9));
+  let pr = promo(p, date); if (!PREF.allowMulti && pr.on && pr.N > 1) pr = { N: 1, total: p.precio, label: '', on: false };
+  const groups = pr.on ? Math.floor(units / pr.N) : 0, rem = units - groups * pr.N;
+  const promoPart = groups * pr.total, remPart = rem * p.precio, gross = promoPart + remPart, base = remPart + (p.acum ? promoPart : 0);
+  return { p, pres, pr, units, gross, base, net: gross - base * d, qtyBase: units * C };
+}
+function bestLine(n, v, d) {
+  let b = null;
+  S.prices.forEach(p => {
+    if (p.storeId !== v.st.id) return; const pres = getPres(p.presId);
+    if (!pres || pres.prodId !== n.prodId || (PREF.maxAge && ageDays(p.fecha) > PREF.maxAge)) return;
+    const l = lineCost(p, pres, n.amt, d, v.at.date); if (!b || l.net < b.net) b = l;
+  });
+  return b;
+}
+function candVisits() {
+  const out = [];
+  activeStores().filter(st => !PREF.stores.length || PREF.stores.includes(st.id)).forEach(st => {
+    for (let k = 0; k < 7; k++) { const at = dayInfo(k); if (PREF.days.length && !PREF.days.includes(at.dow)) continue; out.push({ st, at, key: st.id + '|' + k }); }
+  });
+  return out;
+}
+/* Costo de un producto en una visita, con el mejor medio de pago para él solo (para asignar) */
+function soloCost(n, v) {
+  let b = null;
+  for (const pay of ALLOWED_PAYS()) { const d = payRate(pay, v.st.id, v.at.dow); if (pay.id !== 'none' && d <= 0) continue; const l = bestLine(n, v, d); if (l && (!b || l.net < b.net)) b = l; }
+  return b ? b.net : Infinity;
+}
+/* Una visita = un medio de pago: se elige el que deja el menor total, respetando compra mínima y tope */
+function visitEval(v, needs) {
+  let best = null;
+  for (const pay of ALLOWED_PAYS()) {
+    const d = payRate(pay, v.st.id, v.at.dow); if (pay.id !== 'none' && d <= 0) continue;
+    const lines = needs.map(n => ({ n, l: bestLine(n, v, d) })); if (lines.some(x => !x.l)) continue;
+    const gross = lines.reduce((a, x) => a + x.l.gross, 0), base = lines.reduce((a, x) => a + x.l.base, 0);
+    let disc = base * d, minFalta = 0;
+    if (d > 0 && pay.minimo && gross < pay.minimo) { minFalta = pay.minimo - gross; disc = 0; }
+    const rest = d > 0 && pay.tope ? Math.max(0, pay.tope - (pay.usado || 0)) : Infinity, capped = disc > rest + 0.5; disc = Math.min(disc, rest);
+    const total = gross - disc;
+    if (!best || total < best.total - 0.5) best = { pay, d, lines, gross, disc, total, minFalta, capped, rest };
+  }
+  return best;
+}
+function buildPlan() {
+  const needs = S.need.filter(n => getProd(n.prodId) && !n.done), V = candVisits(), byKey = new Map(V.map(v => [v.key, v]));
+  const cost = new Map(); // n.id|visit -> costo
+  const c = (n, v) => { const k = n.id + '|' + v.key; if (!cost.has(k)) cost.set(k, soloCost(n, v)); return cost.get(k); };
+  const assign = new Map(), missing = [];
+  needs.forEach(n => { let bv = null; V.forEach(v => { if (c(n, v) < Infinity && (!bv || c(n, v) < c(n, bv) - 0.5)) bv = v; }); if (bv) assign.set(n.id, bv.key); else missing.push(n); });
+  const groups = () => { const g = new Map(); needs.forEach(n => { const k = assign.get(n.id); if (k) { if (!g.has(k)) g.set(k, []); g.get(k).push(n); } }); return g; };
+  // Concentrar: lo que ahorra menos que el umbral pasa a la visita principal
+  let g = groups();
+  const main = () => [...groups().entries()].sort((a, b) => b[1].reduce((s2, n) => s2 + c(n, byKey.get(a[0])), 0) - a[1].reduce((s2, n) => s2 + c(n, byKey.get(b[0])), 0))[0]?.[0];
+  if (PREF.cons > 0) { const mk = main(); if (mk) needs.forEach(n => { const k = assign.get(n.id); if (!k || k === mk) return; const cm = c(n, byKey.get(mk)); if (cm < Infinity && cm <= c(n, byKey.get(k)) * (1 + PREF.cons / 100)) assign.set(n.id, mk); }); }
+  // Máximo de visitas: se elimina la visita cuyo reparto encarece menos el total
+  g = groups();
+  while (PREF.maxVisits > 0 && g.size > PREF.maxVisits) {
+    let bestDrop = null;
+    for (const [k, items] of g) {
+      const others = [...g.keys()].filter(x => x !== k); let extra = 0, moves = [];
+      for (const n of items) { let bk = null; others.forEach(o => { if (c(n, byKey.get(o)) < Infinity && (!bk || c(n, byKey.get(o)) < c(n, byKey.get(bk)))) bk = o; }); if (!bk) { extra = Infinity; break; } extra += c(n, byKey.get(bk)) - c(n, byKey.get(k)); moves.push([n.id, bk]); }
+      if (extra < Infinity && (!bestDrop || extra < bestDrop.extra)) bestDrop = { k, extra, moves };
+    }
+    if (!bestDrop) break;
+    bestDrop.moves.forEach(([id, bk]) => assign.set(id, bk)); g = groups();
+  }
+  const visits = [...g.entries()].map(([k, items]) => ({ v: byKey.get(k), items, ev: visitEval(byKey.get(k), items) })).filter(x => x.ev)
+    .sort((a, b) => a.v.at.k - b.v.at.k || a.v.st.name.localeCompare(b.v.st.name, 'es'));
+  const total = visits.reduce((a, x) => a + x.ev.total, 0);
+  // Referencia: todo hoy en la tienda donde estás, con el medio de pago elegido
+  const here = { st: getStore(S.visit.storeId), at: dayInfo(0), key: 'here' };
+  let baseline = null;
+  if (here.st && needs.length && !missing.length) { const vp = getPay(S.visit.payId), d = payRate(vp, here.st.id); const ls = needs.map(n => bestLine(n, here, d)); if (ls.every(Boolean)) baseline = ls.reduce((a, l) => a + l.net, 0); }
+  return { needs, visits, missing, total, baseline };
+}
+const needStep = n => { const pb = planBest(getProd(n.prodId)); const pres = pb ? pb.pres : S.pres.find(x => x.prodId === n.prodId); return pres ? contentOf(pres) : 1; };
+function addToListBtn(x) {
+  return S.need.some(n => n.prodId === x.prod.id && !n.done) ? `<button class="btn sm" data-act="pltab" data-t="list">En la lista ✓</button>` : `<button class="btn sm" data-act="needadd" data-id="${x.prod.id}">+ Lista</button>`;
+}
+function renderListas() {
+  const P = buildPlan(), notIn = S.prods.filter(pr => !S.need.some(n => n.prodId === pr.id && !n.done));
+  let h = `<div class="dhead"><h2>Listas de compra</h2></div>
+    <div class="card"><h3>Qué necesito</h3>
+    ${S.need.filter(n => !n.done && getProd(n.prodId)).map(n => { const pr = getProd(n.prodId), u = baseOf(pr).short; return `<div class="drow needrow"><span><b>${esc(pr.name)}</b></span><span class="stepper"><button aria-label="Menos" data-act="needamt" data-id="${n.id}" data-d="-1">−</button><span style="min-width:64px">${nfx.format(n.amt)} ${esc(u)}</span><button aria-label="Más" data-act="needamt" data-id="${n.id}" data-d="1">+</button></span><button class="btn sm ghost" aria-label="Quitar de la lista" data-act="needdel" data-id="${n.id}">×</button></div>`; }).join('') || '<span class="muted small">Todavía no agregaste productos. Usá "+ Lista" en Sugerencias o elegí uno acá.</span>'}
+    ${notIn.length ? `<div class="row"><select id="needSel" aria-label="Producto a agregar">${sortList('selProd', notIn).map(pr => `<option value="${pr.id}">${esc(pr.name)}</option>`).join('')}</select><button class="btn sm" data-act="needaddsel">Agregar</button></div>` : ''}
+    <div class="small muted">La cantidad está en la unidad del producto; cada toque suma una presentación sugerida.</div></div>
+    <details class="sec" data-pref="1" ${PREF.open ? 'open' : ''}><summary>Cómo armar las visitas</summary><div class="body">
+      <div class="fl">Máximo de visitas<div class="chips">${[[1, '1'], [2, '2'], [3, '3'], [0, 'Sin límite']].map(([v, l]) => `<button type="button" class="chip sm" aria-pressed="${PREF.maxVisits === v}" data-act="prefset" data-k="maxVisits" data-v="${v}">${l}</button>`).join('')}</div></div>
+      <div class="fl">Concentrar en la visita principal si el ahorro es menor a<div class="chips">${[[0, 'No concentrar'], [3, '3%'], [5, '5%'], [10, '10%']].map(([v, l]) => `<button type="button" class="chip sm" aria-pressed="${PREF.cons === v}" data-act="prefset" data-k="cons" data-v="${v}">${l}</button>`).join('')}</div></div>
+      <div class="small muted">También se aplican tus preferencias de Sugerencias (tiendas, días, medios de pago, antigüedad y promos de varias unidades).</div></div></details>`;
+  if (!P.needs.length) return h;
+  const ahorro = P.baseline != null ? P.baseline - P.total : null;
+  h += `<div class="tiles"><div class="tile main"><span class="lbl">Total estimado</span><span class="val">${money(P.total)}</span></div>
+    <div class="tile"><span class="lbl">${ahorro != null ? 'Ahorro vs todo hoy acá' : 'Visitas'}</span><span class="val" ${ahorro > 0 ? 'style="color:var(--good)"' : ''}>${ahorro != null ? money(ahorro) : P.visits.length}</span></div>
+    <div class="tile"><span class="lbl">Visitas</span><span class="val">${P.visits.length}</span></div></div>`;
+  h += P.visits.map(x => {
+    const { v, ev } = x, now = v.at.k === 0;
+    return `<div class="card"><div class="pv-row"><h3>${esc(dayTxt(v.at).replace(/^el /, '').replace(/^./, m => m.toUpperCase()))} · ${esc(v.st.name)}</h3><span class="pill ${ev.d > 0 && !ev.minFalta ? 'p-good' : 'p-neutral'}">${ev.d > 0 ? esc(ev.pay.name) + ' ' + ev.pay.pct + '%' : 'Sin descuento'}</span></div>
+      ${ev.d > 0 && ev.pay.minimo ? `<div class="small">${ev.minFalta ? `<b style="color:var(--bad)">Compra mínima ${money(ev.pay.minimo)}: faltan ${money(ev.minFalta)}</b> · sin llegar, el descuento no aplica` : `<span style="color:var(--good)">✓ Compra mínima ${money(ev.pay.minimo)} alcanzada</span>`}</div>` : ''}
+      ${ev.capped ? `<div class="small"><b style="color:var(--warn)">Tope:</b> el descuento queda en ${money(ev.disc)}.</div>` : ''}
+      ${ev.lines.map(({ n, l }) => { const pr = getProd(n.prodId), u = baseOf(pr).short; return `<div class="drow"><label class="switch" style="flex:1"><input type="checkbox" data-act="needdone" data-id="${n.id}"> <span><b>${esc(pr.name)}</b><br><span class="small muted">${esc(presLabel(l.pres))} × ${l.units}${l.pr.on ? ' · ' + esc(l.pr.label) : ''} · ${money((ev.d > 0 && !ev.minFalta ? l.net : l.gross) / l.qtyBase)}/${esc(u)}</span></span></label><b>${money(ev.d > 0 && !ev.minFalta ? l.net : l.gross)}</b></div>`; }).join('')}
+      <table class="calc"><tr><td>Subtotal</td><td>${money(ev.gross)}</td></tr>${ev.disc ? `<tr><td>${esc(ev.pay.name)} ${ev.pay.pct}%${ev.pay.modo === 'reintegro' ? ' (reintegro)' : ''}</td><td>− ${money(ev.disc)}</td></tr>` : ''}<tr class="total"><td>Total</td><td>${money(ev.total)}</td></tr></table>
+      <div class="btns"><button class="btn sm primary" data-act="tocart" data-key="${v.key}">Pasar al carrito${now ? '' : ' (para ' + esc(dayTxt(v.at)) + ')'}</button></div></div>`;
+  }).join('');
+  if (P.missing.length) h += `<div class="note">Sin precio que cumpla tus preferencias: ${P.missing.map(n => esc(getProd(n.prodId).name)).join(', ')}.</div>`;
+  const done = S.need.filter(n => n.done && getProd(n.prodId));
+  if (done.length) h += `<div class="card"><h3>Ya comprados (${done.length})</h3>${done.map(n => `<div class="drow"><span>${esc(getProd(n.prodId).name)}</span><button class="btn sm ghost" data-act="needundo" data-id="${n.id}">Deshacer</button></div>`).join('')}<button class="btn sm ghost" data-act="needclear" data-confirm="1">Quitar los comprados</button></div>`;
+  return h;
+}
+
 /* ============ navegación ============ */
 const VIEWS = ['cargar', 'comparar', 'planificar', 'carrito', 'datos'];
 const R = { cargar: renderCargar, comparar: renderComparar, planificar: renderPlanificar, carrito: renderCarrito, datos: renderDatos };
@@ -1381,6 +1499,21 @@ const ACT = {
   editpres: el => { startEdit('pres', el.dataset.id); go('datos'); scrollForm(); },
   edcancel: () => { ED = null; renderDatos(); },
   edsave: () => edSave(),
+  needadd: el => { const pr = getProd(el.dataset.id); if (!pr) return; const pb = planBest(pr); const pres = pb ? pb.pres : S.pres.find(x => x.prodId === pr.id); const amt = pres ? contentOf(pres) * (pb ? pb.b.N : 1) : 1; S.need.push({ id: uid(), prodId: pr.id, amt, done: false }); save(); render(); toast(`${pr.name} agregado a la lista`); },
+  needaddsel: () => { const id = $('#needSel')?.value; if (id) ACT.needadd({ dataset: { id } }); },
+  needamt: el => { const n = S.need.find(x => x.id === el.dataset.id); if (!n) return; const st = needStep(n); n.amt = Math.max(st, Math.round((n.amt + st * +el.dataset.d) * 1000) / 1000); save(); renderPlanificar(); },
+  needdel: el => { S.need = S.need.filter(x => x.id !== el.dataset.id); save(); renderPlanificar(); },
+  needdone: el => { const n = S.need.find(x => x.id === el.dataset.id); if (n) { n.done = true; save(); renderPlanificar(); toast('Marcado como comprado'); } },
+  needundo: el => { const n = S.need.find(x => x.id === el.dataset.id); if (n) { n.done = false; save(); renderPlanificar(); } },
+  needclear: () => { S.need = S.need.filter(n => !n.done); save(); renderPlanificar(); },
+  prefset: el => { PREF[el.dataset.k] = +el.dataset.v; savePref(); renderPlanificar(); },
+  tocart: el => {
+    const P = buildPlan(), x = P.visits.find(y => y.v.key === el.dataset.key); if (!x) return;
+    S.visit.storeId = x.v.st.id; S.visit.payId = x.ev.d > 0 ? x.ev.pay.id : 'none'; S.visit.payByStore = { ...(S.visit.payByStore || {}), [x.v.st.id]: S.visit.payId };
+    x.ev.lines.forEach(({ l }) => { const it = S.cart.find(c2 => c2.priceId === l.p.id); if (it) it.qty = Math.max(it.qty, l.units); else S.cart.push({ priceId: l.p.id, qty: l.units }); });
+    save(); go('carrito');
+    toast(x.v.at.k === 0 ? `Lista pasada al carrito de ${x.v.st.name}.` : `Lista pasada al carrito de ${x.v.st.name}. Es para ${dayTxt(x.v.at)}: hoy el descuento puede no aplicar.`, 5000);
+  },
   pltab: el => { PL.tab = el.dataset.t; renderPlanificar(); },
   pref: el => { const g = el.dataset.g, v = g === 'days' ? +el.dataset.v : el.dataset.v; PREF[g] = PREF[g].includes(v) ? PREF[g].filter(x => x !== v) : [...PREF[g], v]; savePref(); renderPlanificar(); },
   prefage: el => { PREF.maxAge = +el.dataset.v; savePref(); renderPlanificar(); },
