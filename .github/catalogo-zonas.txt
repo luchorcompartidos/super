@@ -1,14 +1,15 @@
 # Zonas para los precios de referencia de Precios Claros (SEPA)
 # Se generan los precios de TODAS las sucursales de estas zonas; en la app elegís las tuyas (hasta 10).
 # Formato:  provincia | zona | otros nombres con que puede figurar, separados por coma | códigos postales
-# Los códigos postales solo se usan si la sucursal no informa barrio ni una localidad reconocible.
+# Los códigos postales se usan cuando el barrio o la localidad informados no coinciden con ninguna zona
+# (algunas cadenas usan sus propios nombres de barrio).
 # Al guardar cambios en este archivo, el catálogo se regenera solo.
 
 CABA | Belgrano       | Belgrano R, Belgrano C, Bajo Belgrano | 1426 1428
-CABA | Villa Urquiza  | V Urquiza, Urquiza                     | 1431
+CABA | Villa Urquiza  | V Urquiza, Urquiza                     | 1431 1430
 CABA | Colegiales     |                                        | 1427
 CABA | Núñez          | Nunez                                  | 1429
-CABA | Villa Ortúzar  | Ortuzar, V Ortuzar                     |
+CABA | Villa Ortúzar  | Ortuzar, V Ortuzar                     | 1427
 
 PBA  | Santos Lugares |                                        | 1676
 PBA  | Caseros        |                                        | 1678

@@ -158,11 +158,12 @@ def zona_de(suc, zonas):
         for n in z["nombres"]:
             for c in cand:
                 if c == n or re.search(r"(^| )" + re.escape(n) + r"( |$)", c): return z["zona"]
-    # Si no figura el barrio y la localidad es genérica ("CABA", "Buenos Aires"), se usa el código postal
-    m = re.search(r"\d{4}", suc["cp"] or "")
-    if m and not barrio and (not loc or loc in PROV):
-        for z in zonas:
-            if z["prov"] == prov and m.group(0) in z["cps"]: return z["zona"] + " (por código postal)"
+    # Si el nombre no coincide (falta, es genérico o la cadena usa sus propios nombres de barrio), se usa el código postal.
+    # Como un código postal puede abarcar varios barrios, la zona se informa con todos los que lo comparten.
+    cp = re.sub(r"\D", "", suc["cp"] or "").lstrip("0")[:4]   # "00001428" o "C1428ABC" -> "1428"
+    if len(cp) == 4:
+        zs = [z["zona"] for z in zonas if z["prov"] == prov and cp in z["cps"]]
+        if zs: return " o ".join(zs) + " (por código postal)"
     return None
 
 
