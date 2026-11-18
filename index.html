@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.5.18">
+<meta name="app-version" content="v0.5.19">
 <title>Góndola Comparador</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#132033">
@@ -229,7 +229,7 @@ details.more summary{cursor:pointer;color:var(--muted)}
 <div class="app">
   <header class="top">
     <div class="syncbar" id="syncBar" hidden aria-hidden="true"><i></i></div>
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.5.18</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.5.19</button></span></div>
     <div class="symsg" id="syncMsg" role="status" hidden></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
@@ -890,7 +890,7 @@ function renderDatos() {
   const demo = S.demo ? `<div class="note">Estás viendo <b>datos de ejemplo</b> (tiendas, marcas y precios inventados). Podés editarlos, o borrarlos desde Ajustes → Respaldo.</div>` : '';
   const B = {};
   B.sync = syncSection();
-  B.pays = ((S.pays.length > 1 ? sortBar('dPays') : '') + sortList('dPays', S.pays).map(p => `<div class="paybox" id="pay-${p.id}">
+  B.pays = (searchBox('pays', 'Buscar medio de pago o tienda') + (S.pays.length > 1 ? sortBar('dPays') : '') + sortList('dPays', qf('pays', S.pays, p => `${p.name} ${(p.stores || []).map(id => getStore(id)?.name || '').join(' ')}`)).map(p => `<div class="paybox" id="pay-${p.id}">
       <div class="grid2"><label class="fl" for="pn-${p.id}">Nombre<input id="pn-${p.id}" data-pay="${p.id}" data-pk="name" value="${esc(p.name)}"></label>
       <label class="fl" for="pp-${p.id}">% de descuento<input id="pp-${p.id}" data-pay="${p.id}" data-pk="pct" inputmode="decimal" value="${p.pct}"></label>
       <label class="fl" for="pm-${p.id}">Compra mínima ($, vacío = sin mínimo)<input id="pm-${p.id}" data-pay="${p.id}" data-pk="minimo" inputmode="decimal" value="${p.minimo ?? ''}"></label>
@@ -900,9 +900,9 @@ function renderDatos() {
       <div class="fl">Tiendas (ninguna = todas)<div class="chips">${S.stores.filter(s => !s.archived || p.stores?.includes(s.id)).map(s => `<button class="chip" aria-pressed="${!!p.stores?.includes(s.id)}" data-act="paystore" data-id="${p.id}" data-v="${s.id}">${esc(s.name)}</button>`).join('')}</div></div>
       <div class="fl">Cómo se aplica<div class="chips"><button class="chip" aria-pressed="${p.modo !== 'reintegro'}" data-act="paymodo" data-id="${p.id}" data-v="caja">En caja</button><button class="chip" aria-pressed="${p.modo === 'reintegro'}" data-act="paymodo" data-id="${p.id}" data-v="reintegro">Reintegro posterior</button></div></div>
       <div class="small muted">Los cambios se guardan al tipear y recalculan al instante todas las comparaciones y el carrito.</div>
-      <div class="btns"><button class="btn sm ghost" data-act="payreset" data-id="${p.id}">Reiniciar tope usado</button><button class="btn sm danger" data-act="delpay" data-id="${p.id}" data-confirm="1">Eliminar</button></div></div>`).join('') || '<span class="muted">Todavía no hay medios de pago.</span>');
+      <div class="btns"><button class="btn sm ghost" data-act="payreset" data-id="${p.id}">Reiniciar tope usado</button><button class="btn sm danger" data-act="delpay" data-id="${p.id}" data-confirm="1">Eliminar</button></div></div>`).join('') || noHits('pays') || '<span class="muted">Todavía no hay medios de pago.</span>');
   B.stores = storesBody();
-  B.prods = ((S.prods.length > 1 ? sortBar('dProds') : '') + sortList('dProds', S.prods).map(p => isEd('prod', p.id) ? prodForm(p) : `<div class="drow"><span><b>${esc(p.name)}</b> <span class="muted">por ${esc(baseOf(p).short)}</span><br><span class="small muted">${S.pres.filter(x => x.prodId === p.id).length} presentaciones</span></span><span class="btns">${editBtn('prod', p.id)}<button class="btn sm danger" data-act="delprod" data-id="${p.id}" data-confirm="1">Eliminar</button></span></div>`).join('') || '<span class="muted">Todavía no hay productos.</span>');
+  B.prods = (searchBox('prods', 'Buscar producto') + (S.prods.length > 1 ? sortBar('dProds') : '') + sortList('dProds', qf('prods', S.prods, p => (isEd('prod', p.id) ? Q.prods : `${p.name} ${baseOf(p).short}`))).map(p => isEd('prod', p.id) ? prodForm(p) : `<div class="drow"><span><b>${esc(p.name)}</b> <span class="muted">por ${esc(baseOf(p).short)}</span><br><span class="small muted">${S.pres.filter(x => x.prodId === p.id).length} presentaciones</span></span><span class="btns">${editBtn('prod', p.id)}<button class="btn sm danger" data-act="delprod" data-id="${p.id}" data-confirm="1">Eliminar</button></span></div>`).join('') || noHits('prods') || '<span class="muted">Todavía no hay productos.</span>');
   B.pres = (searchBox('pres', 'Buscar marca, producto o código de barras') + sortBar('dPres') + `<div id="list-pres" style="display:grid;gap:10px">${presListHTML()}</div>`);
   B.prices = (searchBox('prices', 'Buscar presentación, tienda o producto') + sortBar('dPrices') + `<div id="list-prices" style="display:grid;gap:10px">${priceListHTML()}</div>`);
   B.calc = sec('calc', 'Cómo calcula', `<div class="small" style="display:grid;gap:10px">
@@ -1199,7 +1199,10 @@ function syncSection() {
    Cada listado recuerda en el celular el orden elegido; tocar el orden activo invierte el sentido. */
 const SORT_LS = 'gondola.sort';
 let SORT = {}; try { SORT = JSON.parse(localStorage.getItem(SORT_LS) || '{}'); } catch (e) {}
-const Q = { pres: '', prices: '' };
+const Q = { pres: '', prices: '', pays: '', stores: '', prods: '', pend: '' };
+/* Filtro por búsqueda para las secciones de Datos que se redibujan completas */
+const qf = (k, arr, txt) => { const q = fold(Q[k]); return q ? arr.filter(x => matchAll(q, txt(x))) : arr; };
+const noHits = k => (Q[k] ? '<span class="muted">Nada coincide con la búsqueda.</span>' : '');
 const fold = s => String(s ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
 const matchAll = (q, txt) => { const t = fold(txt); return q.split(/\s+/).every(w => t.includes(w)); }; // todas las palabras, en cualquier orden
 const lastUsePres = x => S.prices.reduce((m, p) => p.presId === x.id && (p.upd || '') > m ? p.upd : m, x.upd || '');
@@ -1276,9 +1279,10 @@ function storesBody() {
   const row = st => `<div class="paybox"><div class="row"><input aria-label="Nombre de la tienda" data-store="${st.id}" value="${esc(st.name)}"><span class="small muted" style="white-space:nowrap">${np(st.id)} precios</span></div>
     <div class="btns">${S.stores.length > 1 ? `<button class="btn sm" data-act="smerge" data-id="${st.id}">Unir con otra…</button>` : ''}${act.length > 1 ? `<button class="btn sm ghost" data-act="sarch" data-id="${st.id}">Archivar</button>` : ''}${S.stores.length > 1 ? `<button class="btn sm danger" data-act="delstore" data-id="${st.id}" data-confirm="1">Eliminar</button>` : ''}</div>
     ${SMERGE === st.id ? mergeNote(st) : ''}</div>`;
-  let h = (act.length > 1 ? sortBar('dStores') : '') + sortList('dStores', act).map(row).join('');
-  if (arch.length) h += `<h3 style="margin-top:6px">Archivadas (${arch.length})</h3><div class="small muted">No aparecen en los selectores ni en Comparar. Sus precios e historial se conservan.</div>`
-    + arch.map(st => `<div class="drow"><span>${esc(st.name)}<br><span class="small muted">${np(st.id)} precios</span></span><span class="btns"><button class="btn sm" data-act="sunarch" data-id="${st.id}">Reactivar</button><button class="btn sm" data-act="smerge" data-id="${st.id}">Unir…</button><button class="btn sm danger" data-act="delstore" data-id="${st.id}" data-confirm="1">Eliminar</button></span></div>${SMERGE === st.id ? mergeNote(st) : ''}`).join('');
+  const sh = x => qf('stores', x, st => st.name);
+  let h = searchBox('stores', 'Buscar tienda') + (act.length > 1 ? sortBar('dStores') : '') + (sortList('dStores', sh(act)).map(row).join('') || noHits('stores'));
+  if (sh(arch).length) h += `<h3 style="margin-top:6px">Archivadas (${arch.length})</h3><div class="small muted">No aparecen en los selectores ni en Comparar. Sus precios e historial se conservan.</div>`
+    + sh(arch).map(st => `<div class="drow"><span>${esc(st.name)}<br><span class="small muted">${np(st.id)} precios</span></span><span class="btns"><button class="btn sm" data-act="sunarch" data-id="${st.id}">Reactivar</button><button class="btn sm" data-act="smerge" data-id="${st.id}">Unir…</button><button class="btn sm danger" data-act="delstore" data-id="${st.id}" data-confirm="1">Eliminar</button></span></div>${SMERGE === st.id ? mergeNote(st) : ''}`).join('');
   return h + `<div class="small muted">El nombre se corrige tocándolo. <b>Archivar</b>: la dejás de usar pero conservás sus datos. <b>Unir</b>: era la misma tienda. <b>Eliminar</b>: borra la tienda y sus precios.</div>`;
 }
 function mergeStores(srcId, dstId) {
@@ -1625,9 +1629,13 @@ function pendData() {
   return { pres, prods, rem: S.remind.filter(m => !getStore(m.storeId).archived), n: pres.length + prods.length + S.remind.length };
 }
 function pendBody() {
-  const P = pendData();
-  if (!P.n) return '<div class="muted">Nada pendiente.</div>';
-  let h = '';
+  const P0 = pendData();
+  if (!P0.n) return '<div class="muted">Nada pendiente.</div>';
+  const P = { pres: qf('pend', P0.pres, x => `${getProd(x.prodId)?.name || ''} ${presLabel(x)} ${x.ean || ''} ${x.nota || ''}`),
+    rem: qf('pend', P0.rem, m => `${presLabel(getPres(m.presId))} ${getStore(m.storeId)?.name || ''} ${m.nota || ''}`),
+    prods: qf('pend', P0.prods, p => p.name) };
+  let h = searchBox('pend', 'Buscar producto, presentación, tienda o nota');
+  if (!P.pres.length && !P.rem.length && !P.prods.length) h += noHits('pend');
   if (P.pres.length) h += `<h3>Presentaciones por completar (${P.pres.length})</h3>` + P.pres.map(x => `<div class="drow"><span><b>${esc(getProd(x.prodId)?.name || '')}</b> · ${esc(presLabel(x))}<br><span class="small"><span class="pill p-warn">Falta ${pendReasons(x).join(', ') || 'revisar'}</span>${x.pendPrecio ? ` <span class="small muted">precio anotado ${money(x.pendPrecio.precio)} en ${esc(getStore(x.pendPrecio.storeId)?.name || '')}</span>` : ''}${x.nota ? `<br><span class="muted">Nota: ${esc(x.nota)}</span>` : ''}</span></span><span class="btns">${x.ean && eanOk(x.ean) && (!(x.cont > 0) || !x.marca) ? `<button class="btn sm" data-act="pendauto" data-id="${x.id}">Completar automáticamente</button>` : ''}<button class="btn sm primary" data-act="pendgo" data-id="${x.id}">Completar</button>${!S.prices.some(p => p.presId === x.id) ? `<button class="btn sm danger" aria-label="Descartar" data-act="delpres" data-id="${x.id}" data-confirm="1">×</button>` : ''}</span></div>`).join('');
   if (P.rem.length) h += `<h3>Precios para cargar (${P.rem.length})</h3>` + P.rem.map(m => { const x = getPres(m.presId); return `<div class="drow"><span><b>${esc(presLabel(x))}</b><br><span class="small muted">en ${esc(getStore(m.storeId).name)}${m.nota ? ' · ' + esc(m.nota) : ''}</span></span><span class="btns"><button class="btn sm primary" data-act="remgo" data-id="${m.id}">Cargar</button><button class="btn sm ghost" aria-label="Quitar recordatorio" data-act="remdel" data-id="${m.id}">×</button></span></div>`; }).join('');
   if (P.prods.length) h += `<h3>Productos sin presentaciones (${P.prods.length})</h3>` + P.prods.map(p => `<div class="drow"><span>${esc(p.name)}</span><button class="btn sm" data-act="loadnew" data-id="${p.id}">Cargar presentación</button></div>`).join('');
@@ -2037,7 +2045,11 @@ document.addEventListener('input', e => {
   else if (t.dataset.needflex) { const n = S.need.find(x => x.id === t.dataset.needflex); if (n) { n.flex = t.checked; save(); renderPlanificar(); } }
   else if (t.dataset.planq) { PREF.q = t.value; savePref(); const c2 = $('#planList'); if (c2) c2.innerHTML = planListHTML(); }
   else if (t.dataset.prefmulti) { PREF.allowMulti = t.checked; savePref(); renderPlanificar(); }
-  else if (t.dataset.q) { Q[t.dataset.q] = t.value; const c = $('#list-' + t.dataset.q); if (c) c.innerHTML = t.dataset.q === 'pres' ? presListHTML() : priceListHTML(); }
+  else if (t.dataset.q) {
+    const k = t.dataset.q; Q[k] = t.value; const c = $('#list-' + k);
+    if (c) c.innerHTML = k === 'pres' ? presListHTML() : priceListHTML();
+    else { const pos = t.selectionStart; renderDatos(); const i = $(`[data-q="${k}"]`); if (i) { i.focus(); try { i.setSelectionRange(pos, pos); } catch (e) {} } }
+  }
   else if (t.dataset.syncauto) { SYNC.auto = t.checked; saveSync(); }
   else if (t.dataset.sync) { SYNC[t.dataset.sync] = t.value.trim(); if (t.dataset.sync === 'url') { SYNC.last = ''; SYNC.lastOk = ''; SYNC.planilla = ''; } saveSync(); renderSyncBtn(); }
   else if (t.dataset.store) { const st = getStore(t.dataset.store); st.name = t.value; touch(st); save(); renderVisit(); }
