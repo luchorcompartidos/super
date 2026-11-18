@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.5.15">
+<meta name="app-version" content="v0.5.16">
 <title>Góndola Comparador</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#132033">
@@ -229,7 +229,7 @@ details.more summary{cursor:pointer;color:var(--muted)}
 <div class="app">
   <header class="top">
     <div class="syncbar" id="syncBar" hidden aria-hidden="true"><i></i></div>
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.5.15</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.5.16</button></span></div>
     <div class="symsg" id="syncMsg" role="status" hidden></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
@@ -549,7 +549,6 @@ function buildTemp() {
   const fecha = /^\d{4}-\d{2}-\d{2}$/.test(F.fecha || '') ? F.fecha : todayISO();
   if (fecha > todayISO()) return { err: 'La fecha del precio no puede ser futura' };
   const hasta = pr.p.t !== 'none' && /^\d{4}-\d{2}-\d{2}$/.test(F.hasta || '') ? F.hasta : '';
-  if (hasta && hasta < fecha) return { err: 'La promo no puede vencer antes de la fecha del precio' };
   const price = { id: '_tmp', presId: pres.id, storeId: formStore(), precio, promo: pr.p, acum: !!F.acum, fecha, hasta };
   return { pres, price, prod };
 }
@@ -637,7 +636,7 @@ function renderCargar() {
     <label class="fl" for="fPrecio">Precio de góndola por unidad (sin promo)<input id="fPrecio" data-f="precio" inputmode="decimal" class="price-in" value="${esc(F.precio)}" placeholder="$ 0"></label>
     <div class="fl">Promoción de la tienda<div class="chips">${PTYPES.map(([t, l]) => `<button type="button" class="chip" aria-pressed="${F.promo.t === t}" data-act="ptype" data-t="${t}">${l}</button>`).join('')}</div></div>
     ${promoParams()}
-    ${F.promo.t !== 'none' ? `<label class="fl" for="fHasta">Promo vigente hasta (opcional)<input type="date" id="fHasta" data-f="hasta" value="${esc(F.hasta || '')}" min="${esc(F.fecha || todayISO())}"></label>` : ''}
+    ${F.promo.t !== 'none' ? `<div class="fl"><label for="fHasta">Promo vigente hasta (opcional)</label><div class="row"><input type="date" id="fHasta" data-f="hasta" data-rer="1" value="${esc(F.hasta || '')}">${F.hasta ? '<button type="button" class="btn sm ghost" data-act="fhastaclr">Quitar fecha</button>' : ''}</div>${F.hasta && F.hasta < todayISO() ? '<span class="small" style="color:var(--warn);font-weight:600">Esta promo figura vencida: no se aplica en los cálculos.</span>' : ''}</div>` : ''}
     ${F.promo.t !== 'none' ? `<label class="switch" for="fAcum"><input type="checkbox" id="fAcum" data-f="acum" ${F.acum ? 'checked' : ''}> La promo se acumula con el descuento del medio de pago</label>` : ''}
     <details class="more" ${F.more ? 'open' : ''} data-more="1"><summary class="small">Más opciones · fecha del precio: <b>${F.fecha === todayISO() ? 'hoy' : esc(F.fecha.split('-').reverse().join('/'))}</b></summary>
       <label class="fl" for="fFecha" style="margin-top:8px">Fecha del precio (si lo cargás desde un ticket o un folleto)<input type="date" id="fFecha" data-f="fecha" value="${esc(F.fecha)}" max="${todayISO()}"></label>
@@ -873,7 +872,7 @@ function priceForm(p) {
       <span class="small muted" style="font-weight:500">${d.modo === 'fix' ? 'Pisa el dato actual sin dejarlo en el historial.' : `El precio actual (${money(p.precio)}, ${ageTxt(p.fecha)}) pasa al historial.`}</span></div>
     <label class="fl" for="ed-precio">Precio de góndola por unidad<input id="ed-precio" data-ed="precio" inputmode="decimal" class="price-in" value="${esc(d.precio)}"></label>
     ${promoEd(d.promo)}
-    ${d.promo.t !== 'none' ? `<label class="fl" for="ed-hasta">Promo vigente hasta (opcional)<input type="date" id="ed-hasta" data-ed="hasta" value="${esc(d.hasta || '')}"></label>` : ''}
+    ${d.promo.t !== 'none' ? `<div class="fl"><label for="ed-hasta">Promo vigente hasta (opcional)</label><div class="row"><input type="date" id="ed-hasta" data-ed="hasta" data-rer="1" value="${esc(d.hasta || '')}">${d.hasta ? '<button type="button" class="btn sm ghost" data-act="edhastaclr">Quitar fecha</button>' : ''}</div>${d.hasta && d.hasta < todayISO() ? '<span class="small" style="color:var(--warn);font-weight:600">Esta promo figura vencida: no se aplica en los cálculos.</span>' : ''}</div>` : ''}
     ${d.promo.t !== 'none' ? `<label class="switch" for="ed-acum"><input type="checkbox" id="ed-acum" data-ed="acum" ${d.acum ? 'checked' : ''}> La promo se acumula con el descuento del medio de pago</label>` : ''}
     <label class="fl" for="ed-fecha">Fecha del precio<input type="date" id="ed-fecha" data-ed="fecha" value="${esc(d.fecha)}" max="${todayISO()}"></label>
     ${p.hist?.length ? `<div class="small muted">Historial: ${p.hist.slice().reverse().map(h => `${money(h.precio)} (${ageTxt(h.fecha)})`).join(' · ')} <button class="btn sm ghost" data-act="clearhist" data-id="${p.id}" data-confirm="1">Borrar historial</button></div>` : ''}
@@ -937,7 +936,6 @@ function edSave() {
     if (dest && !d.movePick) return toast('Esa tienda ya tiene un precio para esta presentación: elegí cuál queda');
     if (d.modo === 'new') p.hist = [...(p.hist || []), { precio: p.precio, fecha: p.fecha }].slice(-12);
     const hasta = pr.p.t !== 'none' && /^\d{4}-\d{2}-\d{2}$/.test(d.hasta || '') ? d.hasta : '';
-    if (hasta && hasta < d.fecha) return toast('La promo no puede vencer antes de la fecha del precio');
     Object.assign(p, { precio, promo: pr.p, acum: pr.p.t !== 'none' && !!d.acum, fecha: d.fecha, hasta }); touch(p);
     if (moving) {
       const to = getStore(d.storeId);
@@ -1799,6 +1797,8 @@ const ACT = {
   remgo: el => { const m = S.remind.find(r => r.id === el.dataset.id); if (!m) return; const x = getPres(m.presId); resetForm(x.prodId); F.storeId = m.storeId; fillFromPres(x); if (m.nota) F.nota = m.nota; lastSaved = null; go('cargar'); renderCargar(); setTimeout(() => $('#fPrecio')?.focus(), 80); },
   remdel: el => { S.remind = S.remind.filter(r => r.id !== el.dataset.id); save(); render(); },
   remadd: el => { const x = getPres(el.dataset.id); if (x && addRemind(x.id, S.visit.storeId, '')) { save(); render(); toast(`Recordatorio: cargar el precio en ${getStore(S.visit.storeId).name}.`); } },
+  fhastaclr: () => { F.hasta = ''; renderCargar(); },
+  edhastaclr: () => { if (ED) { ED.d.hasta = ''; renderDatos(); } },
   dismiss: () => { lastSaved = null; renderCargar(); $('#fEan')?.focus(); },
   gocmp: el => { CMP.prodId = el.dataset.id; lastSaved = null; go('comparar'); },
   cprod: el => { CMP.prodId = el.dataset.id; renderComparar(); },
@@ -2043,7 +2043,8 @@ document.addEventListener('change', e => {
   if (t.dataset.ed === 'storeId' && ED) { ED.d.movePick = null; renderDatos(); return; }
   if (t.dataset.store && !t.value.trim()) { toast('La tienda necesita un nombre'); t.value = getStore(t.dataset.store).name = 'Tienda sin nombre'; save(); renderVisit(); return; }
   if (a === 'vstore') { S.visit.storeId = t.value; F.storeId = t.value; save(); lastSaved = null; render(); }
-  else if (t.dataset.f === 'fecha') { renderCargar(); }
+  else if (t.dataset.f === 'fecha' || t.dataset.f === 'hasta') { renderCargar(); }
+  else if (t.dataset.ed === 'hasta' && ED) { renderDatos(); }
   else if (a === 'fstore') { F.storeId = t.value; F.setVisit = false; if (F.presId !== 'new') fillFromPres(getPres(F.presId)); renderCargar(); }
   else if (a === 'vpay') { if (!t.value) return; S.visit.payId = t.value; S.visit.payByStore = { ...(S.visit.payByStore || {}), [S.visit.storeId]: t.value }; save(); render(); }
   else if (a === 'fprod') { setLastProd(t.value); const keep = F.presId === 'new' ? { ean: F.ean, marca: F.marca, desc: F.desc, cont: F.cont, unit: F.unit, pack: F.pack, nota: F.nota, look: F.look } : null; resetForm(t.value); if (keep) { Object.assign(F, keep); const pr = getProd(t.value); if (pr && baseOf(pr).units[F.unit] === undefined) F.unit = defUnit(pr); } lastSaved = null; renderCargar(); }
