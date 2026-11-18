@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.5.4">
+<meta name="app-version" content="v0.5.5">
 <title>Góndola Comparador</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#132033">
@@ -222,7 +222,7 @@ details.more summary{cursor:pointer;color:var(--muted)}
 <div class="app">
   <header class="top">
     <div class="syncbar" id="syncBar" hidden aria-hidden="true"><i></i></div>
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.5.4</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.5.5</button></span></div>
     <div class="symsg" id="syncMsg" role="status" hidden></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
@@ -951,7 +951,17 @@ async function syncTest() {
 /* Sincronizar: 1) leer la planilla, 2) detectar conflictos y preguntar, 3) enviar y recibir todo */
 const SFIELDS = { stores: ['name', 'archived'], pays: ['name', 'pct', 'minimo', 'tope', 'usado', 'dias', 'stores', 'modo'], prods: ['name', 'base'], pres: ['prodId', 'marca', 'desc', 'cont', 'unit', 'pack', 'ean'], prices: ['presId', 'storeId', 'precio', 'promo', 'acum', 'fecha', 'hasta', 'hist'] };
 const ENT = { stores: 'Tienda', pays: 'Medio de pago', prods: 'Producto', pres: 'Presentación', prices: 'Precio' };
-const sameRec = (c, a, b) => SFIELDS[c].every(f => JSON.stringify(a[f] ?? null) === JSON.stringify(b[f] ?? null));
+/* Comparación tolerante: vacío = inexistente, "35" = 35, mismo objeto aunque cambie el orden de sus claves */
+function canon(v) {
+  if (v === undefined || v === null || v === '' || v === false) return null;
+  if (typeof v === 'string' && v.trim() !== '' && !isNaN(+v)) return +v;
+  if (Array.isArray(v)) return v.length ? v.map(canon) : null;
+  if (typeof v === 'object') { const o = {}; Object.keys(v).sort().forEach(k => { const c2 = canon(v[k]); if (c2 !== null) o[k] = c2; }); return Object.keys(o).length ? o : null; }
+  return v;
+}
+const FIELD_TXT = { name: 'nombre', archived: 'archivada', pct: '%', minimo: 'compra mínima', tope: 'tope', usado: 'tope usado', dias: 'días', stores: 'tiendas', modo: 'forma de aplicar', base: 'unidad', prodId: 'producto', marca: 'marca', desc: 'detalle', cont: 'contenido', unit: 'unidad', pack: 'pack', ean: 'código de barras', presId: 'presentación', storeId: 'tienda', precio: 'precio', promo: 'promo', acum: 'acumula', fecha: 'fecha', hasta: 'vigencia de la promo', hist: 'historial' };
+const diffFields = (c, a, b) => SFIELDS[c].filter(f => JSON.stringify(canon(a[f])) !== JSON.stringify(canon(b[f])));
+const sameRec = (c, a, b) => diffFields(c, a, b).length === 0;
 let CONF = null;
 function findConflicts(pj, last) {
   const out = [];
@@ -961,7 +971,8 @@ function findConflicts(pj, last) {
     const stomb = new Map((pj.tombs || []).filter(t => t.c === c && t.upd > last).map(t => [t.id, t.upd]));
     S[c].filter(r => (r.upd || '') > last).forEach(r => {
       const sv = srv.get(r.id);
-      if (sv && (sv.upd || '') > last && !sameRec(c, r, sv)) out.push({ c, id: r.id, mine: r, theirs: sv, pick: null });
+      // Misma hora de modificación = misma versión (por ejemplo, un envío anterior que no llegó a confirmarse)
+      if (sv && (sv.upd || '') > last && sv.upd !== r.upd && !sameRec(c, r, sv)) out.push({ c, id: r.id, mine: r, theirs: sv, pick: null });
       else if (!sv && stomb.has(r.id)) out.push({ c, id: r.id, mine: r, theirs: null, theirsDel: stomb.get(r.id), pick: null });
     });
     S.tomb.filter(t => t.c === c && t.upd > last).forEach(t => {
@@ -1039,7 +1050,7 @@ function renderConf() {
   d.innerHTML = `<h2 id="confTitle">Conflictos con la planilla (${L.length})</h2>
     <div class="small muted">Estos registros cambiaron en este celular y también en la planilla desde la última sincronización. Elegí qué versión queda en cada uno.</div>
     <div class="btns" style="margin-top:8px"><button class="btn sm" data-act="cpickall" data-v="mine">Todo de este celular</button><button class="btn sm" data-act="cpickall" data-v="theirs">Todo de la planilla</button></div>
-    <div class="clist">${L.map((x, i) => `<div><div class="small" style="font-weight:700;margin-bottom:4px">${ENT[x.c]}: ${esc(recName(x.c, x.mine || x.theirs))}</div><div class="copt">${opt(x, i, 'mine')}${opt(x, i, 'theirs')}</div></div>`).join('')}</div>
+    <div class="clist">${L.map((x, i) => `<div><div class="small" style="font-weight:700;margin-bottom:4px">${ENT[x.c]}: ${esc(recName(x.c, x.mine || x.theirs))}</div>${x.mine && x.theirs ? `<div class="small muted" style="margin-bottom:6px">Diferencias: <b>${diffFields(x.c, x.mine, x.theirs).map(f => FIELD_TXT[f] || f).join(', ')}</b></div>` : `<div class="small muted" style="margin-bottom:6px">${x.mine ? 'Borrado en la planilla y modificado acá' : 'Borrado acá y modificado en la planilla'}</div>`}<div class="copt">${opt(x, i, 'mine')}${opt(x, i, 'theirs')}</div></div>`).join('')}</div>
     <div class="btns" style="justify-content:flex-end"><button class="btn ghost" data-act="ccancel">Decidir después</button><button class="btn primary" data-act="capply" ${ok ? '' : 'disabled'}>${ok ? 'Aplicar y sincronizar' : `Faltan ${L.filter(x => !x.pick).length}`}</button></div>`;
 }
 function openConf() { renderConf(); const d = $('#confDlg'); try { if (!d.open) d.showModal(); } catch (e) { d.setAttribute('open', ''); } }
