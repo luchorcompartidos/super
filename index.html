@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.2.5">
+<meta name="app-version" content="v0.2.6">
 <title>Góndola Comparador</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#132033">
@@ -148,6 +148,7 @@ nav.tabs a[aria-current="page"]::before{content:"";position:absolute;top:0;left:
 .scan button{position:absolute;bottom:calc(24px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%)}
 .result{border:2px solid var(--good);background:var(--good-bg)}
 .sortbar{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.pvl{display:grid;gap:2px;padding:8px 0;border-bottom:1px solid var(--line)}
 .storebar{display:grid;gap:6px;padding:10px;border-radius:12px;background:var(--bg)}
 .storebar.other{background:var(--warn-bg);box-shadow:inset 0 0 0 2px var(--warn)}
 .storebar select{font-weight:700}
@@ -190,7 +191,7 @@ details.more summary{cursor:pointer;color:var(--muted)}
 <body>
 <div class="app">
   <header class="top">
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button> <button id="verBtn" class="vs-ver" type="button">v0.2.5</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button> <button id="verBtn" class="vs-ver" type="button">v0.2.6</button></span></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
       <label for="vPay">Pago con<select id="vPay" data-chg="vpay"></select></label>
@@ -503,6 +504,7 @@ function renderCargar() {
     const diff = top && me ? (me.c.best.per / top.c.best.per - 1) * 100 : 0;
     h += `<div class="card result" role="status"><div class="pv-row"><h3>Guardado en ${esc(getStore(p.storeId)?.name || '')}: ${esc(presLabel(pres))}</h3></div>
       <div class="pv-row"><span>Queda <b>${i + 1}º de ${rows.length}</b> en ${esc(prod.name)}</span><span class="big">${money(me.c.best.per)}<small>/${u}</small></span></div>
+      <div class="pv-row small"><span class="muted">${me.c.best.promoOn ? esc(me.c.pr.label) : 'Góndola ' + money(p.precio)}${me.c.best.payOn ? ` − ${me.c.pay.pct}% ${esc(me.c.pay.name)}` : ''}</span><b>Pagás ${payUnits(me.c.best, me.c.best.N)}</b></div>
       <div class="small">${i === 0 ? 'Es la mejor opción registrada.' : `+${nf0.format(diff)}% vs la mejor: ${esc(presLabel(top.pres))} en ${esc(getStore(top.p.storeId).name)}${top.c.best.N > 1 ? ' (llevando ' + top.c.best.N + ')' : ''}.`}</div>
       <div class="btns"><button class="btn sm primary" data-act="gocmp" data-id="${prod.id}">Ver comparación</button><button class="btn sm ghost" data-act="movefromcargar" data-id="${p.id}">Era otra tienda</button><button class="btn sm" data-act="addcart" data-id="${p.id}" data-q="${me.c.best.N}">+ Carrito (${me.c.best.N})</button><button class="btn sm ghost" data-act="dismiss">Cargar otro</button></div></div>`;
   }
@@ -554,16 +556,21 @@ function newProdForm(act) {
     <label class="fl" for="npCustom">Otra unidad (ej.: lavado, hoja, pañal)<input id="npCustom" data-np="custom" value="${esc(NP.custom)}"></label>
     <button class="btn primary" data-act="${act}">Crear producto</button></div>`;
 }
+/* Lo que se paga por la presentación (no solo por kg/L) */
+const payUnits = (s, N) => (N > 1 ? `${money(s.total)} por ${N} (${money(s.total / N)} c/u)` : `${money(s.total)} c/u`);
 function updatePreview() {
   const box = $('#preview'); if (!box) return;
   const t = buildTemp();
   if (t.err) { box.innerHTML = `<span class="muted">${esc(t.err)}</span>`; return; }
   const pay = formPay(), c = calc(t.price, pay, t.pres), u = baseOf(t.prod).short;
   let h = `<div class="small muted">Pagando con ${esc(pay.name)}${c.d > 0 ? ` (${pay.pct}%${pay.minimo ? ', con compra mínima ' + money(pay.minimo) : ''})` : ''}${c.d > 0 && c.pr.on && !t.price.acum ? ' · no se suma a la promo' : ''}</div>`;
-  const line = (lbl, s, best) => `<div class="pv-row"><span>${lbl}${best ? ' <span class="pill p-good">Conviene</span>' : ''}</span><span class="big">${money(s.per)}<small>/${u}</small></span></div>`;
-  h += line(c.pr.on && c.pr.N === 1 ? `Con ${esc(c.pr.label)}` : 'Llevando 1', c.one, c.many && c.best.N === 1);
-  if (c.many) h += line(`Llevando ${c.pr.N} (${esc(c.pr.label)})`, c.many, c.best.N > 1);
-  h += `<div class="small muted">Sin descuentos: ${money(c.lista)}/${u} · contenido total ${nfx.format(c.C)} ${u}</div>`;
+  const payPart = s => (s.payOn ? ` − ${pay.pct}% ${esc(pay.name)}` : c.d > 0 && s.promoOn ? ' · el descuento de pago no se suma' : '');
+  const how = (s, N) => (s.promoOn ? `${esc(c.pr.label)}${payPart(s)}` : s.payOn ? `Góndola ${money(t.price.precio)}${payPart(s)}` : 'Precio de góndola, sin descuentos');
+  const line = (lbl, s, N, best) => `<div class="pvl"><div class="pv-row"><span><b>${lbl}</b>${best ? ' <span class="pill p-good">Conviene</span>' : ''}</span><span class="big">${money(s.per)}<small>/${u}</small></span></div>
+    <div class="pv-row small"><span class="muted">${how(s, N)}</span><b>Pagás ${payUnits(s, N)}</b></div></div>`;
+  h += line(c.pr.on && c.pr.N === 1 ? 'Con la promo' : 'Llevando 1', c.one, 1, c.many && c.best.N === 1);
+  if (c.many) h += line(`Llevando ${c.pr.N}`, c.many, c.pr.N, c.best.N > 1);
+  h += `<div class="small muted">Góndola ${money(t.price.precio)} c/u · ${money(c.lista)}/${u} sin descuentos · contenido ${nfx.format(c.C)} ${u}</div>`;
   box.innerHTML = h;
 }
 const ageTxt = iso => { const a = ageDays(iso); return a === 0 ? 'hoy' : a === 1 ? 'ayer' : `hace ${a} d`; };
@@ -593,12 +600,12 @@ function renderComparar() {
     const { p, pres, c } = r, diff = (c.best.per / top.c.best.per - 1) * 100;
     const s = r === top ? 's-good' : diff <= 5 ? 's-warn' : 's-bad';
     const isHere = p.storeId === here;
-    const alt = c.many ? (c.best.N > 1 ? `Si llevás 1: ${money(c.one.per)}/${u}` : `Llevando ${c.pr.N} con la promo: ${money(c.many.per)}/${u} (no conviene)`) : '';
+    const alt = c.many ? (c.best.N > 1 ? `Si llevás 1: ${money(c.one.per)}/${u} (${money(c.one.total)} c/u)` : `Llevando ${c.pr.N} con la promo: ${money(c.many.per)}/${u}, ${money(c.many.total)} por ${c.pr.N} (no conviene)`) : '';
     const payTxt = c.d > 0 && c.best.payOn ? `${esc(c.pay.name)} ${c.pay.pct}%${c.pay.minimo ? ` <b>(requiere compra mínima ${money(c.pay.minimo)})</b>` : ''}` : c.d > 0 ? `${esc(c.pay.name)} no se suma a la promo` : 'sin descuento de pago';
     return `<article class="item ${s} ${isHere ? 'here' : ''}">
       <div><div class="it-title">${esc(presLabel(pres))}</div>
         <div class="it-meta"><span class="store">${esc(getStore(p.storeId).name)}${isHere ? ' · acá' : ''}</span><span class="pill ${ageCls(p.fecha)}">${ageTxt(p.fecha)}</span>${c.pr.on ? `<span class="tag">${esc(c.pr.label)}</span>` : ''}</div></div>
-      <div class="it-price"><div class="big">${money(c.best.per)}<small>/${u}</small></div>
+      <div class="it-price"><div class="big">${money(c.best.per)}<small>/${u}</small></div><span class="small" style="font-weight:700">${c.best.N > 1 ? `${money(c.best.total)} por ${c.best.N}` : `${money(c.best.total)} c/u`}</span>
         ${c.best.N > 1 ? `<span class="pill p-warn">Llevando ${c.best.N}</span>` : `<span class="pill p-neutral">Llevando 1</span>`}
         <span class="small" style="font-weight:700;color:var(--${r === top ? 'good' : diff <= 5 ? 'warn' : 'bad'})">${r === top ? 'Mejor' : '+' + nf0.format(diff) + '%'}</span></div>
       <div class="it-sub">Góndola ${money(p.precio)} · ${payTxt}${alt ? ' · ' + alt : ''}${p.hist?.length ? ` · antes ${money(p.hist[p.hist.length - 1].precio)} (${ageTxt(p.hist[p.hist.length - 1].fecha)})` : ''}</div>
