@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.5.17">
+<meta name="app-version" content="v0.5.18">
 <title>Góndola Comparador</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#132033">
@@ -229,7 +229,7 @@ details.more summary{cursor:pointer;color:var(--muted)}
 <div class="app">
   <header class="top">
     <div class="syncbar" id="syncBar" hidden aria-hidden="true"><i></i></div>
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.5.17</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.5.18</button></span></div>
     <div class="symsg" id="syncMsg" role="status" hidden></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
@@ -824,13 +824,20 @@ function edData(k, id) {
   const p = getPrice(id);
   return { precio: nfx.format(p.precio), promo: { ...p.promo }, acum: !!p.acum, fecha: p.fecha, modo: 'fix', orig: p.fecha, hasta: p.hasta || '', storeId: p.storeId, movePick: null, visitToo: false, fromCargar: false };
 }
+/* Cambiar la unidad de comparación: se bloquea solo si alguna presentación tiene precios */
+function baseChangeInfo(p, newBase) {
+  const ps = S.pres.filter(x => x.prodId === p.id), priced = ps.filter(x => S.prices.some(q => q.presId === x.id));
+  const units = (BASES[newBase] || { units: { [newBase]: 1 } }).units;
+  return { ps, priced, reset: ps.filter(x => x.cont > 0 && units[x.unit] === undefined) };
+}
 function prodForm(p) {
-  const n = S.pres.filter(x => x.prodId === p.id).length, d = ED.d;
+  const d = ED.d, nb = d.base === 'otro' ? (d.custom || '').trim() : d.base, info = baseChangeInfo(p, nb || p.base), n = info.priced.length;
   return `<div class="paybox" id="edform"><h3>Editar producto comparable</h3>
     <label class="fl" for="ed-name">Nombre<input id="ed-name" data-ed="name" value="${esc(d.name)}"></label>
     <label class="fl" for="ed-base">Se compara por<select id="ed-base" data-ed="base" ${n ? 'disabled' : ''}>${[['kg', 'Kilo (kg)'], ['L', 'Litro (L)'], ['un', 'Unidad'], ['m', 'Metro'], ['otro', 'Otra unidad…']].map(([v, l]) => `<option value="${v}" ${d.base === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
     ${d.base === 'otro' ? `<label class="fl" for="ed-custom">Otra unidad<input id="ed-custom" data-ed="custom" value="${esc(d.custom)}" ${n ? 'disabled' : ''}></label>` : ''}
-    ${n ? `<div class="small muted">La unidad no se puede cambiar: tiene ${n} presentaciones cargadas en ${esc(baseOf(p).short)}. Para cambiarla, mové esas presentaciones a otro producto o borralas.</div>` : ''}
+    ${n ? `<div class="small muted">La unidad no se puede cambiar: ${n} presentaci${n === 1 ? 'ón tiene' : 'ones tienen'} precios cargados en ${esc(baseOf(p).short)} (${info.priced.map(x => esc(presLabel(x))).join(', ')}). Para cambiarla, mové esas presentaciones a otro producto o borrá sus precios.</div>` : ''}
+    ${!n && nb && nb !== p.base && info.reset.length ? `<div class="note" style="border:2px solid var(--warn)">Al pasar a ${esc(BASES[nb] ? BASES[nb].short : nb)}, ${info.reset.length} presentaci${info.reset.length === 1 ? 'ón queda' : 'ones quedan'} pendiente${info.reset.length === 1 ? '' : 's'} para volver a cargar el contenido en la unidad nueva: ${info.reset.map(x => esc(presLabel(x))).join(', ')}.</div>` : ''}
     ${edBtns()}</div>`;
 }
 function presForm(x) {
@@ -915,7 +922,15 @@ function edSave() {
   if (ED.kind === 'prod') {
     const p = getProd(ED.id), name = (d.name || '').trim(); if (!name) return toast('El nombre no puede quedar vacío');
     const base = d.base === 'otro' ? (d.custom || '').trim() : d.base; if (!base) return toast('Indicá la unidad de comparación');
-    if (base !== p.base && S.pres.some(x => x.prodId === p.id)) return toast('No se puede cambiar la unidad: tiene presentaciones cargadas');
+    if (base !== p.base) {
+      const info = baseChangeInfo(p, base);
+      if (info.priced.length) return toast('No se puede cambiar la unidad: hay presentaciones con precios cargados');
+      // Las presentaciones toman la unidad nueva; si tenían contenido en otra familia, quedan pendientes
+      const units = (BASES[base] || { units: { [base]: 1 } }).units, du = BASES[base] ? BASES[base].def : base;
+      info.ps.forEach(x => { if (units[x.unit] === undefined) { if (x.cont > 0) { x.cont = 0; x.pend = true; } x.unit = du; touch(x); } });
+      S.need = S.need.filter(nd => !info.reset.some(x => x.id === nd.presId));
+      if (info.reset.length) toast(`${info.reset.length} presentación${info.reset.length === 1 ? '' : 'es'} quedó pendiente de cargar el contenido (Datos → Pendientes).`, 4500);
+    }
     p.name = name; p.base = base; touch(p);
   } else if (ED.kind === 'pres') {
     const x = getPres(ED.id), cont = num(d.cont), pack = Math.round(num(d.pack));
