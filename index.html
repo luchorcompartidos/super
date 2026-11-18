@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.2.3">
+<meta name="app-version" content="v0.2.4">
 <title>Góndola Comparador</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#132033">
@@ -185,7 +185,7 @@ nav.tabs a[aria-current="page"]::before{content:"";position:absolute;top:0;left:
 <body>
 <div class="app">
   <header class="top">
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button> <button id="verBtn" class="vs-ver" type="button">v0.2.3</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button> <button id="verBtn" class="vs-ver" type="button">v0.2.4</button></span></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
       <label for="vPay">Pago con<select id="vPay" data-chg="vpay"></select></label>
@@ -385,13 +385,34 @@ const CMP = { prodId: S.prods[0]?.id, mode: 'visit' };
 let lastSaved = null;
 
 /* ============ contexto de la visita ============ */
+/* Medio de pago sugerido al cambiar de tienda: el último usado ahí (si aplica), si no el de mayor descuento */
+function pickPay(sid) {
+  const last = (S.visit.payByStore || {})[sid];
+  if (last === 'none') return 'none';
+  const lp = S.pays.find(p => p.id === last);
+  if (lp && payRate(lp, sid) > 0) return lp.id;
+  const best = S.pays.filter(p => payRate(p, sid) > 0).sort((a, b) => b.pct - a.pct)[0];
+  return best ? best.id : 'none';
+}
+function payWhy(p, sid) {
+  if (p.stores?.length && !p.stores.includes(sid)) return 'otra tienda';
+  if (p.dias?.length && !p.dias.includes(new Date().getDay())) return 'solo ' + p.dias.map(d => DOW[d]).join(' ');
+  return 'sin descuento';
+}
 function renderVisit() {
   if (!getStore(S.visit.storeId) || getStore(S.visit.storeId).archived) S.visit.storeId = (activeStores()[0] || S.stores[0])?.id;
   const curSt = getStore(S.visit.storeId);
   $('#vStore').innerHTML = [curSt, ...activeStores().filter(s => s !== curSt).sort((a, b) => a.name.localeCompare(b.name, 'es'))].filter(Boolean).map(s => `<option value="${s.id}" ${s.id === S.visit.storeId ? 'selected' : ''}>${esc(s.name)}</option>`).join('');
-  const byName = (a, b) => a.name.localeCompare(b.name, 'es');
-  const payOk = S.pays.filter(p => payRate(p, S.visit.storeId) > 0).sort(byName), payNo = S.pays.filter(p => !payOk.includes(p)).sort(byName);
-  $('#vPay').innerHTML = [...payOk, NOPAY, ...payNo].map(p => `<option value="${p.id}" ${p.id === S.visit.payId ? 'selected' : ''}>${esc(p.name)}${p.pct ? ' · ' + p.pct + '%' : ''}${payNo.includes(p) ? ' (no aplica hoy acá)' : ''}</option>`).join('');
+  const byName = (a, b) => a.name.localeCompare(b.name, 'es'), sid = S.visit.storeId;
+  // Si el medio elegido no aplica en esta tienda o este día, se ajusta solo
+  const cp = getPay(S.visit.payId);
+  if (cp.id !== 'none' && !(payRate(cp, sid) > 0)) {
+    const np = pickPay(sid); S.visit.payId = np; save();
+    toast(`${cp.name} no aplica ${payWhy(cp, sid) === 'otra tienda' ? 'en esta tienda' : 'hoy'}: ahora "Pago con" es ${getPay(np).name}.`, 4500);
+  }
+  const payOk = S.pays.filter(p => payRate(p, sid) > 0).sort(byName), payNo = S.pays.filter(p => !payOk.includes(p)).sort(byName);
+  $('#vPay').innerHTML = [...payOk, NOPAY].map(p => `<option value="${p.id}" ${p.id === S.visit.payId ? 'selected' : ''}>${esc(p.name)}${p.pct ? ' · ' + p.pct + '%' : ''}</option>`).join('')
+    + (payNo.length ? `<optgroup label="No aplican acá hoy">${payNo.map(p => `<option value="" disabled>${esc(p.name)} · ${payWhy(p, sid)}</option>`).join('')}</optgroup>` : '');
   const pay = getPay(S.visit.payId), d = payRate(pay, S.visit.storeId);
   let h = (navigator.onLine === false ? `<span class="pill p-warn" title="Todo sigue funcionando; los cambios se sincronizan cuando vuelva la señal">Sin señal · funciona igual</span>` : '') + `<span class="muted">${DOW[new Date().getDay()]} ${new Date().toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}</span>`;
   if (pay.id === 'none') h += `<span class="pill p-neutral">Precio de lista</span>`;
@@ -1293,7 +1314,7 @@ document.addEventListener('change', e => {
   if (t.dataset.ed === 'storeId' && ED) { ED.d.movePick = null; renderDatos(); return; }
   if (t.dataset.store && !t.value.trim()) { toast('La tienda necesita un nombre'); t.value = getStore(t.dataset.store).name = 'Tienda sin nombre'; save(); renderVisit(); return; }
   if (a === 'vstore') { S.visit.storeId = t.value; save(); lastSaved = null; render(); }
-  else if (a === 'vpay') { S.visit.payId = t.value; save(); render(); }
+  else if (a === 'vpay') { if (!t.value) return; S.visit.payId = t.value; S.visit.payByStore = { ...(S.visit.payByStore || {}), [S.visit.storeId]: t.value }; save(); render(); }
   else if (a === 'fprod') { resetForm(t.value); lastSaved = null; renderCargar(); }
   else if (a === 'fpres') { if (t.value === 'new') resetForm(F.prodId); else fillFromPres(getPres(t.value)); renderCargar(); if (t.value !== 'new') $('#fPrecio')?.focus(); }
 });
