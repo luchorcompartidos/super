@@ -200,6 +200,7 @@ class Estado:
         self.sucs = {}                                            # sucursales de las zonas
         self.precios = collections.defaultdict(dict)             # clave -> {ean: fila}
         self.leyendas = collections.defaultdict(dict)            # clave -> {texto: índice}
+        self.omitidos = []                                        # paquetes dañados que se saltearon
 
 
 def volcar(E, claves):
@@ -288,19 +289,27 @@ def _procesar(zf, E, pref, mias):
         E.precios[clave][ean] = f
 
 
-def recorrer(zf, E, prof=0):
+def recorrer(zf, E, prof=0, ruta=""):
     for nombre in zf.namelist():
         if nombre.lower().endswith(".zip") and prof < 3:
             fd, tmp = tempfile.mkstemp(suffix=".zip"); os.close(fd)
             try:
                 with zf.open(nombre) as src, open(tmp, "wb") as dst: shutil.copyfileobj(src, dst, 1 << 20)
-                with zipfile.ZipFile(tmp) as z2: recorrer(z2, E, prof + 1)
+                with zipfile.ZipFile(tmp) as z2: recorrer(z2, E, prof + 1, ruta + nombre + " > ")
+            except (zipfile.BadZipFile, zipfile.LargeZipFile, EOFError, OSError, NotImplementedError) as e:
+                # Algunos comercios publican paquetes vacíos o dañados: se omiten y se sigue con el resto
+                E.omitidos.append(f"{ruta}{nombre}: {e}"); print(f"  Omitido {ruta}{nombre}: {e}")
             finally:
                 try: os.remove(tmp)
                 except OSError: pass
     # Cada carpeta con un productos.csv es un paquete de un comercio
     for pref in sorted({n[: len(n) - len(n.split("/")[-1])] for n in zf.namelist() if n.lower().endswith("productos.csv")}):
-        procesar_comercio(zf, E, pref)
+        antes = E.filas
+        try:
+            procesar_comercio(zf, E, pref)
+            print(f"  {ruta}{pref or '(raíz)'}: {E.filas - antes:,} filas")
+        except Exception as e:
+            E.omitidos.append(f"{ruta}{pref}: {e}"); print(f"  Omitido {ruta}{pref}: {e}")
 
 
 def escribir(path, obj, indent=None):
@@ -329,7 +338,8 @@ def main():
     for info in sucs: info.setdefault("np", 0)
     escribir(os.path.join(salida, "precios", "sucursales.json"), {"fecha": hoy, "zonas": [f"{z['prov']}: {z['zona']}" for z in zonas], "s": sucs})
     meta = {"fecha": hoy, "fuente": "Precios Claros - SEPA (datos.produccion.gob.ar)", "recurso": url, "productos": len(E.cat), "filas": E.filas,
-            "archivos": len(shards), "zonas": len(zonas), "sucursales": len(sucs), "sucursales_con_precios": sum(1 for s in sucs if s["np"])}
+            "archivos": len(shards), "zonas": len(zonas), "sucursales": len(sucs), "sucursales_con_precios": sum(1 for s in sucs if s["np"]),
+            "omitidos": E.omitidos[:50]}
     escribir(os.path.join(salida, "meta.json"), meta, indent=1)
     with open(os.path.join(salida, "README.md"), "w", encoding="utf-8") as f:
         f.write("# Catálogo SEPA para Góndola\n\nGenerado automáticamente por `.github/workflows/catalogo-sepa.yml` (rama main). "
