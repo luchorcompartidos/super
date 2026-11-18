@@ -21,7 +21,9 @@ CKAN = ["https://datos.produccion.gob.ar/api/3/action/package_show?id=sepa-preci
         "https://datos.produccion.gob.ar/api/3/action/package_show?id=6f47ec76-d1ce-4e34-a7e1-621fe9b1d0b5",
         "https://datos.gob.ar/api/3/action/package_show?id=produccion-precios-claros---base-sepa"]
 PAGINA = "https://datos.produccion.gob.ar/dataset/sepa-precios"
-UA = {"User-Agent": "gondola-catalogo/1.1 (+https://github.com/luchorcompartidos/super)"}
+# El portal rechaza (403) clientes que no se identifican como navegador
+UA = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36",
+      "Accept": "text/html,application/json,application/zip,*/*;q=0.8", "Accept-Language": "es-AR,es;q=0.9"}
 csv.field_size_limit(1 << 20)
 
 
