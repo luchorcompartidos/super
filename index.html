@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.6.0">
+<meta name="app-version" content="v0.7.0">
 <title>Góndola Comparador</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#132033">
@@ -138,6 +138,10 @@ details.sec > .body{padding:0 14px 14px;display:grid;gap:10px}
 .drow:last-child{border-bottom:0}
 .paybox{border:1px solid var(--line);border-radius:12px;padding:10px;display:grid;gap:8px}
 .note{font-size:13px;color:var(--muted);background:var(--bg);border-radius:10px;padding:10px}
+.refbox{border:2px dashed var(--accent);color:var(--ink)}
+.refsec summary{cursor:pointer;padding:2px 0}
+.refrow{border-top:1px solid var(--line);padding:8px 0;display:grid;gap:4px}
+.refley{font-weight:700;color:var(--tag-ink);background:var(--tag);border-radius:4px;padding:0 5px}
 .calc-ex{width:100%;border-collapse:collapse;font-size:13px}
 .calc-ex th,.calc-ex td{text-align:left;padding:5px 4px;border-bottom:1px solid var(--line)}
 .calc-ex td:last-child,.calc-ex th:last-child{text-align:right}
@@ -240,7 +244,7 @@ details.more summary{cursor:pointer;color:var(--muted)}
 <div class="app">
   <header class="top">
     <div class="syncbar" id="syncBar" hidden aria-hidden="true"><i></i></div>
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.6.0</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.7.0</button></span></div>
     <div class="symsg" id="syncMsg" role="status" hidden></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
@@ -489,7 +493,7 @@ const setLastProd = id => { if (id && id !== '__new') { try { localStorage.setIt
 function resetForm(prodId) {
   const pid = prodId ?? F?.prodId ?? lastProd() ?? S.prods[0]?.id ?? '__new';
   F = { prodId: pid, presId: 'new', ean: '', marca: '', desc: '', cont: '', unit: defUnit(getProd(pid)), pack: '1', precio: '', promo: { t: 'none' }, acum: false,
-    storeId: F?.storeId || S.visit.storeId, fecha: F?.fecha || todayISO(), more: !!F?.more, setVisit: false, hasta: '', nota: '', look: null };
+    storeId: F?.storeId || S.visit.storeId, fecha: (F?.src ? '' : F?.fecha) || todayISO(), more: !!F?.more, setVisit: false, hasta: '', nota: '', look: null };
 }
 /* Tienda del formulario de carga: por defecto "Estoy en", pero se puede cambiar solo para esta carga */
 const formStore = () => { const st = getStore(F.storeId); return st && !st.archived ? st.id : S.visit.storeId; };
@@ -565,7 +569,7 @@ function buildTemp() {
   const fecha = /^\d{4}-\d{2}-\d{2}$/.test(F.fecha || '') ? F.fecha : todayISO();
   if (fecha > todayISO()) return { err: 'La fecha del precio no puede ser futura' };
   const hasta = pr.p.t !== 'none' && /^\d{4}-\d{2}-\d{2}$/.test(F.hasta || '') ? F.hasta : '';
-  const price = { id: '_tmp', presId: pres.id, storeId: formStore(), precio, promo: pr.p, acum: !!F.acum, fecha, hasta };
+  const price = { id: '_tmp', presId: pres.id, storeId: formStore(), precio, promo: pr.p, acum: !!F.acum, fecha, hasta, src: F.src === 'sepa' && precio === F.srcVal ? 'sepa' : '' };
   return { pres, price, prod };
 }
 function fillFromPres(pres) {
@@ -649,6 +653,7 @@ function renderCargar() {
         <span class="muted">×</span><input id="fPack" aria-label="Unidades en el pack" data-f="pack" inputmode="numeric" class="w-pack" ${lock} value="${esc(F.pack)}"><span class="small muted">en pack</span></div>
       ${b.chips.length && !lock ? `<div class="chips">${b.chips.map(([v, u]) => `<button type="button" class="chip" aria-pressed="${num(F.cont) === v && F.unit === u}" data-act="chipc" data-v="${v}" data-u="${u}">${nfx.format(v)} ${u}</button>`).join('')}</div>` : ''}
     </div>
+    <div id="refBox">${refCargarHTML()}</div>
     <label class="fl" for="fPrecio">Precio de góndola por unidad (sin promo)<input id="fPrecio" data-f="precio" inputmode="decimal" class="price-in" value="${esc(F.precio)}" placeholder="$ 0"></label>
     <div class="fl">Promoción de la tienda<div class="chips">${PTYPES.map(([t, l]) => `<button type="button" class="chip" aria-pressed="${F.promo.t === t}" data-act="ptype" data-t="${t}">${l}</button>`).join('')}</div></div>
     ${promoParams()}
@@ -677,6 +682,7 @@ function newProdForm(act) {
 const cu = pres => (pres ? ` c/u <span class="cu">[x ${pres.pack > 1 ? pres.pack + ' × ' : ''}${nfx.format(pres.cont)} ${esc(pres.unit)}.]</span>` : ' c/u');
 const payUnits = (s, N, pres) => (N > 1 ? `${money(s.total)} por ${N} (${money(s.total / N)}${cu(pres)})` : `${money(s.total)}${cu(pres)}`);
 function updatePreview() {
+  const rb = $('#refBox'); if (rb) rb.innerHTML = refCargarHTML();
   const box = $('#preview'); if (!box) return;
   const t = buildTemp();
   if (t.err) { box.innerHTML = `<span class="muted">${esc(t.err)}</span>`; return; }
@@ -748,7 +754,7 @@ function renderComparar() {
     const payTxt = c.d > 0 && c.best.payOn ? `${esc(c.pay.name)} ${c.pay.pct}%${c.pay.minimo ? ` <b>(requiere compra mínima ${money(c.pay.minimo)})</b>` : ''}` : c.d > 0 ? `${esc(c.pay.name)} no se suma a la promo` : 'sin descuento de pago';
     return `<article class="item ${s} ${isHere ? 'here' : ''}${r.sim ? ' sim' : ''}">
       <div><div class="it-title">${esc(presLabel(pres))}</div>
-        <div class="it-meta">${r.sim ? `<span class="pill p-sim">El día que… ${esc(simLabel(r.sim))}</span>` : ''}<span class="store">${esc(getStore(p.storeId).name)}${isHere ? ' · acá' : ''}</span>${agePill(p.fecha)}${!r.sim && c.pr.on ? `<span class="tag">${esc(c.pr.label)}${p.hasta ? ' · hasta ' + ddmm(p.hasta) : ''}</span>` : ''}${!r.sim && c.pr.expired ? '<span class="pill p-neutral">promo vencida</span>' : ''}${CMP.mode === 'week' && !r.sim ? `<span class="pill p-day">${buyTxt(c.at)}</span>` : ''}</div></div>
+        <div class="it-meta">${r.sim ? `<span class="pill p-sim">El día que… ${esc(simLabel(r.sim))}</span>` : ''}<span class="store">${esc(getStore(p.storeId).name)}${isHere ? ' · acá' : ''}</span>${agePill(p.fecha)}${p.src === 'sepa' ? '<span class="pill p-neutral" title="Lo tomaste de Precios Claros">de Precios Claros</span>' : ''}${!r.sim && c.pr.on ? `<span class="tag">${esc(c.pr.label)}${p.hasta ? ' · hasta ' + ddmm(p.hasta) : ''}</span>` : ''}${!r.sim && c.pr.expired ? '<span class="pill p-neutral">promo vencida</span>' : ''}${CMP.mode === 'week' && !r.sim ? `<span class="pill p-day">${buyTxt(c.at)}</span>` : ''}</div></div>
       <div class="it-price"><div class="big per">${money(c.best.per)}<small>/${u}</small></div><span class="final">${c.best.N > 1 ? `${money(c.best.total)} por ${c.best.N}` : `${money(c.best.total)}${cu(pres)}`}</span>
         ${c.best.N > 1 ? `<span class="pill p-warn">Llevando ${c.best.N}</span>` : `<span class="pill p-neutral">Llevando 1</span>`}
         <span class="small" style="font-weight:700;color:var(--${r === top ? 'good' : diff <= 5 ? 'warn' : 'bad'})">${r === top ? (r.sim ? 'Mejor (supuesto)' : 'Mejor') : '+' + money((c.best.per - top.c.best.per) * qtyOf(top.c)) + ' ' + pctS(-diff / 100)}</span></div>
@@ -758,6 +764,7 @@ function renderComparar() {
       <div class="it-actions">${r.sim ? `<button class="btn sm ghost" data-act="simopen" data-id="${p.id}">Cambiar</button><button class="btn sm ghost" data-act="simdel" data-id="${p.id}">Quitar</button><button class="btn sm" data-act="simreal" data-id="${p.id}">Convertir en real</button>` : SIMED !== p.id ? `<button class="btn sm ghost sim-btn" data-act="simopen" data-id="${p.id}">El día que…</button>` : ''}<button class="btn sm ghost" data-act="editprice" data-id="${p.id}">Corregir</button>${isHere ? `<button class="btn sm" data-act="addcart" data-id="${p.id}" data-q="${c.best.N}">+ Carrito (${c.best.N})</button>` : ''}</div>
     </article>`;
   }).join('') + `</div>`;
+  h += refCmpHTML(prod, u);
   const herePres = new Set(S.prices.filter(p => p.storeId === here).map(p => p.presId));
   const missing = S.pres.filter(x => x.prodId === prod.id && !herePres.has(x.id));
   if (missing.length) h += `<div class="card"><h3>Sin precio en ${esc(getStore(here).name)}</h3><div class="small muted">Ya las conocés de otra tienda: solo falta tipear el precio de acá.</div>
@@ -972,7 +979,7 @@ function edSave() {
     if (dest && !d.movePick) return toast('Esa tienda ya tiene un precio para esta presentación: elegí cuál queda');
     if (d.modo === 'new') p.hist = [...(p.hist || []), { precio: p.precio, fecha: p.fecha }].slice(-12);
     const hasta = pr.p.t !== 'none' && /^\d{4}-\d{2}-\d{2}$/.test(d.hasta || '') ? d.hasta : '';
-    Object.assign(p, { precio, promo: pr.p, acum: pr.p.t !== 'none' && !!d.acum, fecha: d.fecha, hasta }); touch(p);
+    Object.assign(p, { precio, promo: pr.p, acum: pr.p.t !== 'none' && !!d.acum, fecha: d.fecha, hasta, src: precio === p.precio ? p.src || '' : '' }); touch(p);
     if (moving) {
       const to = getStore(d.storeId);
       if (dest && d.movePick === 'dest') { mergeHist(dest, p); touch(dest); dropPrices(x => x.id === p.id); }
@@ -1027,7 +1034,7 @@ async function syncTest() {
   catch (e) { toast('No se pudo conectar: ' + e.message + '.', 5000); }
 }
 /* Sincronizar: 1) leer la planilla, 2) detectar conflictos y preguntar, 3) enviar y recibir todo */
-const SFIELDS = { stores: ['name', 'archived'], pays: ['name', 'pct', 'minimo', 'tope', 'usado', 'dias', 'stores', 'modo'], prods: ['name', 'base', 'cat'], pres: ['prodId', 'marca', 'desc', 'cont', 'unit', 'pack', 'ean', 'pend', 'nota'], prices: ['presId', 'storeId', 'precio', 'promo', 'acum', 'fecha', 'hasta', 'hist'] };
+const SFIELDS = { stores: ['name', 'archived', 'sepa'], pays: ['name', 'pct', 'minimo', 'tope', 'usado', 'dias', 'stores', 'modo'], prods: ['name', 'base', 'cat'], pres: ['prodId', 'marca', 'desc', 'cont', 'unit', 'pack', 'ean', 'pend', 'nota'], prices: ['presId', 'storeId', 'precio', 'promo', 'acum', 'fecha', 'hasta', 'hist', 'src'] };
 const ENT = { stores: 'Tienda', pays: 'Medio de pago', prods: 'Producto', pres: 'Presentación', prices: 'Precio' };
 /* Comparación tolerante: vacío = inexistente, "35" = 35, mismo objeto aunque cambie el orden de sus claves */
 function canon(v) {
@@ -1037,7 +1044,7 @@ function canon(v) {
   if (typeof v === 'object') { const o = {}; Object.keys(v).sort().forEach(k => { const c2 = canon(v[k]); if (c2 !== null) o[k] = c2; }); return Object.keys(o).length ? o : null; }
   return v;
 }
-const FIELD_TXT = { name: 'nombre', archived: 'archivada', pct: '%', minimo: 'compra mínima', tope: 'tope', usado: 'tope usado', dias: 'días', stores: 'tiendas', modo: 'forma de aplicar', base: 'unidad', prodId: 'producto', marca: 'marca', desc: 'detalle', cont: 'contenido', unit: 'unidad', pack: 'pack', ean: 'código de barras', presId: 'presentación', storeId: 'tienda', precio: 'precio', promo: 'promo', acum: 'acumula', fecha: 'fecha', hasta: 'vigencia de la promo', hist: 'historial' };
+const FIELD_TXT = { name: 'nombre', archived: 'archivada', pct: '%', minimo: 'compra mínima', tope: 'tope', usado: 'tope usado', dias: 'días', stores: 'tiendas', modo: 'forma de aplicar', base: 'unidad', prodId: 'producto', marca: 'marca', desc: 'detalle', cont: 'contenido', unit: 'unidad', pack: 'pack', ean: 'código de barras', presId: 'presentación', storeId: 'tienda', precio: 'precio', promo: 'promo', acum: 'acumula', fecha: 'fecha', hasta: 'vigencia de la promo', hist: 'historial', sepa: 'sucursal de Precios Claros', src: 'origen' };
 const diffFields = (c, a, b) => SFIELDS[c].filter(f => JSON.stringify(canon(a[f])) !== JSON.stringify(canon(b[f])));
 const sameRec = (c, a, b) => diffFields(c, a, b).length === 0;
 let CONF = null;
@@ -1298,10 +1305,11 @@ function mergeNote(st) {
 function storesBody() {
   const act = activeStores(), arch = S.stores.filter(s => s.archived), np = id => S.prices.filter(p => p.storeId === id).length;
   const row = st => `<div class="paybox"><div class="row"><input aria-label="Nombre de la tienda" data-store="${st.id}" value="${esc(st.name)}"><span class="small muted" style="white-space:nowrap">${np(st.id)} precios</span></div>
+    ${sepaStoreRow(st)}${LINK === st.id ? linkPanelHTML() : ''}
     <div class="btns">${S.stores.length > 1 ? `<button class="btn sm" data-act="smerge" data-id="${st.id}">Unir con otra…</button>` : ''}${act.length > 1 ? `<button class="btn sm ghost" data-act="sarch" data-id="${st.id}">Archivar</button>` : ''}${S.stores.length > 1 ? `<button class="btn sm danger" data-act="delstore" data-id="${st.id}" data-confirm="1">Eliminar</button>` : ''}</div>
     ${SMERGE === st.id ? mergeNote(st) : ''}</div>`;
   const sh = x => qf('stores', x, st => st.name);
-  let h = searchBox('stores', 'Buscar tienda') + (act.length > 1 ? sortBar('dStores') : '') + (sortList('dStores', sh(act)).map(row).join('') || noHits('stores'));
+  let h = sepaStoresHead() + searchBox('stores', 'Buscar tienda') + (act.length > 1 ? sortBar('dStores') : '') + (sortList('dStores', sh(act)).map(row).join('') || noHits('stores'));
   if (sh(arch).length) h += `<h3 style="margin-top:6px">Archivadas (${arch.length})</h3><div class="small muted">No aparecen en los selectores ni en Comparar. Sus precios e historial se conservan.</div>`
     + sh(arch).map(st => `<div class="drow"><span>${esc(st.name)}<br><span class="small muted">${np(st.id)} precios</span></span><span class="btns"><button class="btn sm" data-act="sunarch" data-id="${st.id}">Reactivar</button><button class="btn sm" data-act="smerge" data-id="${st.id}">Unir…</button><button class="btn sm danger" data-act="delstore" data-id="${st.id}" data-confirm="1">Eliminar</button></span></div>${SMERGE === st.id ? mergeNote(st) : ''}`).join('');
   return h + `<div class="small muted">El nombre se corrige tocándolo. <b>Archivar</b>: la dejás de usar pero conservás sus datos. <b>Unir</b>: era la misma tienda. <b>Eliminar</b>: borra la tienda y sus precios.</div>`;
@@ -1703,6 +1711,180 @@ async function sepaFind(code) {
   return { src: 'Precios Claros (SEPA)', url: 'https://www.preciosclaros.gob.ar', brand: titleCase(marca), name, qty: parseQty('', cant, uni), cats: '', catEs: '' };
 }
 const titleCase = t => String(t || '').toLowerCase().replace(/(^|[\s-])\p{L}/gu, m => m.toUpperCase());
+
+/* ============ Precios Claros: precios de referencia por sucursal (SEPA) ============
+   El flujo semanal publica en la rama "catalogo" todas las sucursales de las zonas configuradas y sus precios.
+   Acá vinculás hasta 10 tiendas tuyas con su sucursal: se descargan solo esas, y la elección queda en tu celular
+   y en tu planilla, no en el repo. Son precios de referencia: nunca reemplazan los tuyos sin que lo confirmes. */
+const SEPA_ROOT = 'https://raw.githubusercontent.com/luchorcompartidos/super/catalogo/';
+const SEPA_MAX = 10;
+const REF = new Map();   // clave de sucursal -> { st: 'loading' | 'ok' | 'none' | 'err', d }
+let SUCS = null, SUCST = '', SQ = '', LINK = null, REFOPEN = false;
+const linkedStores = () => S.stores.filter(s => s.sepa);
+async function getJSON(url, fresh) {
+  if (fresh) { try { const c = await caches.open('gondola-runtime-v1'); await c.delete(url); } catch (e) {} }
+  const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 20000);
+  try { const r = await fetch(url, { signal: ctl.signal }); if (r.status === 404) return null; if (!r.ok) throw new Error('http ' + r.status); return await r.json(); }
+  finally { clearTimeout(tm); }
+}
+async function loadRefs(fresh = false) {
+  const keys = [...new Set(linkedStores().map(s => s.sepa))];
+  await Promise.all(keys.map(async k => {
+    const prev = REF.get(k);
+    if (!fresh && prev && (prev.st === 'ok' || prev.st === 'loading')) return;
+    REF.set(k, { st: 'loading', d: prev?.d });
+    try { const d = await getJSON(SEPA_ROOT + 'precios/s/' + encodeURIComponent(k) + '.json', fresh); REF.set(k, d && d.p ? { st: 'ok', d } : { st: 'none' }); }
+    catch (e) { REF.set(k, { st: prev?.d ? 'ok' : 'err', d: prev?.d, off: true }); }
+  }));
+  refRefresh();
+}
+const ensureRefs = () => { if (linkedStores().some(s => !REF.has(s.sepa))) loadRefs(); };
+function refRefresh() {
+  const v = cur();
+  if (v === 'comparar') renderComparar();
+  else if (v === 'datos' && DV.sec === 'stores' && !LINK) render();
+  else if (v === 'cargar') { const b = $('#refBox'); if (b) b.innerHTML = refCargarHTML(); }
+}
+async function loadSucs(fresh = false) {
+  SUCST = 'loading';
+  try { const d = await getJSON(SEPA_ROOT + 'precios/sucursales.json', fresh); SUCS = d && d.s ? d : null; SUCST = SUCS ? 'ok' : 'none'; }
+  catch (e) { SUCST = 'err'; }
+  if (cur() === 'datos' && DV.sec === 'stores') render();
+}
+/* Datos de la sucursal: de la lista de sucursales o del archivo de precios ya descargado */
+function sucInfo(k) {
+  const s = SUCS?.s.find(x => x.k === k); if (s) return s;
+  const i = REF.get(k)?.d?.i; return i ? { k, b: i[0], n: i[1], d: i[2], z: i[3] } : null;
+}
+const sucName = s => (fold(s.n).startsWith(fold(s.b)) ? s.n : `${s.b} ${s.n}`).trim();
+function refFor(ean, storeId) {
+  const st = getStore(storeId); if (!st?.sepa || !ean) return null;
+  const d = REF.get(st.sepa)?.d; const v = d?.p?.[ean]; if (!v) return null;
+  const L = i => (i != null && i >= 0 ? d.l[i] || '' : '');
+  return { lista: v[0], p1: v[1] || 0, l1: L(v[2]), p2: v[3] || 0, l2: L(v[4]), fecha: d.f, key: st.sepa };
+}
+/* Interpreta la leyenda de la promo ("2do al 70%", "3x2", "2 por $5.000", "20% off", "hasta 30/11") */
+function refPromo(r) {
+  const t = fold(r.l1 || '').replace(/\s+/g, ' ');
+  let promoR = { t: 'none' }, m, ok = true;
+  const ord = '(?:da|do|ra|ro|ta|to|a|o|°|º|ª)?';
+  if ((m = t.match(/(\d+)\s*(?:unidades|unid|u)?\s*(?:por|x)\s*\$\s*([\d.,]+)/)) && +m[1] >= 2 && num(m[2].replace(/[.,]$/, '')) > 0) promoR = { t: 'nfor', n: +m[1], v: num(m[2].replace(/[.,]$/, '')) };
+  else if ((m = t.match(/(?:^|[^\d.,])(\d)\s*x\s*(\d)(?![\d.,])/)) && +m[1] > +m[2] && +m[2] >= 1) promoR = { t: 'nxm', n: +m[1], m: +m[2] };
+  else if ((m = t.match(/llev\w*\s*(\d)\s*(?:unidades|u)?\s*,?\s*pag\w*\s*(\d)/)) && +m[1] > +m[2] && +m[2] >= 1) promoR = { t: 'nxm', n: +m[1], m: +m[2] };
+  else if ((m = t.match(new RegExp('(\\d)\\s*' + ord + '\\s*(?:unidad|unid\\.?|u\\.?)?\\s*al\\s*(\\d{1,3})\\s*%'))) && +m[1] >= 2 && +m[2] > 0 && +m[2] <= 100) promoR = { t: 'nth', n: +m[1], v: +m[2] };
+  else if ((m = t.match(/segund[ao]\s*(?:unidad)?\s*al\s*(\d{1,3})\s*%/))) promoR = { t: 'nth', n: 2, v: +m[1] };
+  else if ((m = t.match(new RegExp('(\\d{1,3})\\s*%[^\\d]{0,25}?(?:en|sobre)\\s*(?:la\\s*)?(\\d)\\s*' + ord + '\\b'))) && +m[2] >= 2) promoR = { t: 'nth', n: +m[2], v: +m[1] };
+  else if ((m = t.match(/(\d{1,3})\s*%[^\d]{0,25}?segund[ao]/))) promoR = { t: 'nth', n: 2, v: +m[1] };
+  else if ((m = t.match(/(\d{1,2})\s*%/))) promoR = { t: 'pct', v: +m[1] };
+  else if (r.p1 > 0 && r.p1 < r.lista) { promoR = { t: 'fixed', v: r.p1 }; ok = false; }
+  // Vigencia: la última fecha que figure en la leyenda
+  let hasta = '';
+  const ds = [...t.matchAll(/(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/g)].pop();
+  if (ds && promoR.t !== 'none') {
+    const y0 = new Date().getFullYear(), d = +ds[1], mo = +ds[2];
+    let y = ds[3] ? +ds[3] : y0; if (y < 100) y += 2000;
+    if (d >= 1 && d <= 31 && mo >= 1 && mo <= 12) {
+      let iso = `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      if (!ds[3] && iso < isoOf(new Date(Date.now() - 60 * 864e5))) iso = `${y + 1}${iso.slice(4)}`;
+      hasta = iso;
+    }
+  }
+  return { promo: promoR, hasta, ok };
+}
+const refTemp = (r, pp, storeId) => ({ id: '_ref', precio: r.lista, promo: pp.promo, hasta: pp.hasta, storeId, acum: false });
+function refPromoTxt(r, pp) {
+  if (!r.l1 && !(r.p1 > 0 && r.p1 < r.lista)) return '';
+  return `<span class="refley">${r.l1 ? esc(r.l1) : 'Precio promocional ' + money(r.p1) + ' c/u'}</span>${pp.promo.t !== 'none' ? ` <span class="small muted">→ se toma como <b>${esc(promo(refTemp(r, pp)).label)}</b>${pp.hasta ? ' hasta ' + ddmm(pp.hasta) : ''}${pp.ok ? '' : ' (revisá)'}</span>` : ' <span class="small muted">(no se pudo interpretar: completala a mano si aplica)</span>'}`;
+}
+const refSpecialTxt = r => (r.p2 || r.l2 ? `<div class="small muted">Con condiciones especiales (tarjeta, medio de pago): ${r.p2 ? money(r.p2) + ' c/u' : ''}${r.p2 && r.l2 ? ' · ' : ''}${esc(r.l2 || '')}. No se aplica: si te corresponde, cargalo como medio de pago.</div>` : '');
+function applyRef(r) {
+  const pp = refPromo(r);
+  F.precio = nfx.format(r.lista); F.promo = { ...pp.promo }; F.hasta = pp.hasta; F.acum = false;
+  if (r.fecha && r.fecha <= todayISO()) F.fecha = r.fecha;
+  F.src = 'sepa'; F.srcVal = r.lista;
+}
+function refCargarHTML() {
+  const fsid = formStore(), st = getStore(fsid); if (!st?.sepa) return '';
+  const ean = (F.ean || (F.presId !== 'new' ? getPres(F.presId)?.ean : '') || '').trim(); if (!eanOk(ean)) return '';
+  const R0 = REF.get(st.sepa);
+  if (!R0 || R0.st === 'loading') return `<div class="small muted">Buscando el precio que informa ${esc(st.name)} en Precios Claros…</div>`;
+  const r = refFor(ean, fsid);
+  if (!r) return R0.st === 'ok' ? `<div class="small muted">Precios Claros no informa este código en ${esc(st.name)}.</div>` : '';
+  const pp = refPromo(r), used = F.src === 'sepa' && num(F.precio) === r.lista;
+  return `<div class="note refbox"><b>Precios Claros · ${esc(st.name)}</b> <span class="small">(lo informó la cadena el ${ddmm(r.fecha)})</span>
+    <div>Góndola <b>${money(r.lista)}</b>${refPromoTxt(r, pp) ? ' · ' + refPromoTxt(r, pp) : ''}</div>${refSpecialTxt(r)}
+    ${used ? `<div class="small" style="color:var(--good);font-weight:700">Datos completados desde Precios Claros (fecha ${ddmm(F.fecha)}): revisalos y tocá "Guardar precio".</div>` : `<div class="btns"><button type="button" class="btn sm" data-act="refuse">Usar estos datos</button></div>`}
+    <div class="small">Lo que ves en la góndola manda. Si ya tenés un precio más nuevo acá, el de Precios Claros va al historial y no lo reemplaza.</div></div>`;
+}
+/* Comparar: lo que informan tus tiendas vinculadas para las presentaciones de este producto */
+function refCmpHTML(prod, u) {
+  const L = linkedStores().filter(s => !s.archived); if (!L.length) return '';
+  ensureRefs();
+  const pres = S.pres.filter(x => x.prodId === prod.id && eanOk(x.ean || ''));
+  const head = n => `<details class="card refsec" id="refsec" ${REFOPEN ? 'open' : ''}><summary><b>Precios Claros</b> <span class="small muted">${n}</span></summary>`;
+  if (!pres.length) return head('· sin códigos de barras') + `<div class="small muted">Para ver lo que informan tus ${L.length} tiendas vinculadas, las presentaciones de ${esc(prod.name)} necesitan su código de barras (Datos → Presentaciones).</div></details>`;
+  const loading = L.some(s => REF.get(s.sepa)?.st === 'loading'), off = L.some(s => REF.get(s.sepa)?.off || REF.get(s.sepa)?.st === 'err');
+  const rows = [];
+  pres.forEach(x => L.forEach(st => {
+    const r = refFor(x.ean, st.id); if (!r) return;
+    const pp = refPromo(r), c = calc(refTemp(r, pp, st.id), NOPAY, x), mine = S.prices.find(p => p.presId === x.id && p.storeId === st.id);
+    rows.push({ x, st, r, pp, c, mine });
+  }));
+  rows.sort((a, b) => a.c.best.per - b.c.best.per);
+  let h = head(rows.length ? `· ${rows.length} precio${rows.length === 1 ? '' : 's'} informado${rows.length === 1 ? '' : 's'} · desde ${money(rows[0].c.best.per)}/${u}` : loading ? '· buscando…' : '· sin datos para este producto');
+  h += `<div class="small muted">Lo informan las cadenas a Precios Claros y puede no coincidir con la góndola. No entra en la comparación de arriba hasta que lo uses; la promo de pago no está incluida.${off ? ' Sin conexión: se muestran los últimos datos descargados.' : ''}</div>`;
+  h += rows.map(({ x, st, r, pp, c, mine }) => {
+    const same = mine && mine.precio === r.lista && JSON.stringify(canon(mine.promo)) === JSON.stringify(canon(pp.promo));
+    const st2 = !mine ? '<span class="pill p-warn">No lo cargaste</span>' : same ? '<span class="pill p-good">Coincide con el tuyo</span>'
+      : `<span class="small">Tu precio: <b>${money(mine.precio)}</b>${mine.promo?.t !== 'none' ? ' · ' + promoTxt(mine) : ''} (${ageTxt(mine.fecha)})${(mine.fecha || '') > (r.fecha || '') ? ' · el tuyo es más nuevo' : ''}</span>`;
+    return `<div class="refrow"><div class="pv-row"><span><b>${esc(presLabel(x))}</b><br><span class="small muted">${esc(st.name)} · informado el ${ddmm(r.fecha)}</span></span><span class="big per">${money(c.best.per)}<small>/${u}</small></span></div>
+      <div class="small">Góndola ${money(r.lista)}${cu(x)}${c.best.N > 1 ? ` · llevando ${c.best.N}: ${money(c.best.total)}` : ''}${refPromoTxt(r, pp) ? '<br>' + refPromoTxt(r, pp) : ''}</div>${refSpecialTxt(r)}
+      <div class="row" style="justify-content:space-between">${st2}${same ? '' : `<button class="btn sm" data-act="refcmp" data-p="${x.id}" data-s="${st.id}">Usar este precio</button>`}</div></div>`;
+  }).join('');
+  return h + `</details>`;
+}
+/* Datos → Tiendas: vínculo con sucursales */
+function sucResHTML() {
+  const used = new Map(linkedStores().map(s => [s.sepa, s])), q = fold(SQ);
+  const all = SUCS.s.filter(s => matchAll(q, `${s.b} ${s.n} ${s.d} ${s.ba} ${s.lo} ${s.z} ${s.cp}`)), L = all.slice(0, 40);
+  if (!all.length) return `<div class="small muted">Sin resultados en las zonas disponibles.</div>`;
+  let lastZ = null;
+  return (all.length > 40 ? `<div class="small muted">Se muestran 40 de ${all.length}: escribí la cadena, la calle o el barrio para acotar.</div>` : '') + L.map(s => {
+    const u2 = used.get(s.k), z = s.z.replace(' (por código postal)', '');
+    const zh = z !== lastZ ? `<div class="small" style="font-weight:700;margin-top:6px">${esc(z)}</div>` : ''; lastZ = z;
+    return zh + `<div class="drow"><span><b>${esc(s.b)}</b> · ${esc(s.n)}<br><span class="small muted">${esc(s.d)}${s.ba || s.lo ? ' · ' + esc(s.ba || s.lo) : ''}${s.np ? ` · ${s.np} producto${s.np === 1 ? '' : 's'}` : ' · sin precios informados'}</span></span>${u2 ? `<span class="pill p-neutral">${u2.id === LINK ? 'Vinculada acá' : 'Es ' + esc(u2.name)}</span>` : `<button class="btn sm" data-act="sepapick" data-k="${esc(s.k)}">Elegir</button>`}</div>`;
+  }).join('');
+}
+function linkPanelHTML() {
+  const title = LINK === 'new' ? 'Agregar tienda desde Precios Claros' : `Vincular "${esc(getStore(LINK)?.name || '')}" con su sucursal`;
+  if (!SUCS) {
+    if (!SUCST) setTimeout(() => loadSucs(), 0);
+    const msg = SUCST === 'err' ? 'No se pudo descargar la lista de sucursales. Revisá la conexión.' : SUCST === 'none' ? 'Todavía no está generada la lista de sucursales: hay que correr una vez el flujo "Catálogo SEPA" en GitHub (Actions → Catálogo SEPA → Run workflow).' : 'Descargando la lista de sucursales…';
+    return `<div class="paybox" id="sepaPanel"><h3>${title}</h3><div class="small">${msg}</div><div class="btns">${SUCST === 'err' || SUCST === 'none' ? '<button class="btn sm" data-act="sucretry">Reintentar</button>' : ''}<button class="btn sm ghost" data-act="sepacancel">Cancelar</button></div></div>`;
+  }
+  return `<div class="paybox" id="sepaPanel"><h3>${title}</h3>
+    <div class="small muted">Zonas disponibles: ${esc(SUCS.zonas.map(z => z.replace(/^\w+: /, '')).join(' · '))}. Datos del ${ddmm(SUCS.fecha)}.</div>
+    <input id="sepaQ" data-sepaq="1" value="${esc(SQ)}" placeholder="Buscar: cadena, calle, barrio o localidad" autocomplete="off" aria-label="Buscar sucursal">
+    <div id="sepaRes">${sucResHTML()}</div>
+    <button class="btn sm ghost" data-act="sepacancel">Cancelar</button></div>`;
+}
+function refStTxt(k) {
+  const R0 = REF.get(k);
+  if (!R0 || R0.st === 'loading') return '<span class="small muted">· descargando…</span>';
+  if (R0.st === 'none') return '<span class="small" style="color:var(--warn)">· sin precios publicados para esta sucursal</span>';
+  if (R0.st === 'err') return '<span class="small" style="color:var(--warn)">· no se pudo descargar</span>';
+  return `<span class="small muted">· ${Object.keys(R0.d.p).length} productos, informados el ${ddmm(R0.d.f)}</span>`;
+}
+function sepaStoresHead() {
+  ensureRefs();
+  const n = linkedStores().length;
+  return `<div class="note" style="border:2px solid var(--accent)"><b>Precios Claros</b>: ${n} de ${SEPA_MAX} tiendas vinculadas con su sucursal. Se descargan solo los precios de esas sucursales y se ven como referencia en Cargar y Comparar.
+    <div class="btns">${n < SEPA_MAX ? `<button class="btn sm" data-act="sepalink" data-id="new">+ Agregar tienda desde Precios Claros</button>` : ''}${n ? '<button class="btn sm ghost" data-act="sepafresh">Actualizar precios</button>' : ''}</div></div>${LINK === 'new' ? linkPanelHTML() : ''}`;
+}
+function sepaStoreRow(st) {
+  if (st.sepa) { const s = sucInfo(st.sepa); return `<div class="small">Precios Claros: <b>${esc(s ? sucName(s) : st.sepa)}</b>${s?.d ? ' · ' + esc(s.d) : ''} ${refStTxt(st.sepa)} <button class="btn sm ghost" data-act="sepalink" data-id="${st.id}">Cambiar</button><button class="btn sm ghost" data-act="sepaunlink" data-id="${st.id}">Quitar vínculo</button></div>`; }
+  return LINK === st.id ? '' : `<div><button class="btn sm ghost" data-act="sepalink" data-id="${st.id}">Vincular con Precios Claros</button></div>`;
+}
 async function lookupEan(code) {
   if (LOOK.has(code)) return LOOK.get(code);
   let lastErr = null;
@@ -1864,6 +2046,21 @@ const ACT = {
   ptype: el => { F.promo = { t: el.dataset.t }; if (el.dataset.t === 'nth') F.promo = { t: 'nth', n: 2, v: 50 }; if (el.dataset.t === 'nxm') F.promo = { t: 'nxm', n: 3, m: 2 }; if (el.dataset.t === 'nfor') F.promo = { t: 'nfor', n: 2 }; renderCargar(); },
   pset: el => { Object.assign(F.promo, JSON.parse(el.dataset.set)); renderCargar(); },
   chipc: el => { F.cont = nfx.format(+el.dataset.v); F.unit = el.dataset.u; renderCargar(); $('#fPrecio')?.focus(); },
+  refuse: () => { const ean = (F.ean || (F.presId !== 'new' ? getPres(F.presId)?.ean : '') || '').trim(), r = refFor(ean, formStore()); if (!r) return; applyRef(r); renderCargar(); toast('Revisá los datos y tocá "Guardar precio"'); },
+  refcmp: el => { const x = getPres(el.dataset.p), st = getStore(el.dataset.s), r = x && st ? refFor(x.ean, st.id) : null; if (!r) return; resetForm(x.prodId); F.storeId = st.id; fillFromPres(x); applyRef(r); lastSaved = null; go('cargar'); setTimeout(() => toast('Revisá los datos y tocá "Guardar precio"'), 80); },
+  sepalink: el => { LINK = el.dataset.id; SQ = ''; if (LINK !== 'new' && !getStore(LINK)?.sepa && linkedStores().length >= SEPA_MAX) { LINK = null; return toast(`Podés vincular hasta ${SEPA_MAX} tiendas: quitá el vínculo de alguna para sumar otra.`); } DV.keep = true; render(); setTimeout(() => { $('#sepaPanel')?.scrollIntoView({ block: 'start' }); $('#sepaQ')?.focus(); }, 60); },
+  sepacancel: () => { LINK = null; SQ = ''; render(); },
+  sucretry: () => { SUCS = null; loadSucs(true); render(); },
+  sepapick: el => {
+    const s = SUCS?.s.find(x => x.k === el.dataset.k); if (!s) return;
+    let st = LINK === 'new' ? null : getStore(LINK);
+    if (!st?.sepa && linkedStores().length >= SEPA_MAX) return toast(`Podés vincular hasta ${SEPA_MAX} tiendas.`);
+    if (!st) { st = touch({ id: uid(), name: sucName(s) }); S.stores.push(st); }
+    st.sepa = s.k; touch(st); LINK = null; SQ = ''; save(); render(); loadRefs();
+    toast(`${st.name} vinculada con ${sucName(s)}`);
+  },
+  sepaunlink: el => { const st = getStore(el.dataset.id); if (!st) return; st.sepa = ''; touch(st); save(); render(); toast('Vínculo quitado: tus precios no cambian'); },
+  sepafresh: () => { SUCS = null; SUCST = ''; loadRefs(true).then(() => toast('Precios de referencia actualizados')); toast('Actualizando…'); },
   save: () => {
     const t = buildTemp(); if (t.err) return toast(t.err);
     let pres = F.presId !== 'new' ? getPres(F.presId) : S.pres.find(x => x.prodId === t.pres.prodId && x.marca.toLowerCase() === t.pres.marca.toLowerCase() && (x.desc || '').toLowerCase() === t.pres.desc.toLowerCase() && x.cont === t.pres.cont && x.unit === t.pres.unit && x.pack === t.pres.pack);
@@ -2144,6 +2341,7 @@ document.addEventListener('input', e => {
   else if (t.dataset.needflex) { const n = S.need.find(x => x.id === t.dataset.needflex); if (n) { n.flex = t.checked; save(); renderPlanificar(); } }
   else if (t.dataset.ppq) { PP.q = t.value; const o = $('#ppOv'); const pos = t.selectionStart; o.innerHTML = prodPickerHTML(); const i = $('#ppSearch'); if (i) { i.focus(); try { i.setSelectionRange(pos, pos); } catch (e) {} } }
   else if (t.dataset.catnew) { CATNEW = t.value; }
+  else if (t.dataset.sepaq) { SQ = t.value; const c = $('#sepaRes'); if (c && SUCS) c.innerHTML = sucResHTML(); }
   else if (t.dataset.planq) { PREF.q = t.value; savePref(); const c2 = $('#planList'); if (c2) c2.innerHTML = planListHTML(); }
   else if (t.dataset.prefmulti) { PREF.allowMulti = t.checked; savePref(); renderPlanificar(); }
   else if (t.dataset.q) {
@@ -2180,7 +2378,7 @@ document.addEventListener('change', e => {
 });
 
 $('#confDlg').addEventListener('close', () => { if (CONF) { SYNC.conflicts = CONF.list.length; saveSync(); CONF = null; syncing = false; render(); } });
-window.addEventListener('online', () => { renderVisit(); if (autoOn() && pendientes()) syncNow(true); });
+window.addEventListener('online', () => { if (linkedStores().length) loadRefs(); renderVisit(); if (autoOn() && pendientes()) syncNow(true); });
 window.addEventListener('offline', () => renderVisit());
 /* Uso sin señal: la app queda guardada en el celular desde la primera vez que se abre con conexión */
 try {
@@ -2197,6 +2395,8 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 if (!S.catsAuto) { S.prods.forEach(p => { if (!p.cat) { const c = suggestCat(p.name); if (c) { p.cat = c; touch(p); } } }); ensureCats(); S.catsAuto = true; save(); }
 render();
 if (autoOn() && pendientes()) setTimeout(() => syncNow(true), 1500);
+if (linkedStores().length) setTimeout(() => loadRefs(), 400);
+document.addEventListener('toggle', e => { if (e.target.id === 'refsec') REFOPEN = e.target.open; }, true);
 // En iPhone (sin lector nativo) se descarga el lector una vez para que después funcione sin señal
 if (!('BarcodeDetector' in window) && navigator.onLine !== false && location.protocol === 'https:') setTimeout(() => loadZXing().catch(() => {}), 4000);
 try { if (S.demo && !sessionStorage.getItem('gondola.hi')) { sessionStorage.setItem('gondola.hi', '1'); toast('Cargué datos de ejemplo para que veas cómo funciona.', 3500); } } catch (e) {}

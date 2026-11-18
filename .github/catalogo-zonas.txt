@@ -1,0 +1,15 @@
+# Zonas para los precios de referencia de Precios Claros (SEPA)
+# Se generan los precios de TODAS las sucursales de estas zonas; en la app elegís las tuyas (hasta 10).
+# Formato:  provincia | zona | otros nombres con que puede figurar, separados por coma | códigos postales
+# Los códigos postales solo se usan si la sucursal no informa barrio ni una localidad reconocible.
+# Al guardar cambios en este archivo, el catálogo se regenera solo.
+
+CABA | Belgrano       | Belgrano R, Belgrano C, Bajo Belgrano | 1426 1428
+CABA | Villa Urquiza  | V Urquiza, Urquiza                     | 1431
+CABA | Colegiales     |                                        | 1427
+CABA | Núñez          | Nunez                                  | 1429
+CABA | Villa Ortúzar  | Ortuzar, V Ortuzar                     |
+
+PBA  | Santos Lugares |                                        | 1676
+PBA  | Caseros        |                                        | 1678
+PBA  | Tres de Febrero | 3 de Febrero, Ciudadela, Ciudad Jardín Lomas del Palomar, Lomas del Palomar, Ciudad Jardín, El Libertador, José Ingenieros, Loma Hermosa, Martín Coronado, Once de Septiembre, 11 de Septiembre, Pablo Podestá, Sáenz Peña, Villa Bosch, Villa Raffo, Churruca | 1674 1682 1683 1702
