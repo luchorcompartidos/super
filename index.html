@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.5.14">
+<meta name="app-version" content="v0.5.15">
 <title>Góndola Comparador</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#132033">
@@ -229,7 +229,7 @@ details.more summary{cursor:pointer;color:var(--muted)}
 <div class="app">
   <header class="top">
     <div class="syncbar" id="syncBar" hidden aria-hidden="true"><i></i></div>
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.5.14</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.5.15</button></span></div>
     <div class="symsg" id="syncMsg" role="status" hidden></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
@@ -460,8 +460,18 @@ S = migrate(load());
 /* ============ estado de UI ============ */
 const defUnit = prod => baseOf(prod).def;
 let F; // formulario de carga
+/* Último producto usado en Cargar (se recuerda en el celular) */
+const LASTPROD_LS = 'gondola.lastProd';
+function lastProd() {
+  let id = null; try { id = localStorage.getItem(LASTPROD_LS); } catch (e) {}
+  if (id && S.prods.some(p => p.id === id)) return id;
+  const r = [...S.prods].sort((a, b) => (lastUseProdSafe(b) > lastUseProdSafe(a) ? 1 : -1))[0];
+  return r ? r.id : null;
+}
+const lastUseProdSafe = pr => S.prices.reduce((m, p) => (getPres(p.presId)?.prodId === pr.id && (p.upd || '') > m ? p.upd : m), pr.upd || '');
+const setLastProd = id => { if (id && id !== '__new') try { localStorage.setItem(LASTPROD_LS, id); } catch (e) {} };
 function resetForm(prodId) {
-  const pid = prodId ?? F?.prodId ?? S.prods[0]?.id ?? '__new';
+  const pid = prodId ?? F?.prodId ?? lastProd() ?? S.prods[0]?.id ?? '__new';
   F = { prodId: pid, presId: 'new', ean: '', marca: '', desc: '', cont: '', unit: defUnit(getProd(pid)), pack: '1', precio: '', promo: { t: 'none' }, acum: false,
     storeId: F?.storeId || S.visit.storeId, fecha: F?.fecha || todayISO(), more: !!F?.more, setVisit: false, hasta: '', nota: '', look: null };
 }
@@ -1694,14 +1704,21 @@ async function lookupFill(manual) {
       // Producto comparable: el actual si la unidad coincide; si no, uno que coincida por nombre y unidad
       const fits = p => (BASES[p.base] ? p.base : null) === res.qty.fam;
       const txt = fold(`${res.name} ${res.cats}`);
-      if (F.presId === 'new' && !(getProd(F.prodId) && fits(getProd(F.prodId)))) {
-        const cand = S.prods.filter(fits).find(p => fold(p.name).split(/\s+/).some(w => w.length > 2 && txt.includes(w)));
-        if (cand) { F.prodId = cand.id; }
+      if (F.presId === 'new') {
+        // El producto comparable tiene que coincidir con el artículo (todas las palabras de su nombre y la misma unidad);
+        // si el seleccionado no coincide, se elige el que sí, o "+ Nuevo producto…"
+        const STOP = new Set(['de', 'del', 'la', 'las', 'el', 'los', 'con', 'sin', 'para', 'y', 'en', 'x']);
+        const words = p => fold(p.name).split(/\s+/).filter(w => w.length > 1 && !STOP.has(w));
+        const matches = p => fits(p) && words(p).length > 0 && words(p).every(w => txt.split(/[^a-z0-9ñ]+/).some(t => t === w || t === w + 's' || t + 's' === w || (w.length > 4 && t.startsWith(w))));
+        const curOk = getProd(F.prodId) && matches(getProd(F.prodId));
+        const cand = curOk ? getProd(F.prodId) : S.prods.filter(matches).sort((a, b) => words(b).length - words(a).length)[0];
+        const prev = getProd(F.prodId);
+        if (cand) { if (cand.id !== F.prodId) warn = `Se eligió el producto "${cand.name}"${prev ? ` (estaba "${prev.name}")` : ''}: revisalo.`; F.prodId = cand.id; }
         else {
           // Ningún producto comparable encaja: se sugiere crear uno, con nombre por categoría y unidad por envase
           const nm = res.catEs ? res.catEs.replace(/^es:/, '').replace(/-/g, ' ') : ((res.name.split(/\s+/).find(w => w.length > 2 && !/\d/.test(w)) || res.name).toLowerCase());
           NP = { name: nm.charAt(0).toUpperCase() + nm.slice(1), base: res.qty.fam, custom: '' }; F.prodId = '__new';
-          warn = 'No tenés un producto comparable para este envase: revisá el nombre sugerido y tocá "Crear producto".';
+          warn = `Ningún producto tuyo coincide con este artículo${prev ? ` (estaba "${prev.name}")` : ''}: revisá el nombre sugerido y tocá "Crear producto", o elegí otro en el desplegable.`;
         }
       }
       if (!(num(F.cont) > 0) && (!getProd(F.prodId) || fits(getProd(F.prodId)))) { F.cont = nfx.format(res.qty.cont); F.unit = res.qty.unit; F.pack = String(res.qty.pack); }
@@ -1754,7 +1771,7 @@ const ACT = {
     else { price = touch({ ...np, id: uid(), hist: [] }); S.prices.push(price); }
     S.remind = S.remind.filter(m => !(m.presId === pres.id && m.storeId === t.price.storeId));
     if (F.setVisit && t.price.storeId !== S.visit.storeId) { S.visit.storeId = t.price.storeId; F.storeId = t.price.storeId; }
-    save(); lastSaved = price.id; CMP.prodId = pres.prodId; resetForm(pres.prodId); render(); window.scrollTo(0, 0);
+    save(); setLastProd(pres.prodId); lastSaved = price.id; CMP.prodId = pres.prodId; resetForm(pres.prodId); render(); window.scrollTo(0, 0);
     if (msg) toast(msg, 5000);
   },
   fsetstore: el => { F.storeId = el.dataset.id; F.setVisit = false; const keep = F.presId; if (keep !== 'new') fillFromPres(getPres(keep)); renderCargar(); $('#fPrecio')?.focus(); },
@@ -1902,7 +1919,7 @@ function createProd(toForm) {
   const p = touch({ id: uid(), name, base }); S.prods.push(p); NP = { name: '', base: 'kg', custom: '' }; save();
   if (toForm) {
     const keep = { ean: F.ean, marca: F.marca, desc: F.desc, cont: F.cont, unit: F.unit, pack: F.pack, nota: F.nota, look: F.look };
-    resetForm(p.id); Object.assign(F, keep);
+    resetForm(p.id); Object.assign(F, keep); setLastProd(p.id);
     if (!(baseOf(p).units[F.unit] !== undefined)) F.unit = defUnit(p);
   }
   DV.adding = false; render(); toast('Producto creado');
@@ -2029,7 +2046,7 @@ document.addEventListener('change', e => {
   else if (t.dataset.f === 'fecha') { renderCargar(); }
   else if (a === 'fstore') { F.storeId = t.value; F.setVisit = false; if (F.presId !== 'new') fillFromPres(getPres(F.presId)); renderCargar(); }
   else if (a === 'vpay') { if (!t.value) return; S.visit.payId = t.value; S.visit.payByStore = { ...(S.visit.payByStore || {}), [S.visit.storeId]: t.value }; save(); render(); }
-  else if (a === 'fprod') { const keep = F.presId === 'new' ? { ean: F.ean, marca: F.marca, desc: F.desc, cont: F.cont, unit: F.unit, pack: F.pack, nota: F.nota, look: F.look } : null; resetForm(t.value); if (keep) { Object.assign(F, keep); const pr = getProd(t.value); if (pr && baseOf(pr).units[F.unit] === undefined) F.unit = defUnit(pr); } lastSaved = null; renderCargar(); }
+  else if (a === 'fprod') { setLastProd(t.value); const keep = F.presId === 'new' ? { ean: F.ean, marca: F.marca, desc: F.desc, cont: F.cont, unit: F.unit, pack: F.pack, nota: F.nota, look: F.look } : null; resetForm(t.value); if (keep) { Object.assign(F, keep); const pr = getProd(t.value); if (pr && baseOf(pr).units[F.unit] === undefined) F.unit = defUnit(pr); } lastSaved = null; renderCargar(); }
   else if (a === 'fpres') { if (t.value === 'new') resetForm(F.prodId); else fillFromPres(getPres(t.value)); renderCargar(); if (t.value !== 'new') $('#fPrecio')?.focus(); }
 });
 
