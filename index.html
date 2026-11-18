@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.8.2">
+<meta name="app-version" content="v0.8.3">
 <title>Góndola Comparador</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#132033">
@@ -18,7 +18,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{
-  --bg:#EDF0F3; --surface:#FFFFFF; --ink:#132033; --muted:#5A6678; --line:#D5DBE2;
+  --bg:#EDF0F3; --surface:#FFFFFF; --ink:#132033; --muted:#5A6678; --line:#D5DBE2; --item:#F6F8FA;
   --accent:#1F55E0; --accent-ink:#FFFFFF; --tag:#FFD338; --tag-ink:#231B00;
   --good:#0F7A46; --warn:#9A6200; --bad:#BF3227; --good-bg:#E2F3E9; --warn-bg:#FFF0D2; --bad-bg:#FBE3E0; --sim:#6D28D9; --sim-bg:#F0E9FF;
   --font-d:"Barlow Condensed","Arial Narrow",sans-serif; --font-b:"Barlow",system-ui,-apple-system,sans-serif;
@@ -26,11 +26,11 @@
   /* layout: app de una columna para celular; contexto de la visita fijo arriba, pestañas abajo, carteles amarillos de precio */
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
-  --bg:#0D131B; --surface:#16202B; --ink:#ECF1F7; --muted:#9AA7B8; --line:#2A3746;
+  --bg:#0D131B; --surface:#16202B; --ink:#ECF1F7; --muted:#9AA7B8; --line:#2A3746; --item:#1C2835;
   --accent:#7EA4FF; --accent-ink:#0B1530; --good:#45CC88; --warn:#F2B64E; --bad:#FF7B6C;
   --good-bg:#13301F; --warn-bg:#33270F; --bad-bg:#3B1B17; --sim:#C4B1FF; --sim-bg:#2A2140; color-scheme:dark;}}
 :root[data-theme="dark"]{
-  --bg:#0D131B; --surface:#16202B; --ink:#ECF1F7; --muted:#9AA7B8; --line:#2A3746;
+  --bg:#0D131B; --surface:#16202B; --ink:#ECF1F7; --muted:#9AA7B8; --line:#2A3746; --item:#1C2835;
   --accent:#7EA4FF; --accent-ink:#0B1530; --good:#45CC88; --warn:#F2B64E; --bad:#FF7B6C;
   --good-bg:#13301F; --warn-bg:#33270F; --bad-bg:#3B1B17; --sim:#C4B1FF; --sim-bg:#2A2140; color-scheme:dark;}
 
@@ -233,6 +233,27 @@ details.more summary{cursor:pointer;color:var(--muted)}
 .dhead h2{display:flex;gap:8px;align-items:center}
 .dhead h2 svg{width:22px;height:22px;color:var(--accent);flex:none}
 .dbody{gap:10px}
+/* Datos: barra de sección fija (debajo de la cabecera), ítems como tarjetas y títulos de grupo fijos */
+.dstick{position:sticky;top:var(--hdr,0px);z-index:4;background:var(--bg);margin:-14px -16px 0;padding:10px 16px 8px;display:grid;gap:8px;border-bottom:2px solid var(--accent);grid-template-columns:minmax(0,1fr)}
+main,.view{grid-template-columns:minmax(0,1fr)}
+.dstick .dnav{display:flex;gap:8px;align-items:center}
+.dstick .dnav .dtabs{flex:1;min-width:0}
+.dstick .dnav>.btn{flex:none}
+.dstick .dhead h2{margin:0;font-size:21px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.dstick .dhead .btn{flex:none}
+.dstick .dhead .cnt{font-family:var(--font-b);font-size:14px;font-weight:600;color:var(--muted)}
+.dbody .drow{background:var(--item);border:1px solid var(--line);border-radius:10px;padding:10px}
+.dbody .drow:last-child{border-bottom:1px solid var(--line)}
+.dbody .drow+.drow{margin-top:8px}
+.dbody .paybox,.dbody .refrow{background:var(--item);border:1px solid var(--line);border-radius:10px;padding:10px}
+.dbody .refrow+.refrow{margin-top:8px}
+#edform{border:2px solid var(--accent);background:var(--surface)}
+#list-prices>h3,#list-pres>h3{position:sticky;top:calc(var(--hdr,0px) + var(--dst,0px));z-index:3;background:var(--surface);margin:0;padding:6px 0;border-bottom:1px solid var(--line)}
+/* Cabecera compacta dentro de Datos: una sola línea con tienda y medio de pago */
+.vmini{display:none;font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+body.in-datos .vmini{display:block}
+body.in-datos header.top .visit,body.in-datos .brand .sub{display:none}
+body.in-datos header.top{padding-bottom:8px}
 .chip.sm{min-height:32px;padding:5px 10px;font-size:13px}
 .search{background:var(--surface)}
 .cdlg{border:1px solid var(--line);border-radius:16px;padding:16px;max-width:min(520px,94vw);width:100%;max-height:88vh;background:var(--surface);color:var(--ink)}
@@ -250,7 +271,7 @@ details.more summary{cursor:pointer;color:var(--muted)}
 <div class="app">
   <header class="top">
     <div class="syncbar" id="syncBar" hidden aria-hidden="true"><i></i></div>
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.8.2</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="vmini" id="vMini"></span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.8.3</button></span></div>
     <div class="symsg" id="syncMsg" role="status" hidden></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
@@ -949,6 +970,7 @@ function renderDatos() {
     <div class="btns"><button class="btn sm" data-act="importjson">Importar texto pegado</button><button class="btn sm ghost" data-act="reseed" data-confirm="1">Restaurar ejemplo</button><button class="btn sm danger" data-act="wipe" data-confirm="1">Borrar todo</button></div>
     <div class="small muted">Los datos quedan en este celular y funcionan sin conexión. "Borrar todo" y "Restaurar ejemplo" solo afectan a este celular: con la sincronización activa, la próxima vez vuelven los datos de la planilla.</div>`);
   el.innerHTML = DV.sec ? datosSection(B, demo) : datosHome(demo);
+  stickVars();
 }
 function edSave() {
   const d = ED.d;
@@ -1357,9 +1379,9 @@ function datosHome(demo) {
 function datosSection(B, demo) {
   const k = DV.sec, meta = DSECS.find(x => x[0] === k);
   const counts = { pend: pendData().n, pays: S.pays.length, stores: S.stores.length, prods: S.prods.length, pres: S.pres.length, prices: S.prices.length };
-  let h = `<div class="dnav"><button class="btn sm ghost" data-act="dhome">← Datos</button><div class="dtabs" role="tablist" aria-label="Entidades">${DSECS.map(([id, l]) => `<button role="tab" class="chip sm" aria-selected="${id === k}" aria-pressed="${id === k}" data-act="dgo" data-s="${id}">${l}${counts[id] != null ? ` <span class="muted">${counts[id]}</span>` : ''}</button>`).join('')}</div></div>`;
+  let h = `<div class="dstick"><div class="dnav"><button class="btn sm ghost" data-act="dhome">← Datos</button><div class="dtabs" role="tablist" aria-label="Entidades">${DSECS.map(([id, l]) => `<button role="tab" class="chip sm" aria-selected="${id === k}" aria-pressed="${id === k}" data-act="dgo" data-s="${id}">${l}${counts[id] != null ? ` <span class="muted">${counts[id]}</span>` : ''}</button>`).join('')}</div></div>`;
   const add = { pays: '+ Agregar medio', stores: '+ Agregar tienda', prods: '+ Agregar producto', pres: '+ Agregar en Cargar', prices: '+ Cargar precio' }[k];
-  h += `<div class="dhead"><h2>${dIcon(k)}${meta[2]}</h2>${add ? `<button class="btn sm primary" data-act="dadd">${add}</button>` : ''}</div>`;
+  h += `<div class="dhead"><h2>${dIcon(k)}${meta[2]}${counts[k] != null ? ` <span class="cnt">${counts[k]}</span>` : ''}</h2>${add ? `<button class="btn sm primary" data-act="dadd">${add}</button>` : ''}</div></div>`;
   if (DV.back && DV.back.sec !== k) h += `<div class="btns" style="margin-bottom:6px"><button class="btn sm ghost" data-act="dback">← Volver a ${esc(DSECS.find(x => x[0] === DV.back.sec)?.[1] || 'la lista')}</button></div>`;
   if (k === 'ajustes') return h + demo + B.sync + B.calc + B.backup;
   if (k === 'pend') return h + `<div class="card dbody">${pendBody()}</div>`;
@@ -2130,11 +2152,19 @@ const catInput = (id, val, dataAttr) => `<input id="${id}" ${dataAttr} value="${
 const VIEWS = ['cargar', 'comparar', 'planificar', 'carrito', 'datos'];
 const R = { cargar: renderCargar, comparar: renderComparar, planificar: renderPlanificar, carrito: renderCarrito, datos: renderDatos };
 const cur = () => { const v = location.hash.slice(1); return VIEWS.includes(v) ? v : 'cargar'; };
+function stickVars() {
+  const r = document.documentElement.style, hd = $('header.top'), ds = $('#view-datos:not([hidden]) .dstick');
+  r.setProperty('--hdr', (hd ? hd.offsetHeight : 0) + 'px'); r.setProperty('--dst', (ds ? ds.offsetHeight : 0) + 'px');
+}
+try { new ResizeObserver(() => stickVars()).observe(document.querySelector('header.top')); } catch (e) {}
+window.addEventListener('resize', () => stickVars());
 function render() {
   renderVisit(); renderSyncBtn(); const v = cur();
+  document.body.classList.toggle('in-datos', v === 'datos');
+  const vm = $('#vMini'); if (vm) vm.textContent = `${getStore(S.visit.storeId)?.name || ''} · ${getPay(S.visit.payId)?.name || ''}`;
   VIEWS.forEach(x => { $('#view-' + x).hidden = x !== v; });
   document.querySelectorAll('nav.tabs a').forEach(a => a.setAttribute('aria-current', a.dataset.tab === v ? 'page' : 'false'));
-  R[v]();
+  R[v](); stickVars();
 }
 function go(v) { if (cur() === v) render(); else location.hash = v; window.scrollTo(0, 0); }
 window.addEventListener('hashchange', () => { if (cur() === 'datos' && !DV.keep) { DV.sec = null; DV.adding = false; DV.old = false; DV.suc = null; DV.ppres = ''; DV.back = null; ED = null; } DV.keep = false; render(); window.scrollTo(0, 0); });
