@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.2.6">
+<meta name="app-version" content="v0.2.7">
 <title>Góndola Comparador</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#132033">
@@ -148,6 +148,17 @@ nav.tabs a[aria-current="page"]::before{content:"";position:absolute;top:0;left:
 .scan button{position:absolute;bottom:calc(24px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%)}
 .result{border:2px solid var(--good);background:var(--good-bg)}
 .sortbar{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.syncbar{position:absolute;left:0;right:0;bottom:-1px;height:3px;overflow:hidden;background:transparent}
+.syncbar[hidden]{display:none}
+.syncbar i{position:absolute;top:0;bottom:0;width:35%;background:var(--accent);border-radius:3px;animation:sybar 1.1s ease-in-out infinite}
+@keyframes sybar{0%{left:-35%}100%{left:100%}}
+.sy-ic{display:inline-block}
+.sy-ic.spin{animation:syspin 1s linear infinite}
+@keyframes syspin{to{transform:rotate(360deg)}}
+.vs-ver.sy-busy{color:var(--accent);border-color:var(--accent);opacity:.9}
+.vs-ver.sy-ok{color:var(--good);border-color:var(--good);background:var(--good-bg)}
+.vs-ver.sy-err{color:var(--bad);border-color:var(--bad);background:var(--bad-bg)}
+@media (prefers-reduced-motion:reduce){.sy-ic.spin{animation:none}.syncbar i{animation:none;left:0;width:100%;opacity:.6}}
 .pvl{display:grid;gap:2px;padding:8px 0;border-bottom:1px solid var(--line)}
 .storebar{display:grid;gap:6px;padding:10px;border-radius:12px;background:var(--bg)}
 .storebar.other{background:var(--warn-bg);box-shadow:inset 0 0 0 2px var(--warn)}
@@ -191,7 +202,8 @@ details.more summary{cursor:pointer;color:var(--muted)}
 <body>
 <div class="app">
   <header class="top">
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button> <button id="verBtn" class="vs-ver" type="button">v0.2.6</button></span></div>
+    <div class="syncbar" id="syncBar" hidden aria-hidden="true"><i></i></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button> <button id="verBtn" class="vs-ver" type="button">v0.2.7</button></span></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
       <label for="vPay">Pago con<select id="vPay" data-chg="vpay"></select></label>
@@ -886,19 +898,20 @@ function findConflicts(pj, last) {
 async function syncNow(auto) {
   if (syncing) return;
   if (!syncReady(auto)) return;
-  syncing = true; renderSyncBtn();
+  syncing = true; syPhase('Leyendo planilla…');
   let keepOpen = false;
   try {
     const pj = await callSync({ action: 'pull' });
     const conf = findConflicts(pj, SYNC.last || '');
     if (conf.length) {
-      SYNC.conflicts = conf.length; saveSync();
+      SYNC.conflicts = conf.length; saveSync(); SYUI.phase = ''; SYUI.result = null;
       if (auto) { toast(`Hay ${conf.length} conflicto${conf.length === 1 ? '' : 's'} con la planilla: tocá ⚠ arriba para elegir qué versión queda.`, 5000); return; }
       CONF = { list: conf }; keepOpen = true; openConf(); return;
     }
     await pushSync(auto);
   } catch (e) {
     const m = /desconocida/.test(e.message) ? 'el script de la planilla es de una versión anterior: actualizalo (ver apps-script/LEEME.md)' : e.message;
+    syDone(false, m);
     toast((auto ? 'No se pudo sincronizar automáticamente: ' : 'No se pudo sincronizar: ') + m + '. Tus datos siguen guardados en el celular.', 5500);
   } finally { if (!keepOpen) { syncing = false; render(); } }
 }
@@ -907,7 +920,9 @@ async function pushSync(auto) {
   const data = {}; COLLS.forEach(c => { data[c] = S[c].filter(r => !last || (r.upd || '') > last); });
   const tombs = S.tomb.filter(t => !last || t.upd > last);
   const sent = COLLS.reduce((a, c) => a + data[c].length, 0) + tombs.length;
+  syPhase(sent ? `Enviando ${sent} cambio${sent === 1 ? '' : 's'}…` : 'Recibiendo planilla…');
   const j = await callSync({ action: 'sync', data, tombs });
+  syPhase('Actualizando…');
   COLLS.forEach(c => {
     const local = S[c].filter(r => (r.upd || '') > t0); // cambios hechos mientras se sincronizaba
     const m = new Map((j.data[c] || []).map(x => [x.id, norm(c, x)]));
@@ -921,6 +936,7 @@ async function pushSync(auto) {
   if (S.visit.payId !== 'none' && !S.pays.some(p => p.id === S.visit.payId)) S.visit.payId = 'none';
   if (ED && !(ED.kind === 'price' ? getPrice(ED.id) : ED.kind === 'pres' ? getPres(ED.id) : getProd(ED.id))) ED = null;
   SYNC.last = t0; SYNC.planilla = j.planilla; SYNC.lastOk = nowISO(); SYNC.conflicts = 0; saveSync(); save();
+  syDone(true);
   const n = COLLS.reduce((a, c) => a + S[c].length, 0);
   toast(auto ? `Sincronizado automáticamente (${sent} cambio${sent === 1 ? '' : 's'} enviado${sent === 1 ? '' : 's'}).` : `Sincronizado con "${j.planilla}": enviaste ${sent} cambio${sent === 1 ? '' : 's'}, la planilla tiene ${n} registros.`, 3500);
 }
@@ -964,21 +980,40 @@ async function applyConf() {
     }
   });
   if (ED) ED = null;
-  save(); $('#confDlg').close(); CONF = null;
+  save(); $('#confDlg').close(); CONF = null; syncing = true;
   try { await pushSync(false); }
-  catch (e) { toast('No se pudo sincronizar: ' + e.message + '. Tus elecciones quedaron guardadas en el celular.', 5000); }
+  catch (e) { syDone(false, e.message); toast('No se pudo sincronizar: ' + e.message + '. Tus elecciones quedaron guardadas en el celular.', 5000); }
   finally { syncing = false; render(); }
 }
 
 function agoTxt(iso) { if (!iso) return 'nunca'; const m = Math.round((Date.now() - new Date(iso)) / 60000); return m < 1 ? 'recién' : m < 60 ? `hace ${m} min` : m < 1440 ? `hace ${Math.round(m / 60)} h` : `hace ${Math.round(m / 1440)} d`; }
+/* Estado visible de la sincronización: etapa en curso, resultado (✓ / ✕) y barra de progreso */
+const SYUI = { phase: '', result: null, msg: '' };
+let syOkT = null;
+function syPhase(txt) { SYUI.phase = txt; SYUI.result = null; renderSyncBtn(); }
+function syDone(ok, msg) {
+  SYUI.phase = ''; SYUI.result = ok ? 'ok' : 'err'; SYUI.msg = msg || '';
+  clearTimeout(syOkT); if (ok) syOkT = setTimeout(() => { SYUI.result = null; renderSyncBtn(); }, 2800);
+  renderSyncBtn();
+}
 function renderSyncBtn() {
+  const bar = $('#syncBar'); if (bar) bar.hidden = !syncing;
   const b = $('#syncBtn'); if (!b) return;
   const on = !!(SYNC.url && SYNC.key); b.hidden = !on; if (!on) return;
   const p = pendientes();
-  b.textContent = syncing ? '⟳ …' : SYNC.conflicts ? `⚠ ${SYNC.conflicts}` : p ? `⟳ ${p}` : '⟳';
-  b.title = syncing ? 'Sincronizando…' : `Sincronizar con Google Sheets · última: ${agoTxt(SYNC.lastOk)}${p ? ` · ${p} cambio${p === 1 ? '' : 's'} sin enviar` : ''}`;
-  b.classList.toggle('new', p > 0 || !!SYNC.conflicts);
-  if (SYNC.conflicts) b.title = `Hay ${SYNC.conflicts} conflicto${SYNC.conflicts === 1 ? '' : 's'} para revisar: tocá para elegir qué versión queda`;
+  let html, cls = '', title;
+  if (syncing && SYUI.phase) { html = `<span class="sy-ic spin" aria-hidden="true">⟳</span> ${esc(SYUI.phase)}`; cls = 'sy-busy'; title = 'Sincronizando con Google Sheets'; }
+  else if (SYNC.conflicts) { html = `⚠ ${SYNC.conflicts}`; cls = 'new'; title = `Hay ${SYNC.conflicts} conflicto${SYNC.conflicts === 1 ? '' : 's'} para revisar: tocá para elegir qué versión queda`; }
+  else if (SYUI.result === 'ok') { html = '✓ Sincronizado'; cls = 'sy-ok'; title = 'Sincronización completa'; }
+  else if (SYUI.result === 'err') { html = '✕ Sin sincronizar'; cls = 'sy-err'; title = 'No se pudo sincronizar: tocá para ver el motivo y reintentar'; }
+  else { html = p ? `⟳ ${p}` : '⟳'; cls = p ? 'new' : ''; title = `Sincronizar con Google Sheets · última: ${agoTxt(SYNC.lastOk)}${p ? ` · ${p} cambio${p === 1 ? '' : 's'} sin enviar` : ''}`; }
+  b.innerHTML = html; b.title = title; b.setAttribute('aria-label', title); b.setAttribute('aria-busy', syncing ? 'true' : 'false');
+  b.classList.remove('new', 'sy-busy', 'sy-ok', 'sy-err'); if (cls) b.classList.add(cls);
+  // Mismo estado en Ajustes → Sincronizar ahora
+  const nb = $('#syncNowBtn');
+  if (nb) { nb.disabled = syncing; nb.innerHTML = syncing ? `<span class="sy-ic spin" aria-hidden="true">⟳</span> ${esc(SYUI.phase || 'Sincronizando…')}` : SYUI.result === 'ok' ? '✓ Sincronizado' : 'Sincronizar ahora'; }
+  const st = $('#syncState');
+  if (st) st.innerHTML = SYUI.result === 'err' && !syncing ? `<span class="pill p-bad">✕ ${esc(SYUI.msg)}</span>` : '';
 }
 function syncSection() {
   const p = pendientes(), on = !!(SYNC.url && SYNC.key);
@@ -988,7 +1023,8 @@ function syncSection() {
     <label class="fl" for="syKey">Clave (la misma que pusiste en el script)<input id="syKey" data-sync="key" type="password" autocomplete="off" value="${esc(SYNC.key)}"></label>
     <label class="switch" for="syAuto"><input type="checkbox" id="syAuto" data-syncauto="1" ${SYNC.auto !== false ? 'checked' : ''}> Sincronizar automáticamente al cerrar la visita, al recuperar la señal y al abrir la app con cambios pendientes</label>
     ${SYNC.conflicts ? `<div class="note" style="border:2px solid var(--warn)"><b>Hay ${SYNC.conflicts} conflicto${SYNC.conflicts === 1 ? '' : 's'} sin resolver.</b> Tocá Sincronizar ahora para elegir qué versión queda.</div>` : ''}
-    <div class="btns"><button class="btn sm" data-act="synctest">Probar conexión</button><button class="btn sm primary" data-act="sync" ${syncing ? 'disabled' : ''}>${syncing ? 'Sincronizando…' : 'Sincronizar ahora'}</button></div>
+    <div class="btns"><button class="btn sm" data-act="synctest">Probar conexión</button><button class="btn sm primary" id="syncNowBtn" data-act="sync" ${syncing ? 'disabled' : ''}>${syncing ? `<span class="sy-ic spin" aria-hidden="true">⟳</span> ${esc(SYUI.phase || 'Sincronizando…')}` : 'Sincronizar ahora'}</button></div>
+    <div id="syncState" role="status">${SYUI.result === 'err' && !syncing ? `<span class="pill p-bad">✕ ${esc(SYUI.msg)}</span>` : ''}</div>
     <div class="small">${SYNC.planilla ? `Planilla: <b>${esc(SYNC.planilla)}</b> · ` : ''}Última sincronización: <b>${agoTxt(SYNC.lastOk)}</b> · ${p ? `<span class="pill p-warn">${p} cambio${p === 1 ? '' : 's'} sin enviar</span>` : '<span class="pill p-good">Todo enviado</span>'}</div>
     ${S.demo && !SYNC.last ? '<div class="note"><b>Antes de la primera sincronización:</b> si no querés los datos de ejemplo en tu planilla, borralos en Respaldo → Borrar todo.</div>' : ''}
     <details><summary class="small" style="cursor:pointer;font-weight:700">Cómo instalarlo (una sola vez)</summary><ol class="small" style="margin:8px 0 0;padding-left:20px;display:grid;gap:4px">
@@ -1196,7 +1232,7 @@ const ACT = {
   editpres: el => { startEdit('pres', el.dataset.id); go('datos'); scrollForm(); },
   edcancel: () => { ED = null; renderDatos(); },
   edsave: () => edSave(),
-  sync: () => syncNow(false),
+  sync: () => { if (SYUI.result === 'err' && !syncing) toast('Último intento: ' + SYUI.msg + '. Reintentando…', 3500); syncNow(false); },
   dgo: el => { const s2 = el.dataset.s; if (s2 !== DV.sec) { ED = null; DV.adding = false; } if (s2 !== 'prices') DV.old = false; DV.sec = s2; renderDatos(); window.scrollTo(0, 0); },
   smerge: el => { SMERGE = el.dataset.id; renderDatos(); },
   smergex: () => { SMERGE = null; renderDatos(); },
