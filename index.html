@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.5.11">
+<meta name="app-version" content="v0.5.12">
 <title>Góndola Comparador</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#132033">
@@ -229,7 +229,7 @@ details.more summary{cursor:pointer;color:var(--muted)}
 <div class="app">
   <header class="top">
     <div class="syncbar" id="syncBar" hidden aria-hidden="true"><i></i></div>
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.5.11</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.5.12</button></span></div>
     <div class="symsg" id="syncMsg" role="status" hidden></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
@@ -463,7 +463,7 @@ let F; // formulario de carga
 function resetForm(prodId) {
   const pid = prodId ?? F?.prodId ?? S.prods[0]?.id ?? '__new';
   F = { prodId: pid, presId: 'new', ean: '', marca: '', desc: '', cont: '', unit: defUnit(getProd(pid)), pack: '1', precio: '', promo: { t: 'none' }, acum: false,
-    storeId: F?.storeId || S.visit.storeId, fecha: F?.fecha || todayISO(), more: !!F?.more, setVisit: false, hasta: '', nota: '' };
+    storeId: F?.storeId || S.visit.storeId, fecha: F?.fecha || todayISO(), more: !!F?.more, setVisit: false, hasta: '', nota: '', look: null };
 }
 /* Tienda del formulario de carga: por defecto "Estoy en", pero se puede cambiar solo para esta carga */
 const formStore = () => { const st = getStore(F.storeId); return st && !st.archived ? st.id : S.visit.storeId; };
@@ -610,6 +610,8 @@ function renderCargar() {
   const units = Object.keys(b.units);
   const lock = F.presId !== 'new' && !getPres(F.presId)?.pend ? 'disabled' : '';
   h += `<div class="row"><label class="fl grow" for="fEan">Código de barras (opcional)<input id="fEan" data-f="ean" inputmode="numeric" ${lock} value="${esc(F.ean)}" placeholder="Ej.: 7791234000017"></label><button type="button" class="btn ghost" style="align-self:end" data-act="scan" ${lock}>Escanear</button></div>
+    ${!lock && eanOk((F.ean || '').trim()) && F.look?.st !== 'loading' ? `<button type="button" class="btn sm ghost" style="justify-self:start" data-act="lookup">Buscar datos de este código en internet</button>` : ''}
+    ${lookNote()}
     <label class="fl" for="fPres">Presentación<select id="fPres" data-chg="fpres"><option value="new">Nueva presentación</option>${sortList('selPres', presList).map(x => `<option value="${x.id}" ${x.id === F.presId ? 'selected' : ''}>${esc(presLabel(x))}</option>`).join('')}</select></label>${presList.length > 1 ? sortBar('selPres') : ''}
     ${F.presId !== 'new' ? presStoresHTML(F.presId, fsid) : ''}
     ${exHere ? `<div class="note">Último precio acá: <b>${money(exHere.precio)}</b> ${exHere.promo?.t !== 'none' ? '<span class="tag">' + esc(promo(exHere).label) + '</span>' : ''} · ${ageTxt(exHere.fecha)}. Tipeá el precio nuevo: el anterior pasa al historial. Si fue un error de carga, <button type="button" class="btn sm ghost" data-act="editprice" data-id="${exHere.id}">Corregilo</button> sin guardar historial.</div>` : ''}
@@ -1603,7 +1605,7 @@ function pendBody() {
   const P = pendData();
   if (!P.n) return '<div class="muted">Nada pendiente.</div>';
   let h = '';
-  if (P.pres.length) h += `<h3>Presentaciones por completar (${P.pres.length})</h3>` + P.pres.map(x => `<div class="drow"><span><b>${esc(getProd(x.prodId)?.name || '')}</b> · ${esc(presLabel(x))}<br><span class="small"><span class="pill p-warn">Falta ${pendReasons(x).join(', ') || 'revisar'}</span>${x.pendPrecio ? ` <span class="small muted">precio anotado ${money(x.pendPrecio.precio)} en ${esc(getStore(x.pendPrecio.storeId)?.name || '')}</span>` : ''}${x.nota ? `<br><span class="muted">Nota: ${esc(x.nota)}</span>` : ''}</span></span><span class="btns"><button class="btn sm primary" data-act="pendgo" data-id="${x.id}">Completar</button>${!S.prices.some(p => p.presId === x.id) ? `<button class="btn sm danger" aria-label="Descartar" data-act="delpres" data-id="${x.id}" data-confirm="1">×</button>` : ''}</span></div>`).join('');
+  if (P.pres.length) h += `<h3>Presentaciones por completar (${P.pres.length})</h3>` + P.pres.map(x => `<div class="drow"><span><b>${esc(getProd(x.prodId)?.name || '')}</b> · ${esc(presLabel(x))}<br><span class="small"><span class="pill p-warn">Falta ${pendReasons(x).join(', ') || 'revisar'}</span>${x.pendPrecio ? ` <span class="small muted">precio anotado ${money(x.pendPrecio.precio)} en ${esc(getStore(x.pendPrecio.storeId)?.name || '')}</span>` : ''}${x.nota ? `<br><span class="muted">Nota: ${esc(x.nota)}</span>` : ''}</span></span><span class="btns">${x.ean && eanOk(x.ean) && (!(x.cont > 0) || !x.marca) ? `<button class="btn sm" data-act="pendauto" data-id="${x.id}">Completar automáticamente</button>` : ''}<button class="btn sm primary" data-act="pendgo" data-id="${x.id}">Completar</button>${!S.prices.some(p => p.presId === x.id) ? `<button class="btn sm danger" aria-label="Descartar" data-act="delpres" data-id="${x.id}" data-confirm="1">×</button>` : ''}</span></div>`).join('');
   if (P.rem.length) h += `<h3>Precios para cargar (${P.rem.length})</h3>` + P.rem.map(m => { const x = getPres(m.presId); return `<div class="drow"><span><b>${esc(presLabel(x))}</b><br><span class="small muted">en ${esc(getStore(m.storeId).name)}${m.nota ? ' · ' + esc(m.nota) : ''}</span></span><span class="btns"><button class="btn sm primary" data-act="remgo" data-id="${m.id}">Cargar</button><button class="btn sm ghost" aria-label="Quitar recordatorio" data-act="remdel" data-id="${m.id}">×</button></span></div>`; }).join('');
   if (P.prods.length) h += `<h3>Productos sin presentaciones (${P.prods.length})</h3>` + P.prods.map(p => `<div class="drow"><span>${esc(p.name)}</span><button class="btn sm" data-act="loadnew" data-id="${p.id}">Cargar presentación</button></div>`).join('');
   return h;
@@ -1611,6 +1613,84 @@ function pendBody() {
 function addRemind(presId, storeId, nota) {
   if (S.remind.some(m => m.presId === presId && m.storeId === storeId)) return false;
   S.remind.push({ id: uid(), presId, storeId, nota: nota || '', fecha: todayISO() }); return true;
+}
+
+/* ============ Datos de internet por código de barras (Open Food Facts y bases hermanas) ============
+   Completa marca, variedad, contenido y unidad; siempre se revisa antes de guardar. */
+const LOOK = new Map();   // código -> resultado (cache en memoria)
+const LOOK_SRC = [['Open Food Facts', 'https://world.openfoodfacts.org'], ['Open Beauty Facts', 'https://world.openbeautyfacts.org'], ['Open Products Facts', 'https://world.openproductsfacts.org']];
+function eanOk(code) {
+  if (!/^\d{8}$|^\d{12,13}$/.test(code)) return false;
+  const d = code.split('').map(Number), chk = d.pop(); let s2 = 0;
+  d.reverse().forEach((n, i) => { s2 += n * (i % 2 === 0 ? 3 : 1); });
+  return (10 - (s2 % 10)) % 10 === chk;
+}
+/* "473 ml", "1,5 L", "6 x 473 ml", "750cc", "500 g", "4 x 30 m" → { cont, unit, pack, fam } */
+function parseQty(txt, num2, unit2) {
+  const U = { ml: ['ml', 1, 'L'], cl: ['ml', 10, 'L'], l: ['L', 1, 'L'], lt: ['L', 1, 'L'], lts: ['L', 1, 'L'], litro: ['L', 1, 'L'], litros: ['L', 1, 'L'], cc: ['cc', 1, 'L'], g: ['g', 1, 'kg'], gr: ['g', 1, 'kg'], grs: ['g', 1, 'kg'], gramos: ['g', 1, 'kg'], kg: ['kg', 1, 'kg'], kilo: ['kg', 1, 'kg'], kilos: ['kg', 1, 'kg'], m: ['m', 1, 'm'], mts: ['m', 1, 'm'], metros: ['m', 1, 'm'], u: ['un', 1, 'un'], un: ['un', 1, 'un'], unid: ['un', 1, 'un'], unidades: ['un', 1, 'un'] };
+  const m = String(txt || '').toLowerCase().match(/(?:(\d+)\s*[x×]\s*)?(\d+(?:[.,]\d+)?)\s*(ml|cl|lts|lt|litros|litro|l|cc|grs|gramos|gr|g|kg|kilos|kilo|mts|metros|m|unidades|unid|un|u)\b/);
+  if (m && U[m[3]]) { const [unit, f, fam] = U[m[3]]; return { pack: m[1] ? +m[1] : 1, cont: num(m[2]) * f, unit, fam }; }
+  const u2 = String(unit2 || '').toLowerCase();
+  if (num2 > 0 && U[u2]) { const [unit, f, fam] = U[u2]; return { pack: 1, cont: num2 * f, unit, fam }; }
+  return null;
+}
+async function lookupEan(code) {
+  if (LOOK.has(code)) return LOOK.get(code);
+  let lastErr = null;
+  for (const [name, base] of LOOK_SRC) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 8000);
+        const r = await fetch(`${base}/api/v2/product/${code}.json?fields=product_name,product_name_es,generic_name_es,generic_name,brands,quantity,product_quantity,product_quantity_unit,categories_tags`, { signal: ctl.signal });
+        clearTimeout(tm);
+        if (r.status === 503 || r.status === 429) { lastErr = 'el servicio está ocupado'; await new Promise(ok => setTimeout(ok, 1500)); continue; }
+        if (r.status === 404) break;
+        if (!r.ok) { lastErr = 'respuesta ' + r.status; break; }
+        const j = await r.json();
+        if (j.status !== 1 || !j.product) break;
+        const pr = j.product, res = { src: name, url: `${base}/product/${code}`, brand: String(pr.brands || '').split(',')[0].trim(), name: (pr.product_name_es || pr.product_name || pr.generic_name_es || pr.generic_name || '').trim(), qty: parseQty(pr.quantity, pr.product_quantity, pr.product_quantity_unit), cats: (pr.categories_tags || []).join(' ') };
+        LOOK.set(code, res); return res;
+      } catch (e) { lastErr = e.name === 'AbortError' ? 'no respondió a tiempo' : 'sin conexión con el servicio'; break; }
+    }
+  }
+  if (lastErr) throw new Error(lastErr);
+  LOOK.set(code, null); return null;
+}
+/* Busca y completa los campos vacíos del formulario de Cargar */
+async function lookupFill(manual) {
+  const code = (F.ean || '').trim();
+  const editable = F.presId === 'new' || getPres(F.presId)?.pend;
+  if (!editable || !eanOk(code)) { if (manual) toast(eanOk(code) ? 'Esta presentación ya está completa.' : 'El código no parece válido (revisá los dígitos).'); return; }
+  if (navigator.onLine === false) { if (manual) toast('Sin conexión: guardalo como pendiente y buscá los datos después.'); return; }
+  F.look = { st: 'loading' }; renderCargar();
+  try {
+    const res = await lookupEan(code);
+    if ((F.ean || '').trim() !== code) return; // cambió el código mientras buscaba
+    if (!res) { F.look = { st: 'none' }; renderCargar(); return; }
+    let brand = res.brand, desc = res.name;
+    if (brand && desc.toLowerCase().startsWith(brand.toLowerCase())) desc = desc.slice(brand.length).trim();
+    if (!F.marca) F.marca = brand; if (!F.desc) F.desc = desc;
+    let warn = '';
+    if (res.qty) {
+      // Producto comparable: el actual si la unidad coincide; si no, uno que coincida por nombre y unidad
+      const fits = p => (BASES[p.base] ? p.base : null) === res.qty.fam;
+      const txt = fold(`${res.name} ${res.cats}`);
+      if (F.presId === 'new' && !(getProd(F.prodId) && fits(getProd(F.prodId)))) {
+        const cand = S.prods.filter(fits).find(p => fold(p.name).split(/\s+/).some(w => w.length > 2 && txt.includes(w)));
+        if (cand) { F.prodId = cand.id; } else warn = `Este envase viene en ${res.qty.unit} y el producto elegido se compara por ${baseOf(getProd(F.prodId)).short}: elegí o creá el producto que corresponda.`;
+      }
+      if (!(num(F.cont) > 0) && (!getProd(F.prodId) || fits(getProd(F.prodId)))) { F.cont = nfx.format(res.qty.cont); F.unit = res.qty.unit; F.pack = String(res.qty.pack); }
+    } else warn = 'No trae el contenido: completalo a mano.';
+    F.look = { st: 'ok', src: res.src, url: res.url, warn };
+    renderCargar();
+  } catch (e) { F.look = { st: 'err', msg: e.message }; renderCargar(); }
+}
+function lookNote() {
+  const L = F.look; if (!L) return '';
+  if (L.st === 'loading') return `<div class="note"><span class="sy-ic spin" aria-hidden="true">⟳</span> Buscando datos del código en internet…</div>`;
+  if (L.st === 'none') return `<div class="note">No se encontraron datos de este código. Completalos a mano o guardalo como pendiente.</div>`;
+  if (L.st === 'err') return `<div class="note">No se pudieron buscar datos (${esc(L.msg)}). <button type="button" class="btn sm ghost" data-act="lookup">Reintentar</button></div>`;
+  return `<div class="note" style="border:2px solid var(--accent)"><b>Datos completados desde <a href="${esc(L.url)}" target="_blank" rel="noopener">${esc(L.src)}</a>.</b> Revisalos antes de guardar, sobre todo el contenido.${L.warn ? `<br><b style="color:var(--warn)">${esc(L.warn)}</b>` : ''}</div>`;
 }
 
 /* ============ navegación ============ */
@@ -1671,6 +1751,8 @@ const ACT = {
     touch(x); save(); resetForm(prod.id); renderCargar();
     toast(`Guardado como pendiente. Falta ${pendReasons(x).join(', ')}: lo ves en Datos → Pendientes.`, 4500);
   },
+  pendauto: el => { ACT.pendgo(el); setTimeout(() => { F.look = { code: F.ean }; lookupFill(true); }, 120); },
+  lookup: () => { if (F.look) F.look.code = null; LOOK.delete((F.ean || '').trim()); lookupFill(true); },
   pendgo: el => { const x = getPres(el.dataset.id); if (!x) return; resetForm(x.prodId); if (x.pendPrecio) F.storeId = x.pendPrecio.storeId; fillFromPres(x); lastSaved = null; go('cargar'); setTimeout(() => $(x.cont > 0 ? '#fPrecio' : '#fCont')?.focus(), 80); },
   remgo: el => { const m = S.remind.find(r => r.id === el.dataset.id); if (!m) return; const x = getPres(m.presId); resetForm(x.prodId); F.storeId = m.storeId; fillFromPres(x); if (m.nota) F.nota = m.nota; lastSaved = null; go('cargar'); renderCargar(); setTimeout(() => $('#fPrecio')?.focus(), 80); },
   remdel: el => { S.remind = S.remind.filter(r => r.id !== el.dataset.id); save(); render(); },
@@ -1868,6 +1950,7 @@ function onEan(force) {
   const code = (F.ean || '').trim(); if (code.length < 8) return;
   const pres = S.pres.find(x => x.ean === code);
   if (pres && pres.id !== F.presId) { fillFromPres(pres); renderCargar(); toast('Reconocido: ' + presLabel(pres)); $('#fPrecio')?.focus(); }
+  else if (!pres && eanOk(code) && (F.presId === 'new' || getPres(F.presId)?.pend) && !(F.look && F.look.code === code)) { F.look = { code }; lookupFill(false).then(() => { if (F.look) F.look.code = code; }); }
   else if (force) { renderCargar(); toast('Código leído: es un producto nuevo, completá los datos'); }
 }
 
