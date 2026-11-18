@@ -21,6 +21,10 @@ CKAN = ["https://datos.produccion.gob.ar/api/3/action/package_show?id=sepa-preci
         "https://datos.produccion.gob.ar/api/3/action/package_show?id=6f47ec76-d1ce-4e34-a7e1-621fe9b1d0b5",
         "https://datos.gob.ar/api/3/action/package_show?id=produccion-precios-claros---base-sepa"]
 PAGINA = "https://datos.produccion.gob.ar/dataset/sepa-precios"
+# Enlaces fijos conocidos de algunos días (cada archivo se reemplaza con el de la última fecha de ese día)
+FIJOS = {"lunes": "0a9069a9-06e8-4f98-874d-da5578693290", "miercoles": "1e92cd42-4f94-4071-a165-62c4cb2ce23c",
+         "jueves": "d076720f-a7f0-4af8-b1d6-1b99d5a90c14", "viernes": "91bc072a-4726-44a1-85ec-4a8467aad27e"}
+FIJO_URL = "https://datos.produccion.gob.ar/dataset/6f47ec76-d1ce-4e34-a7e1-621fe9b1d0b5/resource/{}/download/sepa_{}.zip"
 # El portal rechaza (403) clientes que no se identifican como navegador
 UA = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36",
       "Accept": "text/html,application/json,application/zip,*/*;q=0.8", "Accept-Language": "es-AR,es;q=0.9"}
@@ -73,11 +77,24 @@ def ultimo_zip():
         if cands: break
     if not cands:
         # Sin API: se leen los enlaces de descarga de la página del dataset
-        html = _get(PAGINA).decode("utf-8", "replace")
+        try: html = _get(PAGINA).decode("utf-8", "replace")
+        except Exception: html = ""
         for m in re.finditer(r'"schema:description":"([^"]*)","schema:encodingFormat":"ZIP","schema:url":"([^"]+\.zip)"', html):
             cands.append((_fecha(m.group(1)), m.group(2), m.group(1)))
         if not cands:
             for u in sorted(set(re.findall(r'https://datos\.produccion\.gob\.ar/dataset/[^"\s]+/download/sepa_[a-z]+\.zip', html))): cands.append(("", u, u))
+    if not cands:
+        # Último recurso: el enlace fijo del día hábil más reciente que se conozca
+        dias = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
+        hoy = datetime.date.today()
+        for k in range(1, 8):
+            d = dias[(hoy - datetime.timedelta(days=k)).weekday()]
+            if d in FIJOS:
+                u = FIJO_URL.format(FIJOS[d], d)
+                try:
+                    with urllib.request.urlopen(urllib.request.Request(u, headers=UA, method="HEAD"), timeout=60): pass
+                    cands.append(("", u, "sepa_" + d)); break
+                except Exception as e: print(f"  {u}: {e}")
     cands = [c for c in cands if "sepa" in c[1].lower()] or cands
     if not cands: sys.exit("No se encontraron archivos .zip en el dataset SEPA")
     cands.sort(reverse=True)
