@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.5.3">
+<meta name="app-version" content="v0.5.4">
 <title>Góndola Comparador</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#132033">
@@ -20,7 +20,7 @@
 :root{
   --bg:#EDF0F3; --surface:#FFFFFF; --ink:#132033; --muted:#5A6678; --line:#D5DBE2;
   --accent:#1F55E0; --accent-ink:#FFFFFF; --tag:#FFD338; --tag-ink:#231B00;
-  --good:#0F7A46; --warn:#9A6200; --bad:#BF3227; --good-bg:#E2F3E9; --warn-bg:#FFF0D2; --bad-bg:#FBE3E0;
+  --good:#0F7A46; --warn:#9A6200; --bad:#BF3227; --good-bg:#E2F3E9; --warn-bg:#FFF0D2; --bad-bg:#FBE3E0; --sim:#6D28D9; --sim-bg:#F0E9FF;
   --font-d:"Barlow Condensed","Arial Narrow",sans-serif; --font-b:"Barlow",system-ui,-apple-system,sans-serif;
   color-scheme:light;
   /* layout: app de una columna para celular; contexto de la visita fijo arriba, pestañas abajo, carteles amarillos de precio */
@@ -28,11 +28,11 @@
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --bg:#0D131B; --surface:#16202B; --ink:#ECF1F7; --muted:#9AA7B8; --line:#2A3746;
   --accent:#7EA4FF; --accent-ink:#0B1530; --good:#45CC88; --warn:#F2B64E; --bad:#FF7B6C;
-  --good-bg:#13301F; --warn-bg:#33270F; --bad-bg:#3B1B17; color-scheme:dark;}}
+  --good-bg:#13301F; --warn-bg:#33270F; --bad-bg:#3B1B17; --sim:#C4B1FF; --sim-bg:#2A2140; color-scheme:dark;}}
 :root[data-theme="dark"]{
   --bg:#0D131B; --surface:#16202B; --ink:#ECF1F7; --muted:#9AA7B8; --line:#2A3746;
   --accent:#7EA4FF; --accent-ink:#0B1530; --good:#45CC88; --warn:#F2B64E; --bad:#FF7B6C;
-  --good-bg:#13301F; --warn-bg:#33270F; --bad-bg:#3B1B17; color-scheme:dark;}
+  --good-bg:#13301F; --warn-bg:#33270F; --bad-bg:#3B1B17; --sim:#C4B1FF; --sim-bg:#2A2140; color-scheme:dark;}
 
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
@@ -173,6 +173,11 @@ nav.tabs a[aria-current="page"]::before{content:"";position:absolute;top:0;left:
 @media (prefers-reduced-motion:reduce){.sy-ic.spin{animation:none}.syncbar i{animation:none;left:0;width:100%;opacity:.6}}
 .needrow{display:grid;grid-template-columns:1fr auto auto;gap:8px}
 .needrow .stepper span{min-width:72px}
+.item.sim{border-style:dashed;border-left-style:solid;border-left-color:var(--sim);background:var(--sim-bg)}
+.p-sim{background:var(--sim);color:var(--surface)}
+.sim-btn{color:var(--sim);border-color:var(--sim)}
+.simbox{grid-column:1/-1;display:grid;gap:8px;border:2px dashed var(--sim);border-radius:12px;padding:10px;background:var(--surface)}
+.simbanner{border:2px dashed var(--sim);background:var(--sim-bg);border-radius:12px;padding:10px;font-size:14px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .pvl{display:grid;gap:2px;padding:8px 0;border-bottom:1px solid var(--line)}
 .storebar{display:grid;gap:6px;padding:10px;border-radius:12px;background:var(--bg)}
 .storebar.other{background:var(--warn-bg);box-shadow:inset 0 0 0 2px var(--warn)}
@@ -217,7 +222,7 @@ details.more summary{cursor:pointer;color:var(--muted)}
 <div class="app">
   <header class="top">
     <div class="syncbar" id="syncBar" hidden aria-hidden="true"><i></i></div>
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.5.3</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.5.4</button></span></div>
     <div class="symsg" id="syncMsg" role="status" hidden></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
@@ -355,10 +360,11 @@ function bestPay(p) {
   for (const pay of S.pays) { const c = calc(p, pay); if (c.best.per < bc.best.per - 1e-9) bc = c; }
   return bc;
 }
-function rowsFor(prodId, mode) {
+function rowsFor(prodId, mode, withSim) {
   const vpay = getPay(S.visit.payId);
   return S.prices.filter(p => getPres(p.presId)?.prodId === prodId && getStore(p.storeId) && !getStore(p.storeId).archived)
     .map(p => ({ p, pres: getPres(p.presId), c: mode === 'week' ? bestWeek(p) : mode === 'best' ? bestPay(p) : calc(p, vpay) }))
+    .map(r => (withSim && SIM.size ? simRow(r, mode) : r))
     .sort((a, b) => a.c.best.per - b.c.best.per);
 }
 
@@ -639,13 +645,14 @@ function renderComparar() {
   if (!getProd(CMP.prodId)) CMP.prodId = S.prods[0]?.id;
   const prod = getProd(CMP.prodId);
   if (!prod) { el.innerHTML = `<div class="card">Todavía no hay productos. Creá uno en Cargar.</div>`; return; }
-  const u = baseOf(prod).short, here = S.visit.storeId, rows = rowsFor(prod.id, CMP.mode);
+  const u = baseOf(prod).short, here = S.visit.storeId, rows = rowsFor(prod.id, CMP.mode, true);
+  const nSim = rows.filter(r => r.sim).length;
   let h = `<div class="chips" role="group" aria-label="Producto">${sortList('selProd', S.prods).map(p => `<button class="chip" aria-pressed="${p.id === prod.id}" data-act="cprod" data-id="${p.id}">${esc(p.name)}</button>`).join('')}</div>
     <div class="row small"><span class="muted">Calcular con:</span><div class="chips"><button class="chip" aria-pressed="${CMP.mode === 'visit'}" data-act="cmode" data-m="visit">El de mi visita</button><button class="chip" aria-pressed="${CMP.mode === 'best'}" data-act="cmode" data-m="best">El mejor de cada tienda hoy</button><button class="chip" aria-pressed="${CMP.mode === 'week'}" data-act="cmode" data-m="week">Mejor día y medio</button></div></div>`;
   const W = new Map(rows.map(r => [r.p.id, CMP.mode === 'week' ? r.c : bestWeek(r.p)]));
   const top = rows[0], bestHere = rows.find(r => r.p.storeId === here);
   if (rows.length && CMP.mode === 'week') {
-    const w = top, today = rowsFor(prod.id, 'visit').find(r => r.p.storeId === here);
+    const w = top, today = rowsFor(prod.id, 'visit', true).find(r => r.p.storeId === here);
     const now = w.c.at.k === 0 && w.p.storeId === here;
     const pct = today ? (1 - w.c.best.per / today.c.best.per) * 100 : 0;
     h += `<div class="verdict ${now ? 'good' : 'warn'}"><b class="head">${now ? 'Conviene acá, hoy' : `Conviene ${dayTxt(w.c.at)} en ${esc(getStore(w.p.storeId).name)}`}</b>
@@ -670,6 +677,7 @@ function renderComparar() {
       h += `<div class="note" style="border:2px solid var(--accent)"><b>Mejor ${dayTxt(bw.at)}:</b> ${esc(presLabel(r.pres))} en ${esc(getStore(r.p.storeId).name)} ${esc(conPay(bw))}, ${money(bw.best.per)}/${u} (−${nf0.format((1 - bw.best.per / top.c.best.per) * 100)}% vs lo mejor de hoy). <button class="btn sm ghost" data-act="cmode" data-m="week">Ver por mejor día</button></div>`;
     }
   }
+  if (SIM.size) h += `<div class="simbanner"><b>El día que…</b> ${SIM.size} ${SIM.size === 1 ? 'simulación activa' : 'simulaciones activas'}${nSim < SIM.size ? ` (${nSim} en este producto)` : ''}. No se guardan. <button class="btn sm ghost" data-act="simclear">Quitar todas</button></div>`;
   if (rows.length > 1) h += sortBar('cmp');
   h += `<div class="list">` + sortList('cmp', rows).map(r => {
     const { p, pres, c } = r, diff = (c.best.per / top.c.best.per - 1) * 100;
@@ -677,14 +685,15 @@ function renderComparar() {
     const isHere = p.storeId === here;
     const alt = c.many ? (c.best.N > 1 ? `Si llevás 1: ${money(c.one.per)}/${u} (${money(c.one.total)}${cu(pres)})` : `Llevando ${c.pr.N} con la promo: ${money(c.many.per)}/${u}, ${money(c.many.total)} por ${c.pr.N} (no conviene)`) : '';
     const payTxt = c.d > 0 && c.best.payOn ? `${esc(c.pay.name)} ${c.pay.pct}%${c.pay.minimo ? ` <b>(requiere compra mínima ${money(c.pay.minimo)})</b>` : ''}` : c.d > 0 ? `${esc(c.pay.name)} no se suma a la promo` : 'sin descuento de pago';
-    return `<article class="item ${s} ${isHere ? 'here' : ''}">
+    return `<article class="item ${s} ${isHere ? 'here' : ''}${r.sim ? ' sim' : ''}">
       <div><div class="it-title">${esc(presLabel(pres))}</div>
-        <div class="it-meta"><span class="store">${esc(getStore(p.storeId).name)}${isHere ? ' · acá' : ''}</span><span class="pill ${ageCls(p.fecha)}">${ageTxt(p.fecha)}</span>${c.pr.on ? `<span class="tag">${esc(c.pr.label)}${p.hasta ? ' · hasta ' + ddmm(p.hasta) : ''}</span>` : ''}${c.pr.expired ? '<span class="pill p-neutral">promo vencida</span>' : ''}${CMP.mode === 'week' ? `<span class="pill ${c.at.k === 0 ? 'p-good' : 'p-warn'}">${c.at.k === 0 ? 'Hoy' : dayTxt(c.at).replace(/^el /, '').replace(/^./, m => m.toUpperCase())}</span>` : ''}</div></div>
+        <div class="it-meta">${r.sim ? `<span class="pill p-sim">El día que… ${esc(simLabel(r.sim))}</span>` : ''}<span class="store">${esc(getStore(p.storeId).name)}${isHere ? ' · acá' : ''}</span><span class="pill ${ageCls(p.fecha)}">${ageTxt(p.fecha)}</span>${c.pr.on ? `<span class="tag">${esc(c.pr.label)}${p.hasta ? ' · hasta ' + ddmm(p.hasta) : ''}</span>` : ''}${c.pr.expired ? '<span class="pill p-neutral">promo vencida</span>' : ''}${CMP.mode === 'week' ? `<span class="pill ${c.at.k === 0 ? 'p-good' : 'p-warn'}">${c.at.k === 0 ? 'Hoy' : dayTxt(c.at).replace(/^el /, '').replace(/^./, m => m.toUpperCase())}</span>` : ''}</div></div>
       <div class="it-price"><div class="big per">${money(c.best.per)}<small>/${u}</small></div><span class="final">${c.best.N > 1 ? `${money(c.best.total)} por ${c.best.N}` : `${money(c.best.total)}${cu(pres)}`}</span>
         ${c.best.N > 1 ? `<span class="pill p-warn">Llevando ${c.best.N}</span>` : `<span class="pill p-neutral">Llevando 1</span>`}
         <span class="small" style="font-weight:700;color:var(--${r === top ? 'good' : diff <= 5 ? 'warn' : 'bad'})">${r === top ? 'Mejor' : '+' + nf0.format(diff) + '%'}</span></div>
-      <div class="it-sub">${CMP.mode !== 'week' && weekHint(c, W.get(p.id), u) ? `<b style="color:var(--accent)">${weekHint(c, W.get(p.id), u)}</b><br>` : ''}Góndola ${money(p.precio)} · ${payTxt}${alt ? ' · ' + alt : ''}${p.hist?.length ? ` · antes ${money(p.hist[p.hist.length - 1].precio)} (${ageTxt(p.hist[p.hist.length - 1].fecha)})` : ''}</div>
-      <div class="it-actions"><button class="btn sm ghost" data-act="editprice" data-id="${p.id}">Corregir</button>${isHere ? `<button class="btn sm" data-act="addcart" data-id="${p.id}" data-q="${c.best.N}">+ Carrito (${c.best.N})</button>` : ''}</div>
+      <div class="it-sub">${!r.sim && CMP.mode !== 'week' && weekHint(c, W.get(p.id), u) ? `<b style="color:var(--accent)">${weekHint(c, W.get(p.id), u)}</b><br>` : ''}Góndola ${money(p.precio)} · ${payTxt}${alt ? ' · ' + alt : ''}${p.hist?.length ? ` · antes ${money(p.hist[p.hist.length - 1].precio)} (${ageTxt(p.hist[p.hist.length - 1].fecha)})` : ''}</div>
+      ${SIMED === p.id ? simForm(r, rows, u) : ''}
+      <div class="it-actions">${r.sim ? `<button class="btn sm ghost" data-act="simopen" data-id="${p.id}">Cambiar</button><button class="btn sm ghost" data-act="simdel" data-id="${p.id}">Quitar</button><button class="btn sm" data-act="simreal" data-id="${p.id}">Convertir en real</button>` : SIMED !== p.id ? `<button class="btn sm ghost sim-btn" data-act="simopen" data-id="${p.id}">El día que…</button>` : ''}<button class="btn sm ghost" data-act="editprice" data-id="${p.id}">Corregir</button>${isHere ? `<button class="btn sm" data-act="addcart" data-id="${p.id}" data-q="${c.best.N}">+ Carrito (${c.best.N})</button>` : ''}</div>
     </article>`;
   }).join('') + `</div>`;
   const herePres = new Set(S.prices.filter(p => p.storeId === here).map(p => p.presId));
@@ -1439,6 +1448,39 @@ function renderListas() {
   return h;
 }
 
+/* ============ "El día que…": descuentos supuestos (no se guardan) ============
+   Sirven para comparar una promo que hoy no existe contra lo mejor real (por ejemplo, otro día en otra tienda). */
+const SIM = new Map();   // priceId -> { t, v, n, m }
+let SIMED = null, SF = { t: 'pct' };
+const SIMTYPES = [['pct', '% off'], ['fixed', 'Oferta $'], ['nth', '2ª al %'], ['nxm', 'Lleva N paga M'], ['nfor', 'N por $'], ['pay', '% de pago']];
+const simPay = v => ({ id: 'sim', name: 'descuento de pago supuesto', pct: v, stores: [], dias: [] });
+function simLabel(x) { return x.t === 'pay' ? `${x.v}% de pago` : promo({ precio: 1, promo: { ...x } }).label.replace('Oferta $ 1,00', 'Oferta'); }
+function simRow(r, mode) {
+  const x = SIM.get(r.p.id); if (!x) return r;
+  if (x.t === 'pay') {
+    const c = calc(r.p, simPay(x.v), r.pres);
+    return { ...r, c: mode === 'week' && r.c.best.per < c.best.per ? r.c : c, sim: x };
+  }
+  const p2 = { ...r.p, promo: { t: x.t, v: x.v, n: x.n, m: x.m }, acum: false, hasta: '' };
+  const c = mode === 'week' ? bestWeek(p2, r.pres) : mode === 'best' ? (() => { let bc = calc(p2, NOPAY, r.pres); S.pays.forEach(pay => { const c2 = calc(p2, pay, r.pres); if (c2.best.per < bc.best.per) bc = c2; }); return bc; })() : calc(p2, getPay(S.visit.payId), r.pres);
+  return { ...r, c, sim: x };
+}
+/* % de descuento sobre el producto (o de pago) que haría falta para empatar con la mejor otra opción */
+function breakEven(r, rows) {
+  const other = rows.filter(o => o.p.id !== r.p.id)[0]; if (!other) return null;
+  const T = other.c.best.per, need = 1 - (T * r.c.C) / r.p.precio;
+  return { other, pct: need * 100 };
+}
+function simForm(r, rows, u) {
+  const be = breakEven(r, rows), f = (k, l, ph = '') => `<label class="fl" for="sf-${k}">${l}<input id="sf-${k}" data-sf="${k}" inputmode="decimal" value="${esc(SF[k] ?? '')}" placeholder="${ph}"></label>`;
+  const fields = { pct: f('v', '% de descuento sobre el producto'), fixed: f('v', 'Precio de oferta', '$ 0'), nth: f('n', 'Unidad Nº') + f('v', '% en esa unidad'), nxm: f('n', 'Llevás') + f('m', 'Pagás'), nfor: f('n', 'Cantidad') + f('v', 'Precio del combo', '$ 0'), pay: f('v', '% de descuento de pago') }[SF.t];
+  return `<div class="simbox" id="simform"><b>El día que…</b> <span class="small muted">suponé una promo para ${esc(presLabel(r.pres))} en ${esc(getStore(r.p.storeId).name)}. No se guarda.</span>
+    <div class="chips">${SIMTYPES.map(([t, l]) => `<button type="button" class="chip sm" aria-pressed="${SF.t === t}" data-act="simtype" data-t="${t}">${l}</button>`).join('')}</div>
+    <div class="grid2">${fields}</div>
+    ${be ? (be.pct <= 0 ? `<div class="small">Ya es la mejor opción sin suponer nada.</div>` : `<div class="small">Para empatar con lo mejor (${esc(presLabel(be.other.pres))} en ${esc(getStore(be.other.p.storeId).name)}, ${money(be.other.c.best.per)}/${u}) hace falta <b>${nf0.format(Math.ceil(be.pct))}% off</b> o más (o ese % de descuento de pago).</div>`) : ''}
+    <div class="btns"><button class="btn sm primary" data-act="simapply" data-id="${r.p.id}">Aplicar</button><button class="btn sm ghost" data-act="simcancel">Cancelar</button></div></div>`;
+}
+
 /* ============ navegación ============ */
 const VIEWS = ['cargar', 'comparar', 'planificar', 'carrito', 'datos'];
 const R = { cargar: renderCargar, comparar: renderComparar, planificar: renderPlanificar, carrito: renderCarrito, datos: renderDatos };
@@ -1520,6 +1562,28 @@ const ACT = {
     x.ev.lines.forEach(({ l }) => { const it = S.cart.find(c2 => c2.priceId === l.p.id); if (it) it.qty = Math.max(it.qty, l.units); else S.cart.push({ priceId: l.p.id, qty: l.units }); });
     save(); go('carrito');
     toast(x.v.at.k === 0 ? `Lista pasada al carrito de ${x.v.st.name}.` : `Lista pasada al carrito de ${x.v.st.name}. Es para ${dayTxt(x.v.at)}: hoy el descuento puede no aplicar.`, 5000);
+  },
+  simopen: el => { const x = SIM.get(el.dataset.id); SF = x ? { ...x } : { t: 'pct' }; SIMED = el.dataset.id; renderComparar(); setTimeout(() => $('#simform')?.scrollIntoView({ block: 'center' }), 50); },
+  simtype: el => { const t = el.dataset.t; SF = t === 'nth' ? { t, n: 2, v: 50 } : t === 'nxm' ? { t, n: 3, m: 2 } : t === 'nfor' ? { t, n: 2 } : { t }; renderComparar(); },
+  simcancel: () => { SIMED = null; renderComparar(); },
+  simapply: el => {
+    let x;
+    if (SF.t === 'pay') { const v = num(SF.v); if (!(v > 0 && v < 100)) return toast('Ingresá el % de descuento de pago'); x = { t: 'pay', v }; }
+    else { const r2 = normPromo(SF); if (r2.err) return toast(r2.err); x = r2.p; }
+    SIM.set(el.dataset.id, x); SIMED = null; renderComparar(); toast('Simulación aplicada: no se guarda en tus datos.');
+  },
+  simdel: el => { SIM.delete(el.dataset.id); renderComparar(); },
+  simclear: () => { SIM.clear(); SIMED = null; renderComparar(); },
+  simreal: el => {
+    const id = el.dataset.id, x = SIM.get(id), p = getPrice(id); if (!x || !p) return;
+    SIM.delete(id);
+    if (x.t === 'pay') {
+      const np = touch({ id: uid(), name: 'Nuevo medio', pct: x.v, tope: null, usado: 0, minimo: null, dias: [new Date().getDay()], stores: [p.storeId], modo: 'caja' });
+      S.pays.push(np); save(); DV.sec = 'pays'; DV.keep = true; go('datos'); setTimeout(() => { $('#pay-' + np.id)?.scrollIntoView({ block: 'center' }); $('#pn-' + np.id)?.focus(); }, 150);
+      return toast('Se creó un medio de pago con ese %: completá su nombre, días y condiciones.', 5000);
+    }
+    startEdit('price', id); ED.d.promo = { ...x }; ED.d.modo = 'new'; ED.d.fecha = todayISO(); go('datos'); scrollForm();
+    toast('Revisá la promo y su fecha "vigente hasta", y guardá.', 4500);
   },
   pltab: el => { PL.tab = el.dataset.t; renderPlanificar(); },
   pref: el => { const g = el.dataset.g, v = g === 'days' ? +el.dataset.v : el.dataset.v; PREF[g] = PREF[g].includes(v) ? PREF[g].filter(x => x !== v) : [...PREF[g], v]; savePref(); renderPlanificar(); },
@@ -1669,6 +1733,7 @@ document.addEventListener('input', e => {
   else if (t.dataset.np) { NP[t.dataset.np] = t.value; }
   else if (t.dataset.ed && ED) { ED.d[t.dataset.ed] = t.type === 'checkbox' ? t.checked : t.value; }
   else if (t.dataset.edp && ED) { ED.d.promo[t.dataset.edp] = t.value; }
+  else if (t.dataset.sf) { SF[t.dataset.sf] = t.value; }
   else if (t.dataset.planq) { PREF.q = t.value; savePref(); const c2 = $('#planList'); if (c2) c2.innerHTML = planListHTML(); }
   else if (t.dataset.prefmulti) { PREF.allowMulti = t.checked; savePref(); renderPlanificar(); }
   else if (t.dataset.q) { Q[t.dataset.q] = t.value; const c = $('#list-' + t.dataset.q); if (c) c.innerHTML = t.dataset.q === 'pres' ? presListHTML() : priceListHTML(); }
