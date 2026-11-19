@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.8.5">
+<meta name="app-version" content="v0.8.6">
 <title>Góndola Comparador</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#132033">
@@ -273,7 +273,7 @@ body.in-datos header.top{padding-bottom:8px}
 <div class="app">
   <header class="top">
     <div class="syncbar" id="syncBar" hidden aria-hidden="true"><i></i></div>
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="vmini" id="vMini"></span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.8.5</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="vmini" id="vMini"></span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.8.6</button></span></div>
     <div class="symsg" id="syncMsg" role="status" hidden></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
@@ -1441,8 +1441,36 @@ function prefChip(group, val, label) {
   const on = PREF[group].includes(val);
   return `<button type="button" class="chip sm" aria-pressed="${on}" data-act="pref" data-g="${group}" data-v="${val}">${label}</button>`;
 }
+/* Lista "Qué necesito": repara referencias rotas (producto o presentación borrados, unidas o cambiadas) */
+function sanitizeNeed() {
+  let fix = 0;
+  S.need = (S.need || []).filter(n => {
+    if (!n || !getProd(n.prodId)) { fix++; return false; }
+    const x = getPres(n.presId);
+    if (!x || x.prodId !== n.prodId || !presOk(x)) {
+      const alt = S.pres.find(y => y.prodId === n.prodId && presOk(y));
+      if (!alt) { fix++; return false; }
+      n.presId = alt.id; fix++;
+    }
+    const u = Math.round(+n.units); if (!(u >= 1)) { n.units = 1; fix++; } else if (u !== n.units) n.units = u;
+    return true;
+  });
+  if (fix) save();
+  return fix;
+}
+const errBox = (e, extra = '') => `<div class="note" style="border:2px solid var(--bad);color:var(--ink);display:grid;gap:8px"><b style="color:var(--bad)">Algo falló al mostrar esta pantalla.</b>
+  <span class="small">Copiá el detalle y pegáselo a Claude para corregirlo. Tus datos no se perdieron.</span>
+  <textarea readonly id="errTxt" style="min-height:70px">${esc(`v${document.querySelector('meta[name="app-version"]')?.content || ''} · ${e && e.message || e}\n${String(e && e.stack || '').split('\n').slice(0, 6).join('\n')}`)}</textarea>
+  <div class="btns"><button type="button" class="btn sm" data-act="errcopy">Copiar detalle</button></div>${extra}</div>`;
 function renderPlanificar() {
   const el = $('#view-planificar');
+  try { sanitizeNeed(); renderPlanificar0(el); }
+  catch (e) {
+    console.error(e);
+    el.innerHTML = errBox(e, `<div class="small">Mientras tanto podés quitar ítems de "Qué necesito":</div>${(S.need || []).map(n => `<div class="drow"><span>${esc(getProd(n.prodId)?.name || 'Producto borrado')} · ${esc(getPres(n.presId) ? presLabel(getPres(n.presId)) : 'presentación borrada')} × ${esc(String(n.units))}</span><button class="btn sm danger" data-act="needdel" data-id="${n.id}">Quitar</button></div>`).join('')}<div class="btns"><button type="button" class="btn sm ghost" data-act="pltab" data-t="sug">Ir a Sugerencias</button></div>`);
+  }
+}
+function renderPlanificar0(el) {
   const tabs = `<div class="dtabs" role="tablist" aria-label="Planificar"><button role="tab" class="chip sm" aria-pressed="${PL.tab === 'sug'}" aria-selected="${PL.tab === 'sug'}" data-act="pltab" data-t="sug">Sugerencias</button>${typeof renderListas === 'function' ? `<button role="tab" class="chip sm" aria-pressed="${PL.tab === 'list'}" aria-selected="${PL.tab === 'list'}" data-act="pltab" data-t="list">Listas de compra</button>` : ''}</div>`;
   if (PL.tab === 'list' && typeof renderListas === 'function') { el.innerHTML = tabs + renderListas(); return; }
   const nF = (PREF.stores.length ? 1 : 0) + (PREF.days.length ? 1 : 0) + (PREF.pays.length ? 1 : 0) + (PREF.maxAge !== PREF_DEF.maxAge ? 1 : 0) + (!PREF.allowMulti ? 1 : 0);
@@ -2405,6 +2433,7 @@ const ACT = {
     startEdit('price', id); ED.d.promo = { ...x }; ED.d.modo = 'new'; ED.d.fecha = todayISO(); go('datos'); scrollForm();
     toast('Revisá la promo y su fecha "vigente hasta", y guardá.', 4500);
   },
+  errcopy: () => { const t = $('#errTxt'); if (!t) return; t.select(); try { navigator.clipboard.writeText(t.value).then(() => toast('Detalle copiado'), () => { document.execCommand('copy'); toast('Detalle copiado'); }); } catch (e) { document.execCommand('copy'); toast('Detalle copiado'); } },
   pltab: el => { PL.tab = el.dataset.t; renderPlanificar(); },
   pref: el => { const g = el.dataset.g, v = g === 'days' ? +el.dataset.v : el.dataset.v; PREF[g] = PREF[g].includes(v) ? PREF[g].filter(x => x !== v) : [...PREF[g], v]; savePref(); renderPlanificar(); },
   prefage: el => { PREF.maxAge = +el.dataset.v; savePref(); renderPlanificar(); },
@@ -2552,7 +2581,7 @@ document.addEventListener('click', e => {
     if (!el.dataset.armed || Date.now() - +el.dataset.armed > 3500) { el.dataset.armed = Date.now(); el.dataset.label = el.textContent; el.textContent = 'Tocá de nuevo para confirmar'; setTimeout(() => { if (el.isConnected && el.dataset.armed) { el.textContent = el.dataset.label; delete el.dataset.armed; } }, 3500); return; }
     delete el.dataset.armed;
   }
-  ACT[el.dataset.act]?.(el, e);
+  try { ACT[el.dataset.act]?.(el, e); } catch (err) { console.error(err); toast('Algo falló: ' + (err && err.message || err) + '. Si se repite, contale a Claude.', 6000); }
 });
 document.addEventListener('input', e => {
   const t = e.target;
