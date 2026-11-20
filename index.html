@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.10.0">
+<meta name="app-version" content="v0.10.1">
 <title>Góndola Comparador</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#132033">
@@ -273,7 +273,7 @@ body.in-datos header.top{padding-bottom:8px}
 <div class="app">
   <header class="top">
     <div class="syncbar" id="syncBar" hidden aria-hidden="true"><i></i></div>
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="vmini" id="vMini"></span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.10.0</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="vmini" id="vMini"></span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.10.1</button></span></div>
     <div class="symsg" id="syncMsg" role="status" hidden></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
@@ -389,11 +389,12 @@ function payRate(pay, storeId, dow = new Date().getDay()) {
 function calc(p, pay, pres = getPres(p.presId), at = null) {
   const C = contentOf(pres), d = payRate(pay, p.storeId, at ? at.dow : undefined), pr = promo(p, at ? at.date : undefined);
   let one;
-  if (pr.on && pr.N === 1) one = { total: pr.total * (p.acum ? 1 - d : 1), payOn: !!p.acum && d > 0, promoOn: true };
+  const ac = !!p.acum || pay?.base === 'total';
+  if (pr.on && pr.N === 1) one = { total: pr.total * (ac ? 1 - d : 1), payOn: ac && d > 0, promoOn: true };
   else one = { total: p.precio * (1 - d), payOn: d > 0, promoOn: false };
   one.per = one.total / C;
   let many = null;
-  if (pr.N > 1) { many = { total: pr.total * (p.acum ? 1 - d : 1), payOn: !!p.acum && d > 0, promoOn: true }; many.per = many.total / (pr.N * C); }
+  if (pr.N > 1) { many = { total: pr.total * (ac ? 1 - d : 1), payOn: ac && d > 0, promoOn: true }; many.per = many.total / (pr.N * C); }
   const best = many && many.per < one.per - 1e-9 ? { ...many, N: pr.N } : { ...one, N: 1 };
   return { one, many, best, pr, d, C, lista: p.precio / C, pay, at: at || dayInfo(0) };
 }
@@ -718,7 +719,7 @@ function updatePreview() {
   const t = buildTemp();
   if (t.err) { box.innerHTML = `<span class="muted">${esc(t.err)}</span>`; return; }
   const pay = formPay(), c = calc(t.price, pay, t.pres), u = baseOf(t.prod).short;
-  let h = `<div class="small muted">Pagando con ${esc(pay.name)}${c.d > 0 ? ` (${pay.pct}%${pay.minimo ? ', con compra mínima ' + money(pay.minimo) : ''})` : ''}${c.d > 0 && c.pr.on && !t.price.acum ? ' · no se suma a la promo' : ''}</div>`;
+  let h = `<div class="small muted">Pagando con ${esc(pay.name)}${c.d > 0 ? ` (${pay.pct}%${pay.minimo ? ', con compra mínima ' + money(pay.minimo) : ''})` : ''}${c.d > 0 && c.pr.on && !t.price.acum && pay.base !== 'total' ? ' · no se suma a la promo' : ''}</div>`;
   const payPart = s => (s.payOn ? ` − ${pay.pct}% ${esc(pay.name)}` : c.d > 0 && s.promoOn ? ' · el descuento de pago no se suma' : '');
   const how = (s, N) => (s.promoOn ? `${esc(c.pr.label)}${payPart(s)}` : s.payOn ? `Góndola ${money(t.price.precio)}${payPart(s)}` : 'Precio de góndola, sin descuentos');
   const line = (lbl, s, N, best) => `<div class="pvl"><div class="pv-row"><span><b>${lbl}</b>${best ? ' <span class="pill p-good">Conviene</span>' : ''}</span><span class="big per">${money(s.per)}<small>/${u}</small></span></div>
@@ -814,7 +815,7 @@ function cartCalc() {
     const pr = promo(p), q = it.qty;
     const groups = pr.on ? Math.floor(q / pr.N) : 0, rem = q - groups * pr.N;
     const promoPart = groups * pr.total, remPart = rem * p.precio, sub = promoPart + remPart;
-    lista += q * p.precio; promoSave += q * p.precio - sub; base += remPart + (p.acum ? promoPart : 0);
+    lista += q * p.precio; promoSave += q * p.precio - sub; base += remPart + (p.acum || pay.base === 'total' ? promoPart : 0);
     let hint = '';
     if (pr.on && pr.N > 1 && rem > 0) {
       const add = pr.N - rem, extra = pr.total - rem * p.precio;
@@ -835,6 +836,7 @@ function renderCarrito() {
   const el = $('#view-carrito');
   if (CVIEW === 'hist') { el.innerHTML = histHTML(); return; }
   if (CVIEW === 'ticket') { el.innerHTML = ticketHTML(); return; }
+  if (CVIEW === 'manual') { const mh = manualHTML(); if (mh) { el.innerHTML = mh; return; } }
   const k = cartCalc(), store = getStore(S.visit.storeId);
   if (CVIEW === 'pay') { if (k.items.length) { el.innerHTML = cajaHTML(k); return; } CVIEW = 'cart'; }
   if (!k.items.length) { el.innerHTML = cartTopHTML() + cartPlanHTML() + `<div class="card"><h2>Carrito en ${esc(store?.name || '')}</h2><span class="muted">${cartHere().some(it => it.plan) ? 'Todavía no marcaste nada como agarrado.' : 'Vacío. Escaneá un producto, o agregalo desde Comparar o al guardar un precio.'}</span></div>`; return; }
@@ -867,7 +869,7 @@ function renderCarrito() {
   h += `<div class="card"><h3>Detalle del cálculo</h3><table class="calc">
     <tr><td>Subtotal a precio de góndola</td><td>${money(k.lista)}</td></tr>
     <tr><td>Ahorro por promos de la tienda</td><td>− ${money(k.promoSave)}</td></tr>
-    <tr><td>Base para el descuento de pago<br><span class="small muted">sin productos en promo, salvo los acumulables</span></td><td>${money(k.base)}</td></tr>
+    <tr><td>Base para el descuento de pago<br><span class="small muted">${k.pay.base === 'total' ? 'total de la compra, con los productos en promo' : 'sin productos en promo, salvo los acumulables'}</span></td><td>${money(k.base)}</td></tr>
     <tr><td>${esc(k.pay.name)} ${k.d > 0 ? k.pay.pct + '%' : '(no aplica)'}${k.capped ? ' · con tope' : ''}${k.faltaMin ? ' · falta el mínimo' : ''}${k.pay.modo === 'reintegro' && k.desc ? '<br><span class="small muted">llega como reintegro posterior</span>' : ''}</td><td>− ${money(k.desc)}</td></tr>
     <tr class="total"><td>Costo final</td><td>${money(k.final)}</td></tr></table></div>
     <div class="btns"><button class="btn" data-act="closevisit" data-confirm="1">Cerrar visita (sumar al tope usado)</button><button class="btn danger" data-act="clearcart" data-confirm="1">Vaciar</button></div>`;
@@ -983,7 +985,7 @@ function parseCoto(text) {
   return { suc, dir: dir.trim(), fecha, hora, factura, items, subtotal, total: total || Math.round((sumG - sumD) * 100) / 100, ahorro, sumG, sumD, storeD, payD, payMode, cuadra };
 }
 /* Asociaciones: sucursal → tienda; código → presentación */
-const tkStoreKey = t => 'coto:' + (t.suc || t.dir);
+const tkStoreKey = t => (t.chain || 'coto') + ':' + (t.suc || t.dir);
 function tkPres(it) {
   if (it.ean) { const x = S.pres.find(p => p.ean === it.ean); if (x) return x; }
   const id = tkmap()['plu:' + it.plu] || (it.ean && tkmap()['ean:' + it.ean]); return id ? getPres(id) : null;
@@ -996,7 +998,9 @@ function tkPromo(it) {
   if (pp.t === 'nxm' || pp.t === 'nth' || pp.t === 'nfor') return pp;
   if (pp.t === 'pct' && Math.abs(pp.v / 100 - ratio) < 0.03) return pp;
   for (const [n, m] of [[2, 1], [3, 2], [4, 3], [6, 5]]) if (Math.abs(ratio - (n - m) / n) < 0.01 && it.qty % n === 0) return { t: 'nxm', n, m };
-  const v = Math.round(ratio * 100); return v > 0 && v < 100 ? { t: 'pct', v } : { t: 'none' };
+  const v = ratio * 100;
+  if (v > 0 && v < 100 && (/^MC\s/i.test(lbl) || Math.abs(v - Math.round(v)) > 0.05) && it.qty >= 1) return { t: 'fixed', v: Math.round((it.gross - amt) / it.qty * 100) / 100 };
+  return v > 0 && v < 100 ? { t: 'pct', v: Math.round(v) } : { t: 'none' };
 }
 function tkProposals(t) {
   const sid = tkmap()[tkStoreKey(t)]; if (!sid) return [];
@@ -1006,7 +1010,7 @@ function tkProposals(t) {
     const ex = S.prices.find(p => p.presId === pres.id && p.storeId === sid);
     const same = ex && ex.precio === precio && JSON.stringify(canon(ex.promo)) === JSON.stringify(canon(promoN));
     const older = ex && (ex.fecha || '') > t.fecha;
-    return { i, it, pres, precio, promo: promoN, ex, same, older, comu: it.discs.some(d => !d.pago && /COMU/i.test(d.label)) };
+    return { i, it, pres, precio, promo: promoN, ex, same, older, comu: it.discs.some(d => !d.pago && /COMU|CLUBDIA|^MC\s/i.test(d.label)) };
   }).filter(Boolean);
 }
 /* Control contra el carrito (lo agarrado de esa tienda) */
@@ -1040,26 +1044,271 @@ function cajaHTML(k) {
       <div class="tiles"><div class="tile main"><span class="lbl">Deberías pagar</span><span class="val">${money(k.caja)}</span></div><div class="tile"><span class="lbl">Unidades</span><span class="val">${nfx.format(u)}</span></div></div>
       <div class="small">Pagá con <b>${esc(k.pay.name)}</b>${k.d > 0 ? ` (${k.pay.pct}%${k.pay.modo === 'reintegro' ? ', reintegro' : ''})` : ''}.</div>
       ${av.length ? `<div class="note" style="border:2px solid var(--warn);color:var(--ink)"><b>Antes de pagar</b><ul style="margin:6px 0 0;padding-left:18px">${av.map(a => `<li>${a}</li>`).join('')}</ul></div>` : '<div class="small" style="color:var(--good);font-weight:700">Nada para revisar antes de pagar.</div>'}
-    </div>${ticketInHTML()}`;
+    <div class="btns"><button type="button" class="btn ghost" data-act="cview" data-v="manual">Control manual (otro comercio)</button></div></div>${ticketInHTML()}`;
 }
 function ticketInHTML() {
   return `<div class="card"><h3>Pegá el ticket</h3>
-    <div class="small muted">Abrí tu ticket electrónico de Coto, seleccioná todo el texto, copialo y pegalo acá. La app controla lo cobrado, te propone actualizar precios y guarda la compra. Por ahora lee tickets de Coto; para otros comercios, el control manual llega en la próxima versión.</div>
+    <div class="small muted"><b>Coto:</b> abrí el ticket electrónico, seleccioná todo el texto y copialo. <b>DIA y Carrefour:</b> sacale una foto al ticket completo y usá "copiar texto" de la foto (Google Lens en Android, mantener apretado en iPhone). Pegalo acá: la app controla lo cobrado, te propone actualizar precios y guarda la compra. Para otros comercios, usá el control manual desde "Ir a pagar".</div>
     <textarea id="tkTxt" data-tktxt="1" placeholder="TU TICKET DE COMPRA…" style="min-height:120px">${esc(TKTXT)}</textarea>
     <div class="btns"><button type="button" class="btn primary" data-act="tkread">Leer ticket</button>${TKTXT ? '<button type="button" class="btn ghost" data-act="tkclear">Borrar</button>' : ''}</div></div>`;
 }
+
+/* ---------- Tickets de foto (DIA y Carrefour): lectura tolerante a los errores del reconocimiento de texto ----------
+   Cada producto se ancla en su código de barras; cantidad, precio e importe se eligen por aritmética (cantidad × precio =
+   importe) y todo se verifica contra las sumas del pie. Lo dudoso se marca para revisar antes de guardar. */
+const OCRMAP = { 'а': 'a', 'е': 'e', 'о': 'o', 'р': 'p', 'с': 'c', 'х': 'x', 'у': 'y', 'к': 'k', 'м': 'm', 'т': 't', 'н': 'h', 'в': 'b', 'г': 'r', 'А': 'A', 'Е': 'E', 'О': 'O', 'Р': 'P', 'С': 'C', 'Х': 'X', 'У': 'Y', 'К': 'K', 'М': 'M', 'Т': 'T', 'Н': 'H', 'В': 'B' };
+const ocrNorm = t => String(t || '').replace(/[Ѐ-ӿ]/g, ch => OCRMAP[ch] || ch).replace(/ /g, ' ');
+function onum(tok) {   // el último separador seguido de 1 a 3 dígitos es el decimal; los demás, de miles
+  let t = String(tok).replace(/[\s$]/g, ''); const neg = t.startsWith('-'); t = t.replace(/^-+/, '');
+  const m = t.match(/^(\d+(?:[.,]\d+)*?)(?:[.,](\d{1,3}))?$/); if (!m) return NaN;
+  const v = parseFloat(m[1].replace(/[.,]/g, '') + (m[2] ? '.' + m[2] : ''));
+  return neg ? -v : v;
+}
+const DISCRX = /^(?:MC\s|\d+\s*%|\d+\s*[xX]\s*(?:dto|un[i1l])|\d+\s*[xX]\s*\$|\d+X\$)|CLUBDIA|COMU\+?\*|^\*/i;
+const SECRX = /^(Almac[eé]n|F[il]ambrer[ií]a|Carnicer[ií]a|Verduler[ií]a|Fruter[ií]a|Panader[ií]a|L[aá]cteos|Bebidas|Congelados|Limpieza|Perfumer[ií]a|Hogar(?: Bazar)?|Bazar|Mascotas|Electro\w*|Textil|Rotiser[ií]a|Pescader[ií]a|Quesos)$/i;
+const HEADRX = /IMPORTE|Cajero|NTrx|Hora\b|Descripci[oó]n|CONSUMIDOR FINAL|Cant\.?\/Precio/i;
+const QTYRX = /\d\s*[xX]\s*\$?\s*\d|^[xX]\s*\d|\d\s*[xX]$/;
+const isQty = l => QTYRX.test(l) && /\d[.,]\d{2}/.test(l) && !/[A-Za-zÁÉÍÓÚÑ]{4,}/.test(l.replace(/\(.*?\)/g, ''));
+const MONEYLINE = /^-?\$?\s?-?\d+(?:[.,]\d{3})*[.,]\d{2}$/;
+function parseOCR(text, chain) {
+  let L = ocrNorm(text).split(/\r?\n/).map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  // Renglones fusionados: "1 x 2399,00 (21.00%) 35%dto-MATARA-FIDE" → dos renglones
+  L = L.flatMap(l => /\d\s*[xX]\s*\d/.test(l) && /\(\s*\d{1,2}[.,]\d/.test(l) ? l.replace(/\s+(?=\d{1,2}\s*[%xX]\s*(?:dto|un[i1l])|MC\s)/i, '\n').split('\n') : [l]);
+  const end = (i => (i < 0 ? L.length : i))(L.findIndex(l => /^SUBTOTAL/i.test(l)));
+  const isCode = l => /^\d{8,14}$/.test(l.replace(/[\s_]/g, ''));
+  const E = []; for (let i = 0; i < end; i++) if (isCode(L[i])) E.push(i);
+  if (!E.length) return { err: 'No se encontraron productos (códigos de barras) en el texto. Revisá que esté el ticket completo.' };
+  let start = 0; for (let i = 0; i < E[0]; i++) if (HEADRX.test(L[i])) start = i + 1;
+  const regs = [];
+  if (chain === 'carrefour') { let a = start; E.forEach(e => { regs.push({ lines: L.slice(a, e), tail: [], code: L[e] }); a = e + 1; }); }
+  else {
+    // DIA: el descuento de un producto aparece después de su código
+    let a = start;
+    E.forEach((e, k) => {
+      const lines = L.slice(a, e); const prev = regs[k - 1];
+      if (prev) { while (lines.length && (DISCRX.test(lines[0]) || (MONEYLINE.test(lines[0]) && prev.tail.length && !MONEYLINE.test(prev.tail.at(-1))))) prev.tail.push(lines.shift()); }
+      regs.push({ lines, tail: [], code: L[e] }); a = e + 1;
+    });
+    regs.at(-1).tail.push(...L.slice(E.at(-1) + 1, end));
+  }
+  const items = regs.map(r => ocrItem(r, chain)).filter(Boolean);
+  const foot = L.slice(end).join('\n'), head = L.slice(0, E[0]).join('\n'), all = L.join('\n');
+  const fm = rx => { const m = foot.match(rx); return m ? Math.abs(onum(m[1])) : NaN; };
+  const subtotal = fm(/SUBTOTAL[^\d$\n]*:?\s*\n?\s*\$?\s*([\d.,]+)/i);
+  const descTot = chain === 'dia' ? fm(/DESCUENTOS:?\s*\n?\s*-?\$?\s*([\d.,]+)/i) : fm(/(?:^|\n)AHORRO\s*\n?\s*\$?\s*([\d.,]+)/i);
+  const total = fm(/(?:^|\n)TOTAL\s*\n?\s*\$?\s*\n?\s*([\d.,]+)/i);
+  let suc = '', dir = '', fecha = todayISO(), hora = '', factura = '', payName = '';
+  if (chain === 'dia') {
+    suc = ((head.match(/TDA:?\s*0*(\d+)/i) || [])[1]) || '';
+    dir = (L.find((l, i) => /CUIT/i.test(L[i - 1] || '') && /\d/.test(l) && /[A-Z]/i.test(l)) || '');
+    const f = all.match(/(\d{2})-(\d{2})-(\d{4})\s+(\d{2}:\d{2})/); if (f) { fecha = `${f[3]}-${f[2]}-${f[1]}`; hora = f[4]; }
+    factura = ((all.match(/NUM\.?\s*([\d-]+)/i) || [])[1]) || '';
+    payName = ((foot.match(/RECIBI\/?MOS\s*\n?\s*([A-ZÁÉÍÓÚ][A-ZÁÉÍÓÚ \/]{2,30}?)(?:\s*\$|\n|$)/i) || [])[1] || '').trim();
+  } else {
+    const sm = head.match(/(?:^|\n)(\d{1,4})\s+([A-Z][A-Z0-9 .]+)/); if (sm) { suc = sm[1]; dir = sm[2].trim(); }
+    const f = all.match(/Fecha\s*:?\s*(\d{1,2})\/(\d{1,2})\/(\d{2,4})/i); if (f) fecha = `${f[3].length === 2 ? '20' + f[3] : f[3]}-${f[2].padStart(2, '0')}-${f[1].padStart(2, '0')}`;
+    hora = ((all.match(/Hora\s*:?\s*([\d:]+)/i) || [])[1]) || '';
+    const pv = (all.match(/P\.?\s*V\.?\s*N\w*\.?\s*:?\s*(\d+)/i) || [])[1], nt = (all.match(/Nro\s*T\.?\s*(\d+)/i) || [])[1];
+    factura = [pv, nt].filter(Boolean).join('-');
+    payName = ((foot.match(/(?:^|\n)Pago\s+([A-ZÁÉÍÓÚ][A-ZÁÉÍÓÚa-z0-9 ]{1,30})/) || [])[1] || '').trim();
+  }
+  const cuotas = +((foot.match(/Cantidad de cuotas[^\d\n]*\n?\s*(\d+)/i) || [])[1] || 0) || null;
+  const t = { chain, ocr: true, suc, dir, fecha, hora, factura, items, subtotal, descTot, total, payName, cuotas };
+  return tkSums(t);
+}
+function ocrItem(r, chain) {
+  const discs = [], rest = [];
+  const all = r.lines, tail = r.tail || [];
+  const takeDiscs = (arr, out) => {
+    const used = new Set();
+    for (let i = 0; i < arr.length; i++) {
+      if (used.has(i)) continue;
+      const l = arr[i];
+      if (DISCRX.test(l) && /[A-Za-z]/.test(l) && !isQty(l)) {
+        const m = l.match(/(-?\$?\s?\d+[.,]\d{2})\s*$/), lbl = (m ? l.slice(0, m.index) : l).trim();
+        let amt = m ? Math.abs(onum(m[1])) : NaN;
+        if (!m) {
+          // el monto del descuento suele venir con signo menos; si no, es el renglón siguiente
+          const j = [i + 1, i + 2].find(j => !used.has(j) && /^-/.test(arr[j] || '') && MONEYLINE.test(arr[j]));
+          const k = j ?? (MONEYLINE.test(arr[i + 1] || '') && !used.has(i + 1) ? i + 1 : null);
+          if (k != null) { amt = Math.abs(onum(arr[k])); used.add(k); }
+        }
+        discs.push({ label: lbl.replace(/(\d+)\s*[xX]\s*(dto|un[i1l])/i, '$1%$2'), amt });
+      } else if (out) out.push(l);
+    }
+    return used;
+  };
+  { const u = takeDiscs(all, null); all.forEach((l, i) => { if (!u.has(i) && !(DISCRX.test(l) && /[A-Za-z]/.test(l) && !isQty(l))) rest.push(l); }); } takeDiscs(tail, null);
+  // Carrefour: el importe del descuento puede venir en el renglón siguiente al del importe del producto
+  const warn = [];
+  // Números del producto (sin el % de IVA); se separan números pegados ("3,001150.00")
+  const toks = [];
+  rest.forEach((l, li) => {
+    const c = l.replace(/\(\s*\d{1,2}[.,]\d{1,2}\s*%?\s*\)/g, ' ').replace(/\d{1,2}[.,]\d{2}\s*%/g, ' ').replace(/(\d[.,]\d{2})(?=\d+[.,]\d{2})/g, '$1 '), letras = /[A-Za-zÁÉÍÓÚÑ]{4,}/.test(c);
+    const rx = /\$?\s?(\d+(?:[.,]\d+)?)/g; let m;
+    while ((m = rx.exec(c))) {
+      const v = onum(m[1]); if (!(v > 0)) continue;
+      if (letras && !/[.,]\d{2}$/.test(m[1])) continue;   // números de la descripción ("X 25 GRS")
+      const ctx = c.slice(Math.max(0, m.index - 2), m.index + m[0].length + 2);
+      toks.push({ v, x: /[xX]/.test(ctx), li, money: /[.,]\d{2}$/.test(m[1]) });
+    }
+  });
+  let best = null;
+  for (let i = 0; i < toks.length; i++) for (let j = 0; j < toks.length; j++) for (let k = 0; k < toks.length; k++) {
+    if (i === j || j === k || i === k) continue;
+    const a = toks[i].v, b = toks[j].v, c = toks[k].v;
+    if (a > 500 || !toks[k].money) continue;
+    if (Math.abs(a * b - c) > Math.max(0.02, c * 0.0005)) continue;
+    const sc = (b !== c ? 2 : 0) + (toks[i].x ? 2 : 0) + (toks[j].x ? 1 : 0) + (Number.isInteger(a) || a < 50 ? 0 : -3);
+    if (!best || sc > best.sc) best = { sc, q: a, u: b, g: c };
+  }
+  if (!best) {
+    const xs = toks.filter(t => t.x);
+    if (xs.length >= 2) { const q = Math.min(xs[0].v, xs[1].v), u = Math.max(xs[0].v, xs[1].v); best = { q, u, g: Math.round(q * u * 100) / 100 }; warn.push('importe recalculado (cantidad × precio)'); }
+  }
+  // Descripción: Carrefour la pone antes de la cantidad; DIA, después
+  const isDesc = l => /[A-Za-zÁÉÍÓÚÑ]{3,}/.test(l) && !SECRX.test(l) && !isQty(l) && !MONEYLINE.test(l);
+  const qi = rest.findIndex(l => isQty(l)), D = rest.map((l, i) => ({ l, i })).filter(x => isDesc(x.l));
+  let d = chain === 'carrefour' ? (D.filter(x => qi < 0 || x.i < qi).pop() || D[0]) : (D.find(x => qi < 0 || x.i > qi) || D[0]);
+  if (D.length > 1) warn.push('descripción dudosa');
+  const sec = rest.find(l => SECRX.test(l)) || '';
+  const desc = (d ? d.l : '').replace(/\(\s*\d{1,2}[.,]\d{1,2}\s*%?\s*\)/g, '').replace(/\s+\d+[.,]\d{2}$/, '').trim();
+  if (!desc) warn.push('sin descripción');
+  const bar = r.code.replace(/[\s_]/g, '').replace(/^0+/, '');
+  const peso = /^25\d{10,11}$/.test(bar) || (best && !Number.isInteger(best.q) && best.q < 50);
+  if (!best) { warn.push('no se pudo leer cantidad y precio'); best = { q: 1, u: NaN, g: NaN }; }
+  discs.forEach(x => { if (!(x.amt > 0)) { x.amt = 0; warn.push('falta el monto de un descuento'); } x.pago = PAYRX.test(x.label) || S.pays.some(p => p.name && fold(x.label).includes(fold(p.name))); });
+  return { desc: desc || '(sin descripción)', gross: best.g, qty: best.q, unit: best.u, discs, plu: bar, bar, ean: peso ? '' : eanFrom(bar), peso: !!peso, sec, warn };
+}
+/* Sumas y verificación (se recalculan al corregir en la revisión) */
+function tkSums(t) {
+  const its = t.items, sumG = its.reduce((a, x) => a + (x.gross || 0), 0), sumD = its.reduce((a, x) => a + x.discs.reduce((b, d) => b + (d.amt || 0), 0), 0);
+  const storeD = its.reduce((a, x) => a + x.discs.filter(d => !d.pago).reduce((b, d) => b + (d.amt || 0), 0), 0), payD = sumD - storeD;
+  if (!(t.total > 0)) t.total = Math.round((sumG - sumD) * 100) / 100;
+  const tol = Math.max(2, its.length * 0.02), near = (a, b) => a > 0 && Math.abs(a - b) <= tol;
+  t.payMode = !payD ? '' : near(t.total, sumG - sumD) ? 'caja' : near(t.total, sumG - storeD) ? 'reintegro' : 'caja';
+  t.cuadra = (near(t.total, sumG - sumD) || (payD > 0 && near(t.total, sumG - storeD))) && (!(t.subtotal > 0) || Math.abs(t.subtotal - sumG) <= tol) && (!(t.descTot > 0) || Math.abs(t.descTot - sumD) <= tol);
+  return Object.assign(t, { sumG, sumD, storeD, payD });
+}
+function parseTicket(text) {
+  const n = ocrNorm(text);
+  if (/COTO\s*C\.?I\.?C\.?S\.?A|TU TICKET DE COMPRA/i.test(n)) { const t = parseCoto(text); if (!t.err) { t.chain = 'coto'; t.payName = ((n.match(/TU FORMA DE PAGO\s*\n?\s*([A-ZÁÉÍÓÚ][A-ZÁÉÍÓÚ \/]{2,30}?)\s*\$/i) || [])[1] || '').trim(); tkSums(t); } return t; }
+  if (/DIA ARGENTINA|CLUBDIA/i.test(n)) return parseOCR(text, 'dia');
+  if (/CARREFOUR|INC\s*S\.?A/i.test(n)) return parseOCR(text, 'carrefour');
+  return { err: 'Este ticket no es de Coto, DIA ni Carrefour. Usá el control manual.', manual: true };
+}
+const CHAIN = { coto: 'Coto', dia: 'DIA', carrefour: 'Carrefour' };
+/* Medio de pago del ticket → tus medios (se recuerda) y reintegro estimado */
+const tkPayKey = t => 'pay:' + (t.chain || 'coto') + ':' + fold(t.payName || '');
+function tkPayId(t) {
+  const m = tkmap()[tkPayKey(t)]; if (m !== undefined) return m;
+  const w = fold(t.payName || '').split(/\s+/).filter(x => x.length >= 3 && !/tarjeta|pago|cre|des/.test(x));
+  const byName = w.length ? S.pays.find(p => w.some(x => fold(p.name).includes(x))) : null;
+  const byLabel = tkPays(t).length ? S.pays.find(p => tkPays(t).some(x => fold(x.label).includes(fold(p.name)))) : null;
+  return (byLabel || byName)?.id || '';
+}
+function tkEstimate(t, sid) {
+  const pay = S.pays.find(p => p.id === tkPayId(t)); if (!pay || !(pay.pct > 0)) return null;
+  if (t.payD > 0) return { pay, amt: Math.round(t.payD * 100) / 100, visible: true, modo: t.payMode || pay.modo };
+  const dow = new Date(t.fecha + 'T12:00:00').getDay(), rate = payRate(pay, sid, dow);
+  if (!rate) return { pay, amt: 0, why: 'ese día o en esa tienda el beneficio no aplicaba' };
+  const base = pay.base === 'total' ? t.total : t.items.filter(it => !it.discs.some(d => !d.pago)).reduce((a, it) => a + it.gross, 0);
+  if (pay.minimo && base < pay.minimo) return { pay, amt: 0, base, why: `no se llegó a la compra mínima de ${money(pay.minimo)}` };
+  const rest = pay.tope ? Math.max(0, pay.tope - (pay.usado || 0)) : Infinity, raw = base * rate;
+  return { pay, amt: Math.round(Math.min(raw, rest) * 100) / 100, base, capped: raw > rest, modo: pay.modo };
+}
+/* ---------- Control manual (cualquier comercio) ---------- */
+let MAN = null;
+function manualHTML() {
+  const k = cartCalc(), st = getStore(S.visit.storeId);
+  if (!k.items.length) { CVIEW = 'cart'; return ''; }
+  const M = MAN ||= { total: '', step: 'total', l: {}, extra: [] };
+  let h = `<div class="btns"><button type="button" class="btn sm ghost" data-act="cview" data-v="pay">← En la caja</button></div>
+    <div class="card"><h2 style="margin:0">Control manual · ${esc(st?.name || '')}</h2><div class="small muted">Para tickets que la app no lee. Esperabas pagar <b>${money(k.caja)}</b>.</div>
+      <div class="row"><input id="manTot" data-manf="total" inputmode="decimal" class="price-in" value="${esc(M.total)}" placeholder="Total del ticket" aria-label="Total del ticket"><button type="button" class="btn primary" data-act="mancmp">Comparar</button></div></div>`;
+  if (M.step === 'total') return h;
+  const tot = num(M.total), dif = tot - k.caja;
+  if (Math.abs(dif) <= 1 && M.step !== 'lines') return h + `<div class="card"><div class="pv-row"><b>Coincide con lo esperado</b><span class="pill p-good">✓</span></div><button type="button" class="btn primary block" data-act="mansave">Guardar compra</button></div>`;
+  M.step = 'lines';
+  let cob = 0;
+  h += `<div class="card"><div class="pv-row"><span>Te cobraron <b>${money(tot)}</b> · esperabas <b>${money(k.caja)}</b></span><span class="pill ${dif > 0 ? 'p-bad' : 'p-good'}">${dif > 0 ? '+' : '−'}${money(Math.abs(dif))}</span></div>
+    <div class="small muted">Recorré el ticket y marcá cada producto. Si el precio es distinto, tipeá el que figura (por unidad).</div>
+    ${k.items.map(x => { const pr = getPres(x.p.presId), L2 = M.l[x.p.id] ||= { st: 'ok', cob: '' }; cob += L2.st === 'no' ? 0 : L2.st === 'dif' && num(L2.cob) > 0 ? num(L2.cob) * x.it.qty - (x.p.precio * x.it.qty - x.sub) : x.sub;
+      return `<div class="paybox"><b>${esc(presLabel(pr))}</b><span class="small">× ${x.it.qty} · esperabas ${money(x.p.precio)}${cu(pr)}${x.pr.on ? ' · ' + esc(x.pr.label) : ''}</span>
+        <div class="chips"><button type="button" class="chip sm" aria-pressed="${L2.st === 'ok'}" data-act="manst" data-id="${x.p.id}" data-v="ok">✓ Igual</button><button type="button" class="chip sm" aria-pressed="${L2.st === 'dif'}" data-act="manst" data-id="${x.p.id}" data-v="dif">≠ Distinto</button><button type="button" class="chip sm" aria-pressed="${L2.st === 'no'}" data-act="manst" data-id="${x.p.id}" data-v="no">No lo cobraron</button></div>
+        ${L2.st === 'dif' ? `<input data-manl="${x.p.id}" inputmode="decimal" value="${esc(L2.cob)}" placeholder="Precio por unidad que figura" aria-label="Precio cobrado">` : ''}</div>`; }).join('')}
+    <h3 style="margin:8px 0 0">Cobros que no estaban en el carrito</h3>
+    ${M.extra.map((e, i) => { cob += num(e.monto) || 0; return `<div class="row"><input data-mane="${i}" data-k="desc" value="${esc(e.desc)}" placeholder="Qué es" aria-label="Descripción"><input data-mane="${i}" data-k="monto" inputmode="decimal" value="${esc(e.monto)}" placeholder="$" aria-label="Monto" style="max-width:110px"><button type="button" class="btn sm ghost" data-act="manxdel" data-i="${i}" aria-label="Quitar">×</button></div>`; }).join('')}
+    <button type="button" class="btn sm ghost" data-act="manxadd" style="justify-self:start">+ Agregar cobro</button>
+    <div class="small">Con lo que marcaste, el ticket debería sumar unos <b>${money(cob - (k.pay.modo === 'reintegro' ? 0 : k.desc))}</b>.</div>
+    <button type="button" class="btn primary block" data-act="mansave">Guardar compra${Object.values(M.l).some(l => l.st === 'dif' && num(l.cob) > 0) ? ' y actualizar los precios distintos' : ''}</button></div>`;
+  return h;
+}
+function manSave() {
+  const k = cartCalc(), sid = S.visit.storeId, M = MAN; if (!M || !k.items.length) return;
+  const tot = num(M.total); if (!(tot > 0)) return toast('Ingresá el total del ticket');
+  const hoy = todayISO(); let act = 0;
+  const lines = k.items.map(x => {
+    const L2 = M.l[x.p.id] || { st: 'ok' }, pr = getPres(x.p.presId), cobU = L2.st === 'dif' && num(L2.cob) > 0 ? num(L2.cob) : x.p.precio;
+    if (L2.st === 'dif' && cobU !== x.p.precio) { x.p.hist = [...(x.p.hist || []), { precio: x.p.precio, fecha: x.p.fecha }].slice(-12); x.p.precio = cobU; x.p.fecha = hoy; x.p.src = ''; touch(x.p); act++; }
+    return { desc: presLabel(pr), ean: pr.ean || '', qty: L2.st === 'no' ? 0 : x.it.qty, unit: cobU, gross: L2.st === 'no' ? 0 : cobU * x.it.qty, discs: x.sub < x.p.precio * x.it.qty ? [{ label: x.pr.label, amt: Math.round((x.p.precio * x.it.qty - x.sub) * 100) / 100 }] : [], presId: pr.id };
+  }).concat(M.extra.filter(e => num(e.monto) > 0).map(e => ({ desc: e.desc || 'Otro cobro', ean: '', qty: 1, unit: num(e.monto), gross: num(e.monto), discs: [], presId: null })));
+  const pay = k.pay.id !== 'none' && k.desc > 0 ? k.pay : null;
+  if (pay && pay.tope) { pay.usado = (pay.usado || 0) + k.desc; touch(pay); }
+  compras().unshift({ id: uid(), fuente: 'manual', chain: '', fecha: hoy, hora: new Date().toTimeString().slice(0, 5), storeId: sid, suc: '', factura: '', total: tot, subtotal: k.lista, ahorroPromo: Math.round(k.promoSave * 100) / 100, ahorroPago: pay ? Math.round(k.desc * 100) / 100 : 0,
+    payMode: pay ? pay.modo : '', payId: pay?.id || '', dif: Math.round((tot - k.caja) * 100) / 100, lines,
+    reintegros: pay && pay.modo === 'reintegro' ? [reintRec(pay, k.desc, hoy, true)] : [] });
+  S.cart = S.cart.filter(it => it.plan || getPrice(it.priceId)?.storeId !== sid);
+  MAN = null; save(); CVIEW = 'hist'; HMES = null; render(); window.scrollTo(0, 0);
+  toast(`Compra guardada${act ? ` · ${act} ${act === 1 ? 'precio actualizado' : 'precios actualizados'}` : ''}`, 4000);
+}
+const addDays = (iso, n) => { const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n); return isoOf(d); };
+const reintRec = (pay, amt, fecha, est) => ({ label: pay.name, payId: pay.id, amt: Math.round(amt * 100) / 100, estimado: !!est, estado: pay.dev === 0 ? 'recibido' : 'pendiente', fechaEsp: pay.dev != null && pay.dev !== '' ? addDays(fecha, +pay.dev) : '' });
+/* ---------- Mis compras: resumen por mes y reintegros ---------- */
+let HMES = null;
+function histSummaryHTML(L) {
+  const meses = [...new Set(L.map(c => c.fecha.slice(0, 7)))].sort().reverse();
+  if (HMES === null || (HMES && !meses.includes(HMES))) HMES = meses[0] || '';
+  const M = L.filter(c => !HMES || c.fecha.startsWith(HMES));
+  const sum = f => M.reduce((a, c) => a + (f(c) || 0), 0);
+  const gasto = sum(c => c.total), aP = sum(c => c.ahorroPromo), aPay = sum(c => c.ahorroPago), dif = sum(c => (c.dif > 0 ? c.dif : 0));
+  const pend = L.flatMap(c => (c.reintegros || []).map((r, i) => ({ c, r, i }))).filter(x => x.r.estado === 'pendiente');
+  const porT = {}; M.forEach(c => { const k = c.storeId || '?'; (porT[k] ||= { n: 0, t: 0 }); porT[k].n++; porT[k].t += c.total; });
+  const mesTxt = m => { const [y, mm] = m.split('-'); return ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'][+mm - 1] + ' ' + y.slice(2); };
+  return `${meses.length > 1 ? `<div class="dtabs">${meses.map(m => `<button type="button" class="chip sm" aria-pressed="${HMES === m}" data-act="hmes" data-m="${m}">${mesTxt(m)}</button>`).join('')}<button type="button" class="chip sm" aria-pressed="${HMES === ''}" data-act="hmes" data-m="">Todo</button></div>` : ''}
+    <div class="tiles"><div class="tile main"><span class="lbl">Gastado${HMES ? ' en ' + mesTxt(HMES) : ''}</span><span class="val">${money(gasto)}</span></div>
+      <div class="tile"><span class="lbl">Ahorro</span><span class="val" style="color:var(--good)">${money(aP + aPay)}</span></div>
+      <div class="tile"><span class="lbl">Reintegros pendientes</span><span class="val">${money(pend.reduce((a, x) => a + x.r.amt, 0))}</span></div></div>
+    <div class="card" style="gap:6px"><div class="small">Promos de las tiendas: <b>${money(aP)}</b> · medios de pago: <b>${money(aPay)}</b>${dif ? ` · cobrado de más detectado: <b style="color:var(--bad)">${money(dif)}</b>` : ''}</div>
+      ${Object.entries(porT).sort((a, b) => b[1].t - a[1].t).map(([sid, x]) => `<div class="pv-row small"><span>${esc(getStore(sid)?.name || 'Sin tienda')} · ${x.n} ${x.n === 1 ? 'compra' : 'compras'}</span><b>${money(x.t)}</b></div>`).join('')}</div>
+    ${pend.length ? `<div class="card"><h3>Reintegros pendientes (${pend.length})</h3>${pend.map(({ c, r, i }) => `<div class="paybox"><b>${esc(r.label)} · ${money(r.amt)}${r.estimado ? ' <span class="small muted">(estimado)</span>' : ''}</b>
+      <span class="small">Compra del ${ddmm(c.fecha)} en ${esc(getStore(c.storeId)?.name || '')}${r.fechaEsp ? ` · esperado para el ${ddmm(r.fechaEsp)}${r.fechaEsp < todayISO() ? ' <b style="color:var(--warn)">(vencido)</b>' : ''}` : ''}</span>
+      <div class="row"><input id="ri-${c.id}-${i}" inputmode="decimal" value="${esc(nfx.format(r.amt))}" aria-label="Monto recibido" style="max-width:140px"><button type="button" class="btn sm primary" data-act="rok" data-c="${c.id}" data-i="${i}">Recibido</button><button type="button" class="btn sm ghost" data-act="rno" data-c="${c.id}" data-i="${i}">No llegó</button></div></div>`).join('')}</div>` : ''}`;
+}
+
 function ticketHTML() {
   const t = TK; if (!t) return ticketInHTML();
-  const sid = tkmap()[tkStoreKey(t)], dup = compras().find(c => c.factura && c.factura === t.factura && c.suc === t.suc);
+  const sid = tkmap()[tkStoreKey(t)], dup = compras().find(c => c.factura && c.factura === t.factura && (c.chain || 'coto') === (t.chain || 'coto') && c.suc === t.suc);
+  const warnN = t.items.filter(it => it.warn?.length).length;
   let h = `<div class="btns"><button type="button" class="btn sm ghost" data-act="tkback">← Volver</button></div>
-    <div class="card"><h2 style="margin:0">Ticket ${esc(t.factura || '')}</h2>
-      <div class="small muted">Coto suc. ${esc(t.suc)}${t.dir ? ' · ' + esc(t.dir) : ''} · ${ddmm(t.fecha)}${t.hora ? ' ' + esc(t.hora) : ''} · ${t.items.length} productos</div>
+    <div class="card"><h2 style="margin:0">Ticket ${esc(CHAIN[t.chain] || '')} ${esc(t.factura || '')}</h2>
+      <div class="small muted">${esc(CHAIN[t.chain] || '')} suc. ${esc(t.suc)}${t.dir ? ' · ' + esc(t.dir) : ''} · ${ddmm(t.fecha)}${t.hora ? ' ' + esc(t.hora) : ''} · ${t.items.length} productos${t.payName ? ' · pagado con ' + esc(t.payName) : ''}${t.cuotas > 1 ? ` en ${t.cuotas} cuotas` : ''}</div>
       <div class="tiles"><div class="tile main"><span class="lbl">Total cobrado</span><span class="val">${money(t.total)}</span></div><div class="tile"><span class="lbl">Ahorro en el ticket</span><span class="val" style="color:var(--good)">${money(t.sumD)}</span></div></div>
       ${t.payMode === 'reintegro' ? `<div class="small"><b>${money(t.payD)} de descuento de pago no se restaron del total:</b> se devuelven después como reintegro.</div>` : ''}
-      ${t.cuadra ? '<div class="small" style="color:var(--good);font-weight:700">✓ Se leyó completo: la suma de los productos coincide con el total.</div>' : '<div class="small" style="color:var(--warn);font-weight:700">La suma de los productos no coincide exactamente con el total: puede faltar parte del texto. Revisá antes de guardar.</div>'}
+      ${t.cuadra ? '<div class="small" style="color:var(--good);font-weight:700">✓ Las sumas cierran: productos, descuentos y total coinciden.</div>' : `<div class="small" style="color:var(--warn);font-weight:700">Las sumas no cierran (productos ${money(t.sumG)}${t.subtotal > 0 ? ' vs subtotal ' + money(t.subtotal) : ''} · descuentos ${money(t.sumD)}${t.descTot > 0 ? ' vs ' + money(t.descTot) : ''}). Revisá los renglones marcados.</div>`}
       ${dup ? `<div class="note" style="border:2px solid var(--warn);color:var(--ink)">Este ticket ya está guardado (compra del ${ddmm(dup.fecha)}). Podés revisarlo, pero no se vuelve a guardar.</div>` : ''}
       <label class="fl" for="tkStore">Tu tienda para esta sucursal<select id="tkStore" data-chg="tkstore"><option value="">Elegí…</option>${activeStores().slice().sort((a, b) => a.name.localeCompare(b.name, 'es')).map(s => `<option value="${s.id}" ${s.id === sid ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></label>
       ${sid ? '' : '<div class="small muted">Se recuerda para los próximos tickets de esta sucursal.</div>'}</div>`;
+  // Revisión de lo leído (tickets de foto, o renglones dudosos)
+  if (t.ocr || warnN) {
+    h += `<details class="card" ${t.ocr && (!t.cuadra || warnN) ? 'open' : ''}><summary><b>Revisá lo leído</b> <span class="small muted">${warnN ? `· ${warnN} ${warnN === 1 ? 'renglón dudoso' : 'renglones dudosos'}` : '· todo cierra'}</span></summary>
+      <div class="small muted" style="margin:6px 0">${t.ocr ? 'Viene de una foto: el reconocimiento de texto puede equivocarse. ' : ''}Corregí cantidad, precio o descuento si no coinciden con el ticket; las sumas se recalculan.</div>
+      ${t.items.map((it, i) => { const nm = tkPres(it) ? presLabel(tkPres(it)) : titleCase(it.desc); return `<div class="paybox" ${it.warn?.length ? 'style="border:2px solid var(--warn)"' : ''}><div class="pv-row"><b>${esc(nm)}</b><button type="button" class="btn sm ghost" data-act="tkdel" data-i="${i}" aria-label="Quitar renglón">×</button></div>
+        <span class="small muted">${esc(it.ean || (it.peso ? 'por peso' : it.bar || ''))}${it.discs.length ? ' · ' + it.discs.map(d => esc(d.label)).join(' · ') : ''}${it.warn?.length ? ` · <b style="color:var(--warn)">${esc(it.warn.join(', '))}</b>` : ''}</span>
+        <div class="row"><input data-chg="tkf" data-i="${i}" data-f="q" inputmode="decimal" value="${esc(nfx.format(it.qty))}" aria-label="Cantidad" style="max-width:80px"><span class="muted">×</span><input data-chg="tkf" data-i="${i}" data-f="u" inputmode="decimal" value="${isNaN(it.unit) ? '' : esc(nfx.format(it.unit))}" aria-label="Precio unitario" style="max-width:110px"><span class="muted">−</span><input data-chg="tkf" data-i="${i}" data-f="d" inputmode="decimal" value="${esc(nfx.format(it.discs.reduce((a, d) => a + d.amt, 0)))}" aria-label="Descuento" style="max-width:100px"></div>
+        <span class="small">= ${money((it.gross || 0) - it.discs.reduce((a, d) => a + d.amt, 0))}</span></div>`; }).join('')}
+      ${t.ocr ? `<label class="switch"><input type="checkbox" data-chg="tkrev" ${t.revisado ? 'checked' : ''}> Revisé los renglones contra el ticket</label>` : ''}</details>`;
+  }
   if (!sid) return h;
   // Control contra el carrito
   const C = tkControl(t);
@@ -1071,39 +1320,49 @@ function ticketHTML() {
       ${bad.map(r => r.k === 'nocob' ? `<div class="drow"><span><b>${esc(presLabel(r.pres))}</b><br><span class="small">Estaba en el carrito (× ${r.ci.qty}) y no figura en el ticket.</span></span></div>`
         : r.k === 'precio' ? `<div class="drow"><span><b>${esc(presLabel(r.pres))}</b><br><span class="small">Esperabas ${money(r.esp)}${r.it.peso ? '/kg' : ''} y figura <b>${money(r.it.unit)}</b> (${r.du > 0 ? '+' : '−'}${money(Math.abs(r.du))}${r.it.peso ? '/kg' : ' c/u'}).</span></span><span class="pill ${r.du > 0 ? 'p-bad' : 'p-good'}">${r.du > 0 ? 'Cobrado de más' : 'Más barato'}</span></div>`
         : `<div class="drow"><span><b>${esc(presLabel(r.pres))}</b><br><span class="small">Llevabas ${r.ci.qty} y te cobraron ${nfx.format(r.it.qty)}.</span></span><span class="pill p-warn">Cantidad</span></div>`).join('')}
-      ${C.extra.length ? `<div class="small muted" style="margin-top:6px">En el ticket y no en el carrito: ${C.extra.map(x => esc(x.desc)).join(', ')}.</div>` : ''}
+      ${C.extra.length ? `<div class="small muted" style="margin-top:6px">En el ticket y no en el carrito: ${C.extra.map(x => esc(tkPres(x) ? presLabel(tkPres(x)) : titleCase(x.desc))).join(', ')}.</div>` : ''}
       ${bad.some(r => r.k === 'precio' && r.du > 0) ? `<details><summary class="small">Texto para reclamar en caja</summary><textarea readonly style="min-height:80px">${esc(bad.filter(r => r.k === 'precio' && r.du > 0).map(r => `${presLabel(r.pres)}: el precio de góndola es ${money(r.esp)}${r.it.peso ? ' por kg' : ''} y me cobraron ${money(r.it.unit)}.`).join('\n'))}</textarea></details>` : ''}</div>`;
+  }
+  // Medio de pago y reintegro
+  if (t.payName || t.payD > 0) {
+    const pid = tkPayId(t), E2 = tkEstimate(t, sid);
+    h += `<div class="card"><h3>Medio de pago${t.payName ? ': ' + esc(t.payName) : ''}</h3>
+      <label class="fl" for="tkPay">Es tu medio<select id="tkPay" data-chg="tkpay"><option value="">Sin beneficio / ninguno</option>${S.pays.map(p => `<option value="${p.id}" ${p.id === pid ? 'selected' : ''}>${esc(p.name)} · ${p.pct}%${p.modo === 'reintegro' ? ' (reintegro)' : ''}</option>`).join('')}</select></label>
+      ${!E2 ? '' : E2.visible ? `<div class="small">El ticket muestra <b>${money(E2.amt)}</b> de descuento de ${esc(E2.pay.name)}${E2.modo === 'reintegro' ? ', a devolver como reintegro' : ', ya descontado en caja'}.</div>`
+        : E2.why ? `<div class="small" style="color:var(--warn);font-weight:700">Con ${esc(E2.pay.name)} no corresponde reintegro: ${esc(E2.why)}.</div>`
+        : E2.modo === 'reintegro' ? `<div class="small">Reintegro estimado: <b>${money(E2.amt)}</b> (${E2.pay.pct}% sobre ${money(E2.base)}${E2.pay.base === 'total' ? ', el total' : ', sin los productos en promo'}${E2.capped ? ', limitado por el tope' : ''})${E2.pay.dev === 0 ? ' · se devuelve en el momento' : E2.pay.dev ? ` · llega en ${E2.pay.dev} días` : ''}.</div>`
+        : `<div class="small" style="color:var(--bad);font-weight:700">${esc(E2.pay.name)} se descuenta en caja, pero el ticket no muestra el descuento (esperabas unos ${money(E2.amt)}). Reclamalo antes de irte.</div>`}
+      ${tkPays(t).filter(p => !S.pays.some(x => fold(p.label).includes(fold(x.name)))).map(p => { const pct = Math.round(p.amt / p.base * 100); return `<div class="drow"><span class="small">El ticket aplicó <b>${esc(p.label)}</b> (${pct}%), que no está en tus Pagos.</span><button type="button" class="btn sm" data-act="tkaddpay" data-l="${esc(p.label)}" data-p="${pct}" data-m="${t.payMode || 'caja'}">Agregar a Pagos</button></div>`; }).join('')}</div>`;
   }
   // Precios a actualizar
   const P = tkProposals(t), sel = t.sel ||= {};
-  P.forEach(x => { if (sel[x.i] === undefined) sel[x.i] = !x.older; });
+  P.forEach(x => { if (sel[x.i] === undefined) sel[x.i] = !x.older && !x.it.warn?.length; });
   const nSel = P.filter(x => sel[x.i]).length;
   h += `<div class="card"><h3>Actualizar tus precios (${nSel} de ${P.length})</h3>
     <div class="small muted">Con la fecha del ticket. El precio anterior pasa al historial. Los descuentos de medios de pago no se guardan como promo de la tienda.</div>
     ${P.length ? `<div class="btns"><button type="button" class="btn sm ghost" data-act="tkselall">${nSel === P.length ? 'Quitar todos' : 'Marcar todos'}</button></div>` : '<div class="small muted">Ningún producto del ticket coincide todavía con tus presentaciones.</div>'}
     ${P.map(x => `<div class="drow"><span><input type="checkbox" class="cpysel" data-chg="tksel" data-i="${x.i}" ${sel[x.i] ? 'checked' : ''} aria-label="Actualizar"><b>${esc(presLabel(x.pres))}</b><br>
-      <span class="small">${money(x.precio)}${cu(x.pres)}${x.promo.t !== 'none' ? ` · <span class="tag">${esc(promo({ precio: x.precio, promo: x.promo }).label)}</span>` : ''}${x.comu ? ' · <span class="small muted">con Comunidad Coto</span>' : ''}</span><br>
-      <span class="small muted">${!x.ex ? 'Nuevo en esta tienda' : x.same ? `Igual que el tuyo: se confirma con fecha ${ddmm(t.fecha)}` : `Tenías ${money(x.ex.precio)}${x.ex.promo?.t !== 'none' ? ' · ' + promoTxt(x.ex) : ''} (${ageTxt(x.ex.fecha)})`}${x.older ? ' · el tuyo es más nuevo: va al historial' : ''}</span></span></div>`).join('')}</div>`;
+      <span class="small">${money(x.precio)}${cu(x.pres)}${x.promo.t !== 'none' ? ` · <span class="tag">${esc(promo({ precio: x.precio, promo: x.promo }).label)}</span>` : ''}${x.comu ? ' · <span class="small muted">con programa de fidelidad</span>' : ''}</span><br>
+      <span class="small muted">${!x.ex ? 'Nuevo en esta tienda' : x.same ? `Igual que el tuyo: se confirma con fecha ${ddmm(t.fecha)}` : `Tenías ${money(x.ex.precio)}${x.ex.promo?.t !== 'none' ? ' · ' + promoTxt(x.ex) : ''} (${ageTxt(x.ex.fecha)})`}${x.older ? ' · el tuyo es más nuevo: va al historial' : ''}${x.it.warn?.length ? ' · <b style="color:var(--warn)">renglón dudoso: revisalo</b>' : ''}</span></span></div>`).join('')}</div>`;
   // Sin asociar
   const un = t.items.map((it, i) => ({ it, i })).filter(({ it }) => !tkPres(it));
   if (un.length) {
     const opts = sortList('selProd', S.prods).map(pr => { const ps = S.pres.filter(x => x.prodId === pr.id && presOk(x)); return ps.length ? `<optgroup label="${esc(pr.name)}">${ps.map(x => `<option value="${x.id}">${esc(presLabel(x))}</option>`).join('')}</optgroup>` : ''; }).join('');
     h += `<div class="card"><h3>Sin asociar (${un.length})</h3>
       <div class="small muted">Elegí a qué presentación corresponde (se recuerda) o agregalo como producto nuevo.</div>
-      ${un.map(({ it, i }) => `<div class="paybox"><b>${esc(titleCase(it.desc))}</b><span class="small">${it.peso ? `${nfx.format(it.qty)} kg × ${money(it.unit)}/kg` : `${nfx.format(it.qty)} × ${money(it.unit)}`}${it.ean ? ' · ' + it.ean : ' · por peso'}</span>
+      ${un.map(({ it, i }) => `<div class="paybox"><b>${esc(titleCase(it.desc))}</b><span class="small">${it.peso ? `${nfx.format(it.qty)} kg × ${money(it.unit)}/kg` : `${nfx.format(it.qty)} × ${money(it.unit)}`}${it.ean ? ' · ' + it.ean : ' · por peso'}${it.sec ? ' · ' + esc(it.sec) : ''}</span>
         <div class="row"><select data-chg="tkassoc" data-i="${i}" aria-label="Presentación"><option value="">Es…</option>${opts}</select>${it.ean ? `<button type="button" class="btn sm" data-act="tknew" data-i="${i}">Nuevo</button>` : ''}</div></div>`).join('')}</div>`;
   }
-  // Descuentos de medios de pago
-  const pays = tkPays(t);
-  if (pays.length) h += `<div class="card"><h3>Descuentos de medios de pago</h3><div class="small muted">${t.payMode === 'reintegro' ? 'Se devuelven como reintegro (no se descontaron en caja).' : 'Se descontaron en la caja.'}</div>${pays.map(p => { const pct = Math.round(p.amt / p.base * 100), known = S.pays.find(x => fold(p.label).includes(fold(x.name)) || (x.pct === pct && (!x.stores?.length || x.stores.includes(sid)))); return `<div class="drow"><span><b>${esc(p.label)}</b><br><span class="small">${money(p.amt)} · ${pct}% sobre ${money(p.base)}${known ? ` · es tu medio "${esc(known.name)}"` : ''}</span></span>${known ? '' : `<button type="button" class="btn sm" data-act="tkaddpay" data-l="${esc(p.label)}" data-p="${pct}" data-m="${t.payMode || 'caja'}">Agregar a Pagos</button>`}</div>`; }).join('')}</div>`;
-  h += `<div class="card"><button type="button" class="btn primary block" data-act="tksave" ${dup ? 'disabled' : ''}>${dup ? 'Ya guardado' : `Guardar compra${nSel ? ` y actualizar ${nSel} ${nSel === 1 ? 'precio' : 'precios'}` : ''}`}</button>
-    <div class="small muted">${C ? 'También se vacía lo agarrado del carrito de esta tienda y se suma el descuento de pago al tope usado.' : 'Se suma el descuento de pago al tope usado del medio correspondiente.'}</div></div>`;
+  const needRev = t.ocr && !t.revisado;
+  h += `<div class="card"><button type="button" class="btn primary block" data-act="tksave" ${dup || needRev ? 'disabled' : ''}>${dup ? 'Ya guardado' : needRev ? 'Primero revisá lo leído (arriba)' : `Guardar compra${nSel ? ` y actualizar ${nSel} ${nSel === 1 ? 'precio' : 'precios'}` : ''}`}</button>
+    <div class="small muted">${C ? 'También se vacía lo agarrado del carrito de esta tienda. ' : ''}El descuento de pago se suma al tope usado de tu medio.</div></div>`;
   return h;
 }
 function tkSave() {
   const t = TK; if (!t) return;
   const sid = tkmap()[tkStoreKey(t)]; if (!sid) return toast('Elegí tu tienda para esta sucursal');
-  if (compras().some(c => c.factura && c.factura === t.factura && c.suc === t.suc)) return toast('Este ticket ya está guardado');
+  if (t.ocr && !t.revisado) return toast('Primero revisá lo leído');
+  if (compras().some(c => c.factura && c.factura === t.factura && (c.chain || 'coto') === (t.chain || 'coto') && c.suc === t.suc)) return toast('Este ticket ya está guardado');
   let act = 0;
   tkProposals(t).filter(x => t.sel?.[x.i]).forEach(x => {
     const np = { precio: x.precio, promo: x.promo, acum: false, hasta: '', fecha: t.fecha, src: '' };
@@ -1111,29 +1370,33 @@ function tkSave() {
     else if (x.older) { x.ex.hist = [...(x.ex.hist || []), { precio: x.precio, fecha: t.fecha }].sort((a, b) => (a.fecha < b.fecha ? -1 : 1)).slice(-12); touch(x.ex); act++; }
     else { if (!x.same) x.ex.hist = [...(x.ex.hist || []), { precio: x.ex.precio, fecha: x.ex.fecha }].slice(-12); Object.assign(x.ex, np); touch(x.ex); act++; }
   });
-  // Descuento de pago real del ticket → tope usado del medio que coincida
-  const dow = new Date(t.fecha + 'T12:00:00').getDay();
-  tkPays(t).forEach(p => { const pct = Math.round(p.amt / p.base * 100); const pay = S.pays.find(x => fold(p.label).includes(fold(x.name))) || S.pays.find(x => x.pct === pct && (!x.stores?.length || x.stores.includes(sid)) && (!x.dias?.length || x.dias.includes(dow))); if (pay && pay.tope) { pay.usado = (pay.usado || 0) + p.amt; touch(pay); } });
-  const promoSave = t.items.reduce((a, it) => a + it.discs.filter(d => !d.pago).reduce((b, d) => b + d.amt, 0), 0), paySave = t.sumD - promoSave;
-  compras().unshift({ id: uid(), fuente: 'coto', fecha: t.fecha, hora: t.hora, storeId: sid, suc: t.suc, factura: t.factura, total: t.total, subtotal: t.sumG, ahorroPromo: Math.round(promoSave * 100) / 100, ahorroPago: Math.round(paySave * 100) / 100, payMode: t.payMode || '',
-    reintegros: t.payMode === 'reintegro' ? tkPays(t).map(p => ({ label: p.label, amt: Math.round(p.amt * 100) / 100, estado: 'pendiente' })) : [],
+  const C = tkControl(t), E2 = tkEstimate(t, sid), payAmt = E2 && !E2.why ? E2.amt : 0;
+  if (E2 && payAmt > 0 && E2.pay.tope && (E2.visible || E2.modo === 'reintegro')) { E2.pay.usado = (E2.pay.usado || 0) + payAmt; touch(E2.pay); }
+  const promoSave = t.storeD || 0, paySave = (E2 && (E2.visible || E2.modo === 'reintegro')) ? payAmt : 0;
+  const reint = E2 && payAmt > 0 && (E2.modo === 'reintegro') ? [reintRec(E2.pay, payAmt, t.fecha, !E2.visible)] : [];
+  compras().unshift({ id: uid(), fuente: t.chain || 'coto', chain: t.chain || 'coto', fecha: t.fecha, hora: t.hora, storeId: sid, suc: t.suc, factura: t.factura, total: t.total, subtotal: t.sumG,
+    ahorroPromo: Math.round(promoSave * 100) / 100, ahorroPago: Math.round(paySave * 100) / 100, payMode: E2 ? E2.modo || t.payMode : t.payMode || '', payName: t.payName || '', payId: E2?.pay.id || '',
+    dif: C ? Math.round(C.dif * 100) / 100 : null, reintegros: reint,
     lines: t.items.map(it => ({ desc: it.desc, ean: it.ean, plu: it.plu, qty: it.qty, unit: it.unit, gross: it.gross, discs: it.discs, presId: tkPres(it)?.id || null })) });
   S.cart = S.cart.filter(it => it.plan || getPrice(it.priceId)?.storeId !== sid);
-  save(); TK = null; TKTXT = ''; CVIEW = 'hist'; render(); window.scrollTo(0, 0);
-  toast(`Compra guardada${act ? ` · ${act} ${act === 1 ? 'precio actualizado' : 'precios actualizados'}` : ''}`, 4000);
+  save(); TK = null; TKTXT = ''; CVIEW = 'hist'; HMES = null; render(); window.scrollTo(0, 0);
+  toast(`Compra guardada${act ? ` · ${act} ${act === 1 ? 'precio actualizado' : 'precios actualizados'}` : ''}${reint.length ? ` · reintegro ${reint[0].estado === 'recibido' ? 'registrado' : 'pendiente'}: ${money(reint[0].amt)}` : ''}`, 5000);
   if (autoOn()) setTimeout(() => syncNow(true), 800);
 }
 function histHTML() {
   const L = compras();
   let h = `<div class="btns"><button type="button" class="btn sm ghost" data-act="cview" data-v="cart">← Carrito</button><button type="button" class="btn sm" data-act="cview" data-v="ticket">Pegar un ticket</button></div>
     <div class="card"><h2 style="margin:0">Mis compras (${L.length})</h2><div class="small muted">Guardadas en este celular y en el respaldo.</div></div>`;
-  if (!L.length) return h + `<div class="card"><span class="muted">Todavía no guardaste compras. Después de pagar en Coto, pegá el ticket y queda acá.</span></div>`;
-  return h + L.map(c => {
+  if (!L.length) return h + `<div class="card"><span class="muted">Todavía no guardaste compras. Después de pagar, pegá el ticket (Coto, DIA o Carrefour) o usá el control manual y queda acá.</span></div>`;
+  h += histSummaryHTML(L);
+  const M = L.filter(c => !HMES || c.fecha.startsWith(HMES));
+  return h + M.map(c => {
     const st = getStore(c.storeId), open = HOPEN === c.id, n = c.lines.length;
-    return `<div class="card" style="gap:8px"><div class="pv-row"><span><b>${ddmm(c.fecha)} · ${esc(st?.name || 'Coto suc. ' + c.suc)}</b><br><span class="small muted">${n} productos${c.factura ? ' · ticket ' + esc(c.factura) : ''}</span></span><span class="big" style="font-size:20px">${money(c.total)}</span></div>
-      <div class="small">Ahorro: <b style="color:var(--good)">${money(c.ahorroPromo + c.ahorroPago)}</b> (promos ${money(c.ahorroPromo)} · medios de pago ${money(c.ahorroPago)}${c.payMode === 'reintegro' ? ', como reintegro' : ''})</div>
+    return `<div class="card" style="gap:8px"><div class="pv-row"><span><b>${ddmm(c.fecha)} · ${esc(st?.name || (CHAIN[c.chain] || '') + ' suc. ' + c.suc)}</b><br><span class="small muted">${n} renglones${c.factura ? ' · ticket ' + esc(c.factura) : ''}${c.fuente === 'manual' ? ' · control manual' : ''}${c.payName ? ' · ' + esc(c.payName) : ''}</span></span><span class="big" style="font-size:20px">${money(c.total)}</span></div>
+      <div class="small">Ahorro: <b style="color:var(--good)">${money(c.ahorroPromo + c.ahorroPago)}</b> (promos ${money(c.ahorroPromo)} · medios de pago ${money(c.ahorroPago)}${c.payMode === 'reintegro' ? ', como reintegro' : ''})${c.dif > 1 ? ` · <b style="color:var(--bad)">cobrado de más ${money(c.dif)}</b>` : ''}</div>
+      ${(c.reintegros || []).map(r => `<div class="small">Reintegro ${esc(r.label)}: <b>${money(r.amt)}</b> · ${r.estado === 'recibido' ? '<span style="color:var(--good)">recibido</span>' : r.estado === 'no' ? '<span style="color:var(--bad)">no llegó</span>' : 'pendiente'}${r.estimado && r.estado !== 'recibido' ? ' (estimado)' : ''}</div>`).join('')}
       <div class="btns"><button type="button" class="btn sm ghost" data-act="hopen" data-id="${c.id}">${open ? 'Ocultar detalle' : 'Ver detalle'}</button><button type="button" class="btn sm danger" data-act="hdel" data-id="${c.id}" data-confirm="1">Eliminar</button></div>
-      ${open ? c.lines.map(l => `<div class="drow"><span>${esc(titleCase(l.desc))}<br><span class="small muted">${nfx.format(l.qty)} × ${money(l.unit)}${l.discs.length ? ' · ' + l.discs.map(d => `${esc(d.label)} −${money(d.amt)}`).join(' · ') : ''}</span></span><b>${money(l.gross - l.discs.reduce((a, d) => a + d.amt, 0))}</b></div>`).join('') : ''}</div>`;
+      ${open ? c.lines.map(l => `<div class="drow"><span>${esc(l.presId && getPres(l.presId) ? presLabel(getPres(l.presId)) : titleCase(l.desc))}<br><span class="small muted">${nfx.format(l.qty)} × ${money(l.unit)}${l.discs.length ? ' · ' + l.discs.map(d => `${esc(d.label)} −${money(d.amt)}`).join(' · ') : ''}</span></span><b>${money(l.gross - l.discs.reduce((a, d) => a + d.amt, 0))}</b></div>`).join('') : ''}</div>`;
   }).join('');
 }
 
@@ -1230,6 +1493,8 @@ function renderDatos() {
       <div class="fl">Días (ninguno = todos)<div class="chips">${DOW.map((d, i) => `<button class="chip" aria-pressed="${!!p.dias?.includes(i)}" data-act="paydia" data-id="${p.id}" data-v="${i}">${d}</button>`).join('')}</div></div>
       <div class="fl">Tiendas (ninguna = todas)<div class="chips">${S.stores.filter(s => !s.archived || p.stores?.includes(s.id)).map(s => `<button class="chip" aria-pressed="${!!p.stores?.includes(s.id)}" data-act="paystore" data-id="${p.id}" data-v="${s.id}">${esc(s.name)}</button>`).join('')}</div></div>
       <div class="fl">Cómo se aplica<div class="chips"><button class="chip" aria-pressed="${p.modo !== 'reintegro'}" data-act="paymodo" data-id="${p.id}" data-v="caja">En caja</button><button class="chip" aria-pressed="${p.modo === 'reintegro'}" data-act="paymodo" data-id="${p.id}" data-v="reintegro">Reintegro posterior</button></div></div>
+      <div class="fl">Se calcula sobre<div class="chips"><button class="chip" aria-pressed="${p.base !== 'total'}" data-act="paybase" data-id="${p.id}" data-v="">Productos sin promo</button><button class="chip" aria-pressed="${p.base === 'total'}" data-act="paybase" data-id="${p.id}" data-v="total">El total de la compra</button></div><span class="small muted">"El total" incluye los productos que ya tienen promo de la tienda (habitual en promos de billeteras).</span></div>
+      ${p.modo === 'reintegro' ? `<label class="fl" for="pdv-${p.id}">Te lo devuelven en (días; 0 = en el momento)<input id="pdv-${p.id}" data-pay="${p.id}" data-pk="dev" inputmode="numeric" value="${p.dev ?? ''}" placeholder="Ej.: 0, 7, 30"></label>` : ''}
       <div class="small muted">Los cambios se guardan al tipear y recalculan al instante todas las comparaciones y el carrito.</div>
       <div class="btns"><button class="btn sm ghost" data-act="payreset" data-id="${p.id}">Reiniciar tope usado</button><button class="btn sm danger" data-act="delpay" data-id="${p.id}" data-confirm="1">Eliminar</button></div></div>`).join('') || noHits('pays') || '<span class="muted">Todavía no hay medios de pago.</span>');
   B.stores = storesBody();
@@ -1339,7 +1604,7 @@ async function syncTest() {
   catch (e) { toast('No se pudo conectar: ' + e.message + '.', 5000); }
 }
 /* Sincronizar: 1) leer la planilla, 2) detectar conflictos y preguntar, 3) enviar y recibir todo */
-const SFIELDS = { stores: ['name', 'archived', 'sepa'], pays: ['name', 'pct', 'minimo', 'tope', 'usado', 'dias', 'stores', 'modo'], prods: ['name', 'base', 'cat'], pres: ['prodId', 'marca', 'desc', 'cont', 'unit', 'pack', 'ean', 'pend', 'nota'], prices: ['presId', 'storeId', 'precio', 'promo', 'acum', 'fecha', 'hasta', 'hist', 'src'] };
+const SFIELDS = { stores: ['name', 'archived', 'sepa'], pays: ['name', 'pct', 'minimo', 'tope', 'usado', 'dias', 'stores', 'modo', 'base', 'dev'], prods: ['name', 'base', 'cat'], pres: ['prodId', 'marca', 'desc', 'cont', 'unit', 'pack', 'ean', 'pend', 'nota'], prices: ['presId', 'storeId', 'precio', 'promo', 'acum', 'fecha', 'hasta', 'hist', 'src'] };
 const ENT = { stores: 'Tienda', pays: 'Medio de pago', prods: 'Producto', pres: 'Presentación', prices: 'Precio' };
 /* Comparación tolerante: vacío = inexistente, "35" = 35, mismo objeto aunque cambie el orden de sus claves */
 function canon(v) {
@@ -1349,7 +1614,7 @@ function canon(v) {
   if (typeof v === 'object') { const o = {}; Object.keys(v).sort().forEach(k => { const c2 = canon(v[k]); if (c2 !== null) o[k] = c2; }); return Object.keys(o).length ? o : null; }
   return v;
 }
-const FIELD_TXT = { name: 'nombre', archived: 'archivada', pct: '%', minimo: 'compra mínima', tope: 'tope', usado: 'tope usado', dias: 'días', stores: 'tiendas', modo: 'forma de aplicar', base: 'unidad', prodId: 'producto', marca: 'marca', desc: 'detalle', cont: 'contenido', unit: 'unidad', pack: 'pack', ean: 'código de barras', presId: 'presentación', storeId: 'tienda', precio: 'precio', promo: 'promo', acum: 'acumula', fecha: 'fecha', hasta: 'vigencia de la promo', hist: 'historial', sepa: 'sucursal de Precios Claros', src: 'origen', nota: 'nota' };
+const FIELD_TXT = { name: 'nombre', archived: 'archivada', pct: '%', minimo: 'compra mínima', tope: 'tope', usado: 'tope usado', dias: 'días', stores: 'tiendas', modo: 'forma de aplicar', base: 'unidad', prodId: 'producto', marca: 'marca', desc: 'detalle', cont: 'contenido', unit: 'unidad', pack: 'pack', ean: 'código de barras', presId: 'presentación', storeId: 'tienda', precio: 'precio', promo: 'promo', acum: 'acumula', fecha: 'fecha', hasta: 'vigencia de la promo', hist: 'historial', sepa: 'sucursal de Precios Claros', src: 'origen', nota: 'nota', base: 'base del descuento', dev: 'días de devolución' };
 const diffFields = (c, a, b) => SFIELDS[c].filter(f => JSON.stringify(canon(a[f])) !== JSON.stringify(canon(b[f])));
 const sameRec = (c, a, b) => diffFields(c, a, b).length === 0;
 let CONF = null;
@@ -1788,22 +2053,22 @@ function planListHTML() {
    se elige la presentación más barata, un solo medio de pago por visita (controlando compra mínima y tope),
    y se concentran las compras según el máximo de visitas y el umbral de ahorro. */
 const ALLOWED_PAYS = () => [NOPAY, ...S.pays.filter(p => !PREF.pays.length || PREF.pays.includes(p.id))];
-function lineCost(p, pres, amt, d, date) {
+function lineCost(p, pres, amt, d, date, tot) {
   const C = contentOf(pres), units = Math.max(1, Math.ceil(amt / C - 1e-9));
   let pr = promo(p, date); if (!PREF.allowMulti && pr.on && pr.N > 1) pr = { N: 1, total: p.precio, label: '', on: false };
   const groups = pr.on ? Math.floor(units / pr.N) : 0, rem = units - groups * pr.N;
-  const promoPart = groups * pr.total, remPart = rem * p.precio, gross = promoPart + remPart, base = remPart + (p.acum ? promoPart : 0);
+  const promoPart = groups * pr.total, remPart = rem * p.precio, gross = promoPart + remPart, base = remPart + (p.acum || tot ? promoPart : 0);
   return { p, pres, pr, units, gross, base, net: gross - base * d, qtyBase: units * C };
 }
 /* Cantidad en la unidad del producto: unidades × contenido de la presentación elegida */
 const needAmt = n => { const pr = getPres(n.presId); return pr ? n.units * contentOf(pr) : 0; };
-function bestLine(n, v, d) {
+function bestLine(n, v, d, tot) {
   let b = null; const amt = needAmt(n);
   S.prices.forEach(p => {
     if (p.storeId !== v.st.id) return; const pres = getPres(p.presId);
     if (!pres || pres.prodId !== n.prodId || (PREF.maxAge && ageDays(p.fecha) > PREF.maxAge)) return;
     if (!n.flex && pres.id !== n.presId) return; // misma presentación, salvo que aceptes otra
-    const l = lineCost(p, pres, pres.id === n.presId ? n.units * contentOf(pres) : amt, d, v.at.date); if (!b || l.net < b.net) b = l;
+    const l = lineCost(p, pres, pres.id === n.presId ? n.units * contentOf(pres) : amt, d, v.at.date, tot); if (!b || l.net < b.net) b = l;
   });
   return b;
 }
@@ -1817,7 +2082,7 @@ function candVisits() {
 /* Costo de un producto en una visita, con el mejor medio de pago para él solo (para asignar) */
 function soloCost(n, v) {
   let b = null;
-  for (const pay of ALLOWED_PAYS()) { const d = payRate(pay, v.st.id, v.at.dow); if (pay.id !== 'none' && d <= 0) continue; const l = bestLine(n, v, d); if (l && (!b || l.net < b.net)) b = l; }
+  for (const pay of ALLOWED_PAYS()) { const d = payRate(pay, v.st.id, v.at.dow); if (pay.id !== 'none' && d <= 0) continue; const l = bestLine(n, v, d, pay.base === 'total'); if (l && (!b || l.net < b.net)) b = l; }
   return b ? b.net : Infinity;
 }
 /* Una visita = un medio de pago: se elige el que deja el menor total, respetando compra mínima y tope */
@@ -1825,7 +2090,7 @@ function visitEval(v, needs) {
   let best = null;
   for (const pay of ALLOWED_PAYS()) {
     const d = payRate(pay, v.st.id, v.at.dow); if (pay.id !== 'none' && d <= 0) continue;
-    const lines = needs.map(n => ({ n, l: bestLine(n, v, d) })); if (lines.some(x => !x.l)) continue;
+    const lines = needs.map(n => ({ n, l: bestLine(n, v, d, pay.base === 'total') })); if (lines.some(x => !x.l)) continue;
     const gross = lines.reduce((a, x) => a + x.l.gross, 0), base = lines.reduce((a, x) => a + x.l.base, 0);
     let disc = base * d, minFalta = 0;
     if (d > 0 && pay.minimo && gross < pay.minimo) { minFalta = pay.minimo - gross; disc = 0; }
@@ -1869,7 +2134,7 @@ function buildPlan() {
   // Referencia: todo hoy en la tienda donde estás, con el medio de pago elegido
   const here = { st: getStore(S.visit.storeId), at: dayInfo(0), key: 'here' };
   let baseline = null;
-  if (here.st && needs.length && !missing.length) { const vp = getPay(S.visit.payId), d = payRate(vp, here.st.id); const ls = needs.map(n => bestLine(n, here, d)); if (ls.every(Boolean)) baseline = ls.reduce((a, l) => a + l.net, 0); }
+  if (here.st && needs.length && !missing.length) { const vp = getPay(S.visit.payId), d = payRate(vp, here.st.id); const ls = needs.map(n => bestLine(n, here, d, vp.base === 'total')); if (ls.every(Boolean)) baseline = ls.reduce((a, l) => a + l.net, 0); }
   if (unpinned.length) save();
   return { needs, visits, missing, total, baseline, unpinned };
 }
@@ -2622,6 +2887,7 @@ const ACT = {
   payreset: el => { touch(S.pays.find(p => p.id === el.dataset.id)).usado = 0; save(); render(); },
   paydia: el => { const p = touch(S.pays.find(x => x.id === el.dataset.id)), v = +el.dataset.v; p.dias = p.dias?.includes(v) ? p.dias.filter(x => x !== v) : [...(p.dias || []), v].sort(); save(); render(); },
   paystore: el => { const p = touch(S.pays.find(x => x.id === el.dataset.id)), v = el.dataset.v; p.stores = p.stores?.includes(v) ? p.stores.filter(x => x !== v) : [...(p.stores || []), v]; save(); render(); },
+  paybase: el => { touch(S.pays.find(x => x.id === el.dataset.id)).base = el.dataset.v; save(); render(); },
   paymodo: el => { touch(S.pays.find(x => x.id === el.dataset.id)).modo = el.dataset.v; save(); render(); },
   addstore: () => { const v = $('#newStore').value.trim(); if (!v) return toast('Escribí el nombre de la tienda'); S.stores.push(touch({ id: uid(), name: v })); DV.adding = false; save(); render(); toast('Tienda agregada'); },
   delstore: el => { const id = el.dataset.id; S.stores = S.stores.filter(s => s.id !== id); tomb('stores', id); dropPrices(p => p.storeId === id); S.pays.forEach(p => { if ((p.stores || []).includes(id)) { p.stores = p.stores.filter(x => x !== id); touch(p); } }); save(); render(); },
@@ -2683,7 +2949,7 @@ const ACT = {
   },
   cartpfull: el => { const p = getPrice(el.dataset.id), x = p && getPres(p.presId); if (!x) return; CARTED = null; resetForm(x.prodId); F.storeId = p.storeId; fillFromPres(x); F.precio = nfx.format(p.precio); lastSaved = null; go('cargar'); setTimeout(() => $('#fPrecio')?.focus(), 80); },
   cview: el => { CVIEW = el.dataset.v; if (CVIEW !== 'ticket') TK = null; render(); window.scrollTo(0, 0); },
-  tkread: () => { const r = parseCoto($('#tkTxt')?.value ?? TKTXT); if (r.err) return toast(r.err, 5000); TK = r; CVIEW = 'ticket'; render(); window.scrollTo(0, 0); },
+  tkread: () => { const r = parseTicket($('#tkTxt')?.value ?? TKTXT); if (r.err) { if (r.manual && cartCalc().items.length) { MAN = null; CVIEW = 'manual'; render(); } return toast(r.err, 5000); } TK = r; CVIEW = 'ticket'; render(); window.scrollTo(0, 0); },
   tkclear: () => { TKTXT = ''; render(); },
   tkback: () => { TK = null; CVIEW = 'cart'; render(); window.scrollTo(0, 0); },
   tkselall: () => { if (!TK) return; const P = tkProposals(TK), all = P.every(x => TK.sel?.[x.i]); P.forEach(x => { TK.sel[x.i] = !all; }); render(); },
@@ -2691,6 +2957,15 @@ const ACT = {
   tkreturn: () => { CVIEW = 'ticket'; go('carrito'); },
   tkaddpay: el => { if (!TK) return; const sid = tkmap()[tkStoreKey(TK)]; const dow = new Date(TK.fecha + 'T12:00:00').getDay(); S.pays.push(touch({ id: uid(), name: titleCase(el.dataset.l), pct: +el.dataset.p, tope: null, usado: 0, minimo: null, dias: [dow], stores: sid ? [sid] : [], modo: el.dataset.m === 'reintegro' ? 'reintegro' : 'caja' })); save(); render(); toast('Agregado a Pagos: revisá días, tiendas y tope en Datos → Pagos', 5000); },
   tksave: () => tkSave(),
+  tkdel: el => { if (!TK) return; TK.items.splice(+el.dataset.i, 1); TK.sel = {}; tkSums(TK); render(); },
+  hmes: el => { HMES = el.dataset.m; render(); },
+  rok: el => { const c = compras().find(x => x.id === el.dataset.c), r = c?.reintegros?.[+el.dataset.i]; if (!r) return; const v = num($(`#ri-${c.id}-${el.dataset.i}`)?.value); if (v >= 0) { r.amt = v; r.estimado = false; } r.estado = 'recibido'; r.fechaRec = todayISO(); save(); render(); toast('Reintegro registrado'); },
+  rno: el => { const c = compras().find(x => x.id === el.dataset.c), r = c?.reintegros?.[+el.dataset.i]; if (!r) return; r.estado = 'no'; save(); render(); toast('Marcado como no recibido: conviene reclamarlo al banco o billetera', 5000); },
+  mancmp: () => { if (!MAN) return; MAN.total = $('#manTot')?.value ?? MAN.total; if (!(num(MAN.total) > 0)) return toast('Ingresá el total del ticket'); MAN.step = 'cmp'; render(); },
+  manst: el => { if (!MAN) return; (MAN.l[el.dataset.id] ||= { st: 'ok', cob: '' }).st = el.dataset.v; render(); },
+  manxadd: () => { if (!MAN) return; MAN.extra.push({ desc: '', monto: '' }); render(); },
+  manxdel: el => { if (!MAN) return; MAN.extra.splice(+el.dataset.i, 1); render(); },
+  mansave: () => manSave(),
   hopen: el => { HOPEN = HOPEN === el.dataset.id ? null : el.dataset.id; render(); },
   hdel: el => { S.compras = compras().filter(c => c.id !== el.dataset.id); save(); render(); toast('Compra eliminada del historial (los precios no cambian)'); },
   editstart: el => { startEdit(el.dataset.k, el.dataset.id); renderDatos(); scrollForm(); },
@@ -2899,6 +3174,9 @@ document.addEventListener('input', e => {
   else if (t.dataset.catnew) { CATNEW = t.value; }
   else if (t.dataset.cartcode) { CARTCODE = t.value; }
   else if (t.dataset.tktxt) { TKTXT = t.value; }
+  else if (t.dataset.manf && MAN) { MAN.total = t.value; }
+  else if (t.dataset.manl && MAN) { (MAN.l[t.dataset.manl] ||= { st: 'dif', cob: '' }).cob = t.value; }
+  else if (t.dataset.mane && MAN) { const e = MAN.extra[+t.dataset.mane]; if (e) e[t.dataset.k] = t.value; }
   else if (t.dataset.svq) { SV.q = t.value; const c = $('#svRes'), st = getStore(DV.suc), d = st && REF.get(st.sepa)?.d; if (c && d && NOMBRES) c.innerHTML = sucAllRes(st, d); }
   else if (t.dataset.sepaq) { SQ = t.value; const c = $('#sepaRes'); if (c && SUCS) c.innerHTML = sucResHTML(); }
   else if (t.dataset.planq) { PREF.q = t.value; savePref(); const c2 = $('#planList'); if (c2) c2.innerHTML = planListHTML(); }
@@ -2913,7 +3191,7 @@ document.addEventListener('input', e => {
   else if (t.dataset.store) { const st = getStore(t.dataset.store); st.name = t.value; touch(st); save(); renderVisit(); }
   else if (t.dataset.pay) {
     const p = S.pays.find(x => x.id === t.dataset.pay), k = t.dataset.pk;
-    if (k === 'name') p.name = t.value; else if (k === 'tope' || k === 'minimo') { const v = num(t.value); p[k] = v > 0 ? v : null; } else { const v = num(t.value); p[k] = isNaN(v) ? 0 : v; }
+    if (k === 'name') p.name = t.value; else if (k === 'dev') { const v = parseInt(t.value, 10); p.dev = isNaN(v) ? null : Math.max(0, v); } else if (k === 'tope' || k === 'minimo') { const v = num(t.value); p[k] = v > 0 ? v : null; } else { const v = num(t.value); p[k] = isNaN(v) ? 0 : v; }
     touch(p); save(); renderVisit();
   }
 });
@@ -2931,6 +3209,9 @@ document.addEventListener('change', e => {
   else if (t.dataset.f === 'fecha' || t.dataset.f === 'hasta') { renderCargar(); }
   else if (t.dataset.ed === 'hasta' && ED) { renderDatos(); }
   else if (a === 'tkstore') { if (TK) { if (t.value) tkmap()[tkStoreKey(TK)] = t.value; else delete tkmap()[tkStoreKey(TK)]; TK.sel = {}; save(); render(); } }
+  else if (a === 'tkf') { const it = TK?.items[+t.dataset.i]; if (it) { const v = num(t.value), f = t.dataset.f; if (f === 'q' && v > 0) it.qty = v; if (f === 'u' && v > 0) it.unit = v; if (f === 'q' || f === 'u') it.gross = Math.round(it.qty * it.unit * 100) / 100; if (f === 'd' && v >= 0) { const sd = it.discs[0]; it.discs = v > 0 ? [{ label: sd?.label || 'Descuento', amt: v, pago: !!sd?.pago }] : []; } it.warn = []; TK.sel = {}; tkSums(TK); render(); } }
+  else if (a === 'tkrev') { if (TK) { TK.revisado = t.checked; render(); } }
+  else if (a === 'tkpay') { if (TK) { tkmap()[tkPayKey(TK)] = t.value; save(); render(); } }
   else if (a === 'tksel') { if (TK) { (TK.sel ||= {})[t.dataset.i] = t.checked; render(); } }
   else if (a === 'tkassoc') { if (TK && t.value) { const it = TK.items[+t.dataset.i], x = getPres(t.value); if (it && x) { if (it.ean && !x.ean && !S.pres.some(o => o.ean === it.ean)) { x.ean = it.ean; touch(x); } else if (it.ean) tkmap()['ean:' + it.ean] = x.id; else tkmap()['plu:' + it.plu] = x.id; save(); render(); toast('Asociado: se recuerda para los próximos tickets'); } } }
   else if (a === 'pcopy') { DV.pcopy = t.checked; SELC.clear(); renderDatos(); }

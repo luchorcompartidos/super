@@ -49,5 +49,6 @@ archivo y el flujo `catalogo-publicar.yml` lo publica.
   **Guardar precio**. Si tu precio es más nuevo, el de Precios Claros va al historial. Los que tomaste de ahí
   quedan marcados (columna `src` de Precios).
 - Las promos con tarjeta o medio de pago que informa la cadena se muestran como dato; tus medios de pago se siguen cargando en Pagos.
+- El script 0.8.0 agrega en MediosPago `base` ("total" si el descuento se calcula sobre el total de la compra) y `dev` (días hasta el reintegro).
 - El script 0.7.0 agrega las columnas `sepa` (Tiendas) y `src` (Precios). Con el script anterior la app sigue
   funcionando y conserva esos datos en el celular.
