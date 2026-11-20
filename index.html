@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.10.3">
+<meta name="app-version" content="v0.10.4">
 <title>Góndola Comparador</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#132033">
@@ -273,7 +273,7 @@ body.in-datos header.top{padding-bottom:8px}
 <div class="app">
   <header class="top">
     <div class="syncbar" id="syncBar" hidden aria-hidden="true"><i></i></div>
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="vmini" id="vMini"></span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.10.3</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="vmini" id="vMini"></span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.10.4</button></span></div>
     <div class="symsg" id="syncMsg" role="status" hidden></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
@@ -650,7 +650,7 @@ function renderCargar() {
       <div class="pv-row"><span>Queda <b>${i + 1}º de ${rows.length}</b> en ${esc(prod.name)}</span><span class="big per">${money(me.c.best.per)}<small>/${u}</small></span></div>
       <div class="pv-row small"><span class="muted">${me.c.best.promoOn ? esc(me.c.pr.label) : 'Góndola ' + money(p.precio)}${me.c.best.payOn ? ` − ${me.c.pay.pct}% ${esc(me.c.pay.name)}` : ''}</span><b>Pagás ${payUnits(me.c.best, me.c.best.N, me.pres)}</b></div>
       <div class="small">${i === 0 ? 'Es la mejor opción registrada.' : `+${money((me.c.best.per - top.c.best.per) * qtyOf(top.c))} en ${qtyTxt(top.c, u)} ${pctS(-diff / 100)} vs la mejor: ${esc(presLabel(top.pres))} en ${esc(getStore(top.p.storeId).name)}${top.c.best.N > 1 ? ' (llevando ' + top.c.best.N + ')' : ''}.`}</div>
-      <div class="btns"><button class="btn sm primary" data-act="gocmp" data-id="${prod.id}">Ver comparación</button><button class="btn sm ghost" data-act="movefromcargar" data-id="${p.id}">Era otra tienda</button><button class="btn sm" data-act="addcart" data-id="${p.id}" data-q="${me.c.best.N}">+ Carrito (${me.c.best.N})</button><button class="btn sm ghost" data-act="dismiss">Cargar otro</button></div></div>`;
+      ${cadCargarHTML(p)}<div class="btns"><button class="btn sm primary" data-act="gocmp" data-id="${prod.id}">Ver comparación</button><button class="btn sm ghost" data-act="movefromcargar" data-id="${p.id}">Era otra tienda</button><button class="btn sm" data-act="addcart" data-id="${p.id}" data-q="${me.c.best.N}">+ Carrito (${me.c.best.N})</button><button class="btn sm ghost" data-act="dismiss">Cargar otro</button></div></div>`;
   }
   const prod = getProd(F.prodId), b = baseOf(prod);
   const fsid = formStore(), other = fsid !== S.visit.storeId, fpay = formPay();
@@ -1385,6 +1385,9 @@ function ticketHTML() {
       ${un.map(({ it, i }) => `<div class="paybox"><b>${esc(tkName(it))}</b>${it.descCat ? `<span class="small muted">En el ticket: ${esc(titleCase(it.desc))}</span>` : ''}<span class="small">${it.peso ? `${nfx.format(it.qty)} kg × ${money(it.unit)}/kg` : `${nfx.format(it.qty)} × ${money(it.unit)}`}${it.ean ? ' · ' + it.ean : ' · por peso'}${it.sec ? ' · ' + esc(it.sec) : ''}</span>
         <div class="row"><select data-chg="tkassoc" data-i="${i}" aria-label="Presentación"><option value="">Es…</option>${opts}</select>${it.ean ? `<button type="button" class="btn sm" data-act="tknew" data-i="${i}">Nuevo</button>` : ''}</div></div>`).join('')}</div>`;
   }
+  const peersT = sid ? cadPeers(sid) : [], cadT = sid ? cadOf(sid) : '';
+  if (peersT.length && cadMode(cadT) !== 'off' && TK.cadApply === undefined) TK.cadApply = cadMode(cadT) === 'auto';
+  if (peersT.length && cadMode(cadT) !== 'off') h += `<div class="card"><label class="switch"><input type="checkbox" data-chg="tkcad" ${TK.cadApply ? 'checked' : ''}> Aplicar también los precios actualizados a las otras ${peersT.length} ${peersT.length === 1 ? 'tienda' : 'tiendas'} de ${esc(cadT)} (como copia)</label></div>`;
   const needRev = t.ocr && !t.revisado;
   h += `<div class="card"><button type="button" class="btn primary block" data-act="tksave" ${dup || needRev ? 'disabled' : ''}>${dup ? 'Ya guardado' : needRev ? 'Primero revisá lo leído (arriba)' : `Guardar compra${nSel ? ` y actualizar ${nSel} ${nSel === 1 ? 'precio' : 'precios'}` : ''}`}</button>
     <div class="small muted">${C ? 'También se vacía lo agarrado del carrito de esta tienda. ' : ''}El descuento de pago se suma al tope usado de tu medio.</div></div>`;
@@ -1395,13 +1398,14 @@ function tkSave() {
   const sid = tkmap()[tkStoreKey(t)]; if (!sid) return toast('Elegí tu tienda para esta sucursal');
   if (t.ocr && !t.revisado) return toast('Primero revisá lo leído');
   if (compras().some(c => c.factura && c.factura === t.factura && (c.chain || 'coto') === (t.chain || 'coto') && c.suc === t.suc)) return toast('Este ticket ya está guardado');
-  let act = 0;
+  let act = 0; const updP = [];
   tkProposals(t).filter(x => t.sel?.[x.i]).forEach(x => {
     const np = { precio: x.precio, promo: x.promo, acum: false, hasta: '', fecha: t.fecha, src: '' };
-    if (!x.ex) { S.prices.push(touch({ ...np, id: uid(), presId: x.pres.id, storeId: sid, hist: [] })); act++; }
+    if (!x.ex) { const pn = touch({ ...np, id: uid(), presId: x.pres.id, storeId: sid, hist: [] }); S.prices.push(pn); updP.push(pn); act++; }
     else if (x.older) { x.ex.hist = [...(x.ex.hist || []), { precio: x.precio, fecha: t.fecha }].sort((a, b) => (a.fecha < b.fecha ? -1 : 1)).slice(-12); touch(x.ex); act++; }
-    else { if (!x.same) x.ex.hist = [...(x.ex.hist || []), { precio: x.ex.precio, fecha: x.ex.fecha }].slice(-12); Object.assign(x.ex, np); touch(x.ex); act++; }
+    else { if (!x.same) x.ex.hist = [...(x.ex.hist || []), { precio: x.ex.precio, fecha: x.ex.fecha }].slice(-12); Object.assign(x.ex, np); touch(x.ex); updP.push(x.ex); act++; }
   });
+  let cadN = 0; if (t.cadApply && cadPeers(sid).length) { const ids = cadPeers(sid).map(x => x.id); updP.forEach(p => { const r = copyPriceTo(p, ids); cadN += r.nuevos + r.reemp; }); }
   const C = tkControl(t), E2 = tkEstimate(t, sid), payAmt = E2 && !E2.why ? E2.amt : 0;
   if (E2 && payAmt > 0 && E2.pay.tope && (E2.visible || E2.modo === 'reintegro')) { E2.pay.usado = (E2.pay.usado || 0) + payAmt; touch(E2.pay); }
   const promoSave = t.storeD || 0, paySave = (E2 && (E2.visible || E2.modo === 'reintegro')) ? payAmt : 0;
@@ -1413,7 +1417,7 @@ function tkSave() {
   touch(compras()[0]);
   S.cart = S.cart.filter(it => it.plan || getPrice(it.priceId)?.storeId !== sid);
   save(); TK = null; TKTXT = ''; CVIEW = 'hist'; HMES = null; render(); window.scrollTo(0, 0);
-  toast(`Compra guardada${act ? ` · ${act} ${act === 1 ? 'precio actualizado' : 'precios actualizados'}` : ''}${reint.length ? ` · reintegro ${reint[0].estado === 'recibido' ? 'registrado' : 'pendiente'}: ${money(reint[0].amt)}` : ''}`, 5000);
+  toast(`Compra guardada${act ? ` · ${act} ${act === 1 ? 'precio actualizado' : 'precios actualizados'}` : ''}${cadN ? ` · ${cadN} copiados a ${cadOf(sid)}` : ''}${reint.length ? ` · reintegro ${reint[0].estado === 'recibido' ? 'registrado' : 'pendiente'}: ${money(reint[0].amt)}` : ''}`, 5000);
   if (autoOn()) setTimeout(() => syncNow(true), 800);
 }
 function histHTML() {
@@ -1936,11 +1940,12 @@ function storesBody() {
   if (DV.suc && getStore(DV.suc)?.sepa) return sucViewHTML(getStore(DV.suc));
   const act = activeStores(), arch = S.stores.filter(s => s.archived), np = id => S.prices.filter(p => p.storeId === id).length;
   const row = st => `<div class="paybox"><div class="row"><input aria-label="Nombre de la tienda" data-store="${st.id}" value="${esc(st.name)}"><span class="small muted" style="white-space:nowrap">${np(st.id)} precios</span></div>
+    <div class="row small"><span class="muted">Cadena</span><input aria-label="Cadena" data-chg="cad" data-id="${st.id}" list="dlCad" value="${esc(cadOf(st.id))}" placeholder="${esc(cadGuess(st) || 'Ej.: Día')}" style="max-width:180px;min-height:36px;padding:6px 8px">${!cadOf(st.id) && cadGuess(st) ? `<button type="button" class="btn sm ghost" data-act="cadset" data-id="${st.id}" data-v="${esc(cadGuess(st))}">Es ${esc(cadGuess(st))}</button>` : ''}</div>
     ${sepaStoreRow(st)}${LINK === st.id ? linkPanelHTML() : ''}
     <div class="btns">${S.stores.length > 1 ? `<button class="btn sm" data-act="smerge" data-id="${st.id}">Unir con otra…</button>` : ''}${act.length > 1 ? `<button class="btn sm ghost" data-act="sarch" data-id="${st.id}">Archivar</button>` : ''}${S.stores.length > 1 ? `<button class="btn sm danger" data-act="delstore" data-id="${st.id}" data-confirm="1">Eliminar</button>` : ''}</div>
     ${SMERGE === st.id ? mergeNote(st) : ''}</div>`;
   const sh = x => qf('stores', x, st => st.name);
-  let h = sepaStoresHead() + searchBox('stores', 'Buscar tienda') + (act.length > 1 ? sortBar('dStores') : '') + (sortList('dStores', sh(act)).map(row).join('') || noHits('stores'));
+  let h = sepaStoresHead() + cadSectionHTML() + `<datalist id="dlCad">${[...new Set([...CHAINS_KNOWN.map(c => c[0]), ...S.stores.map(s => cadOf(s.id)).filter(Boolean)])].map(c => `<option value="${esc(c)}">`).join('')}</datalist>` + searchBox('stores', 'Buscar tienda') + (act.length > 1 ? sortBar('dStores') : '') + (sortList('dStores', sh(act)).map(row).join('') || noHits('stores'));
   if (sh(arch).length) h += `<h3 style="margin-top:6px">Archivadas (${arch.length})</h3><div class="small muted">No aparecen en los selectores ni en Comparar. Sus precios e historial se conservan.</div>`
     + sh(arch).map(st => `<div class="drow"><span>${esc(st.name)}<br><span class="small muted">${np(st.id)} precios</span></span><span class="btns"><button class="btn sm" data-act="sunarch" data-id="${st.id}">Reactivar</button><button class="btn sm" data-act="smerge" data-id="${st.id}">Unir…</button><button class="btn sm danger" data-act="delstore" data-id="${st.id}" data-confirm="1">Eliminar</button></span></div>${SMERGE === st.id ? mergeNote(st) : ''}`).join('');
   return h + `<div class="small muted">El nombre se corrige tocándolo. <b>Archivar</b>: la dejás de usar pero conservás sus datos. <b>Unir</b>: era la misma tienda. <b>Eliminar</b>: borra la tienda y sus precios.</div>`;
@@ -2677,6 +2682,50 @@ function priceStoreFilter() {
   return `<label class="fl" for="pStore">Tienda<select id="pStore" data-chg="pstore"><option value="">Todas (${S.prices.length})</option>${sts.map(s => `<option value="${s.id}" ${s.id === DV.pstore ? 'selected' : ''}>${esc(s.name)}${s.archived ? ' (archivada)' : ''} (${n(s.id)})</option>`).join('')}</select></label>`;
 }
 
+/* ============ Precios compartidos por cadena ============
+   Agrupás tus tiendas por cadena (Día, Coto, Carrefour…). Al cargar un precio en una, la app ofrece (o hace sola,
+   según elijas) aplicarlo a las demás de la cadena como copia marcada "copiado de…", que se verifica como cualquier
+   copia. Cadena y modo se guardan como asociaciones, así que se sincronizan con la planilla sin cambiar el script. */
+const CHAINS_KNOWN = [['Día', /\bd[ií]a\b/i], ['Coto', /\bcoto\b/i], ['Carrefour', /carrefour/i], ['Jumbo', /jumbo/i], ['Disco', /\bdisco\b/i], ['Vea', /\bvea\b/i], ['ChangoMás', /chango ?m[aá]s/i], ['La Anónima', /an[oó]nima/i], ['Walmart', /walmart/i], ['Josimar', /josimar/i], ['Maxiconsumo', /maxiconsumo/i], ['Makro', /makro/i], ['Vital', /\bvital\b/i]];
+const cadOf = id => tkmap()['cadena:' + id] || '';
+const cadGuess = st => { const si = st.sepa && sucInfo(st.sepa); const t = st.name + ' ' + (si ? si.b : ''); return (CHAINS_KNOWN.find(([, rx]) => rx.test(t)) || [''])[0]; };
+const cadMode = c => tkmap()['cadmodo:' + fold(c)] || 'ask';
+const cadPeers = sid => { const c = cadOf(sid); return c ? activeStores().filter(s => s.id !== sid && fold(cadOf(s.id)) === fold(c)) : []; };
+function setCad(id, v) {
+  v = (v || '').trim(); const k = CHAINS_KNOWN.find(([n]) => fold(n) === fold(v)); if (k) v = k[0];
+  if (v) tkmap()['cadena:' + id] = v; else delete tkmap()['cadena:' + id];
+}
+/* Copia un precio a otras tiendas (misma regla que "Copiar a otras tiendas"): no pisa precios más nuevos */
+function copyPriceTo(p, sids, conPromo = true) {
+  conPromo = conPromo && p.promo?.t !== 'none';
+  let nuevos = 0, reemp = 0; const omit = [];
+  sids.forEach(sid => {
+    const np = { precio: p.precio, promo: conPromo ? { ...p.promo } : { t: 'none' }, hasta: conPromo ? p.hasta || '' : '', acum: conPromo ? !!p.acum : false, fecha: p.fecha, src: 'copia:' + p.storeId };
+    const d = S.prices.find(x => x.presId === p.presId && x.storeId === sid);
+    if (!d) { S.prices.push(touch({ ...np, id: uid(), presId: p.presId, storeId: sid, hist: [] })); nuevos++; }
+    else if ((np.fecha || '') > (d.fecha || '')) { d.hist = [...(d.hist || []), { precio: d.precio, fecha: d.fecha }].slice(-12); Object.assign(d, np); touch(d); reemp++; }
+    else omit.push(getStore(sid)?.name || '');
+  });
+  return { nuevos, reemp, omit };
+}
+const copyMsg = r => [r.nuevos ? `Copiado a ${r.nuevos} ${r.nuevos === 1 ? 'tienda' : 'tiendas'}` : '', r.reemp ? `${r.reemp} reemplazado${r.reemp === 1 ? '' : 's'} (el anterior quedó en el historial)` : '', r.omit.length ? `sin cambios en ${r.omit.join(', ')}: ya tenía un precio igual o más nuevo` : ''].filter(Boolean).join(' · ');
+let LASTCAD = null;   // { id: precio guardado, res } cuando se aplicó solo a la cadena
+function cadCargarHTML(p) {
+  const peers = cadPeers(p.storeId), c = cadOf(p.storeId); if (!peers.length) return '';
+  if (LASTCAD && LASTCAD.id === p.id) return `<div class="small" style="color:var(--accent);font-weight:700">También en ${esc(c)}: ${esc(copyMsg(LASTCAD.res) || 'sin cambios')}.</div>`;
+  if (cadMode(c) === 'off') return '';
+  return `<div class="row small" style="justify-content:space-between"><span>¿Mismo precio en las otras ${peers.length} ${peers.length === 1 ? 'tienda' : 'tiendas'} de ${esc(c)}? <span class="muted">(${esc(peers.map(s => s.name).join(', '))})</span></span><button type="button" class="btn sm" data-act="cadapply" data-id="${p.id}">Aplicar a ${esc(c)}</button></div>`;
+}
+function cadSectionHTML() {
+  const groups = {}; activeStores().forEach(s => { const c = cadOf(s.id); if (c) (groups[fold(c)] ||= { c, st: [] }).st.push(s); });
+  const G = Object.values(groups).sort((a, b) => a.c.localeCompare(b.c, 'es'));
+  const sinCad = activeStores().filter(s => !cadOf(s.id) && cadGuess(s));
+  return `<div class="paybox"><b>Cadenas</b><span class="small muted">Agrupá tus tiendas por cadena para aplicar un precio cargado en una a las demás (queda como copia "copiado de…" hasta que lo verifiques).</span>
+    ${sinCad.length ? `<div class="row small"><span>Sugerencia: ${esc(sinCad.map(s => `${s.name} → ${cadGuess(s)}`).join(' · '))}</span><button type="button" class="btn sm" data-act="cadguessall">Asignar</button></div>` : ''}
+    ${G.length ? G.map(g => `<div class="drow"><span><b>${esc(g.c)}</b> · ${g.st.length} ${g.st.length === 1 ? 'tienda' : 'tiendas'}<br><span class="small muted">${esc(g.st.map(s => s.name).join(', '))}</span></span>
+      ${g.st.length > 1 ? `<span class="chips">${[['off', 'No'], ['ask', 'Preguntar'], ['auto', 'Automático']].map(([m, l]) => `<button type="button" class="chip sm" aria-pressed="${cadMode(g.c) === m}" data-act="cadmode" data-c="${esc(g.c)}" data-v="${m}">${l}</button>`).join('')}</span>` : '<span class="small muted">Sumá otra tienda de esta cadena</span>'}</div>`).join('') : '<span class="small muted">Todavía no asignaste cadenas: completalas en cada tienda.</span>'}
+    <span class="small muted"><b>Preguntar:</b> al guardar un precio, aparece "Aplicar a la cadena". <b>Automático:</b> se aplica solo. Nunca pisa un precio más nuevo.</span></div>`;
+}
 /* Datos → Tiendas: vínculo con sucursales */
 function sucResHTML() {
   const used = new Map(linkedStores().map(s => [s.sepa, s])), q = fold(SQ);
@@ -2895,6 +2944,10 @@ const ACT = {
   sucback: () => { DV.suc = null; render(); window.scrollTo(0, 0); },
   svtab: el => { SV.tab = el.dataset.t; render(); if (SV.tab === 'all') setTimeout(() => $('#svQ')?.focus(), 60); },
   svf: el => { SV.f = el.dataset.f; render(); },
+  cadset: el => { setCad(el.dataset.id, el.dataset.v); save(); render(); },
+  cadguessall: () => { activeStores().forEach(s => { if (!cadOf(s.id) && cadGuess(s)) setCad(s.id, cadGuess(s)); }); save(); render(); toast('Cadenas asignadas'); },
+  cadmode: el => { tkmap()['cadmodo:' + fold(el.dataset.c)] = el.dataset.v; save(); render(); },
+  cadapply: el => { const p = getPrice(el.dataset.id); if (!p) return; const r = copyPriceTo(p, cadPeers(p.storeId).map(x => x.id)); LASTCAD = { id: p.id, res: r }; save(); render(); toast(copyMsg(r) || 'Sin cambios: las otras tiendas ya tenían un precio igual o más nuevo', 5000); },
   svselall: () => { const ids = SV.elig || []; const all = ids.every(id => SV.sel?.has(id)); SV.sel = new Set(all ? [] : ids); render(); },
   svbulk: () => { const st = getStore(DV.suc); if (!st || !SV.sel?.size) return toast('Seleccioná al menos un precio'); let n = 0; SV.sel.forEach(id => { const x = getPres(id), r = x && refFor(x.ean, st.id); if (r) { refMaterialize(id, st.id, r); n++; } }); SV.sel = null; PLANP = null; save(); render(); toast(`${n} ${n === 1 ? 'precio actualizado' : 'precios actualizados'} desde Precios Claros`); },
   nomretry: () => { NOMBRES = null; loadNombres(true); render(); },
@@ -2932,6 +2985,8 @@ const ACT = {
     } else if (price) { const hist = [...(price.hist || []), { precio: price.precio, fecha: price.fecha }].slice(-12); Object.assign(price, np, { id: price.id, hist }); touch(price); }
     else { price = touch({ ...np, id: uid(), hist: [] }); S.prices.push(price); }
     S.remind = S.remind.filter(m => !(m.presId === pres.id && m.storeId === t.price.storeId));
+    LASTCAD = null;
+    if (price.fecha === t.price.fecha && price.precio === t.price.precio && cadPeers(price.storeId).length && cadMode(cadOf(price.storeId)) === 'auto') LASTCAD = { id: price.id, res: copyPriceTo(price, cadPeers(price.storeId).map(x => x.id)) };
     if (toCart && price.fecha === t.price.fecha && price.precio === t.price.precio) { const it = S.cart.find(x => x.priceId === price.id); if (it) { if (it.plan) it.plan = false; else it.qty += 1; } else S.cart.push({ priceId: price.id, qty: 1 }); }
     if (F.setVisit && t.price.storeId !== S.visit.storeId) { S.visit.storeId = t.price.storeId; F.storeId = t.price.storeId; }
     save(); setLastProd(pres.prodId); lastSaved = price.id; CMP.prodId = pres.prodId; resetForm(pres.prodId); render(); window.scrollTo(0, 0);
@@ -3014,17 +3069,9 @@ const ACT = {
   cpydo: () => {
     const C = ED?.copy, p = ED && getPrice(ED.id); if (!C || !p) return;
     if (!C.st.length) return toast('Elegí al menos una tienda');
-    const conPromo = C.promo && p.promo?.t !== 'none';
-    let nuevos = 0, reemp = 0; const omit = [];
-    C.st.forEach(sid => {
-      const np = { precio: p.precio, promo: conPromo ? { ...p.promo } : { t: 'none' }, hasta: conPromo ? p.hasta || '' : '', acum: conPromo ? !!p.acum : false, fecha: p.fecha, src: 'copia:' + p.storeId };
-      const d = S.prices.find(x => x.presId === p.presId && x.storeId === sid);
-      if (!d) { S.prices.push(touch({ ...np, id: uid(), presId: p.presId, storeId: sid, hist: [] })); nuevos++; }
-      else if ((np.fecha || '') > (d.fecha || '')) { d.hist = [...(d.hist || []), { precio: d.precio, fecha: d.fecha }].slice(-12); Object.assign(d, np); touch(d); reemp++; }
-      else omit.push(getStore(sid)?.name || '');
-    });
+    const r = copyPriceTo(p, C.st, C.promo);
     ED.copy = null; save(); renderDatos();
-    toast([nuevos ? `Copiado a ${nuevos} ${nuevos === 1 ? 'tienda' : 'tiendas'}` : '', reemp ? `${reemp} reemplazado${reemp === 1 ? '' : 's'} (el anterior quedó en el historial)` : '', omit.length ? `sin cambios en ${omit.join(', ')}: ya tenía un precio igual o más nuevo` : ''].filter(Boolean).join(' · '), 5000);
+    toast(copyMsg(r), 5000);
   },
   cpyselall: () => { if (SELC.size === LASTVIS.length) SELC.clear(); else LASTVIS.forEach(id => SELC.add(id)); const c = $('#list-prices'); if (c) c.innerHTML = priceListHTML(); },
   cpyverifysel: () => {
@@ -3315,6 +3362,8 @@ document.addEventListener('change', e => {
   if (a === 'vstore') { S.visit.storeId = t.value; F.storeId = t.value; save(); lastSaved = null; render(); }
   else if (t.dataset.f === 'fecha' || t.dataset.f === 'hasta') { renderCargar(); }
   else if (t.dataset.ed === 'hasta' && ED) { renderDatos(); }
+  else if (a === 'cad') { setCad(t.dataset.id, t.value); save(); render(); }
+  else if (a === 'tkcad') { if (TK) TK.cadApply = t.checked; }
   else if (a === 'svsel') { if (!SV.sel) SV.sel = new Set(); if (t.checked) SV.sel.add(t.dataset.id); else SV.sel.delete(t.dataset.id); render(); }
   else if (a === 'tkstore') { if (TK) { if (t.value) tkmap()[tkStoreKey(TK)] = t.value; else delete tkmap()[tkStoreKey(TK)]; TK.sel = {}; save(); render(); } }
   else if (a === 'tkf') { const it = TK?.items[+t.dataset.i]; if (it) { const v = num(t.value), f = t.dataset.f; if (f === 'q' && v > 0) it.qty = v; if (f === 'u' && v > 0) it.unit = v; if (f === 'q' || f === 'u') it.gross = Math.round(it.qty * it.unit * 100) / 100; if (f === 'd' && v >= 0) { const sd = it.discs[0]; it.discs = v > 0 ? [{ label: sd?.label || 'Descuento', amt: v, pago: !!sd?.pago }] : []; } it.warn = []; TK.sel = {}; tkSums(TK); render(); } }
