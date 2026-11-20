@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.10.6">
+<meta name="app-version" content="v0.10.7">
 <title>Góndola Comparador</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#132033">
@@ -220,16 +220,21 @@ nav.tabs a[aria-current="page"]::before{content:"";position:absolute;top:0;left:
 .storebar select{font-weight:700}
 .pstores{border:1px solid var(--line);border-radius:12px;padding:8px 10px}
 details.more summary{cursor:pointer;color:var(--muted)}
-.dgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.tile-d{background:var(--surface);border:1px solid var(--line);border-radius:14px;display:grid;overflow:hidden;align-content:start}
+.dgrid{display:grid;grid-template-columns:1fr 1fr;grid-auto-rows:1fr;gap:10px}
+.dset{margin-top:18px;padding-top:14px;border-top:1px dashed var(--line)}
+.dset .tile-d{background:transparent;border-style:dashed}
+.tile-d{background:var(--surface);border:1px solid var(--line);border-radius:14px;display:grid;grid-template-rows:1fr auto;overflow:hidden;position:relative}
+.tile-d.dragging{opacity:.85;box-shadow:0 6px 18px rgba(0,0,0,.25);z-index:5;border-color:var(--accent)}
+.dhandle{position:absolute;top:58px;right:6px;touch-action:none;cursor:grab;border:0;background:none;color:var(--muted);font-size:20px;line-height:1;padding:4px;min-width:32px;min-height:32px;border-radius:8px;z-index:1}
+.dhandle:focus-visible{outline:2px solid var(--accent)}
 .tile-d.wide{grid-column:1/-1}
-.tile-main{border:0;background:transparent;color:var(--ink);font:inherit;text-align:left;cursor:pointer;padding:14px;display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center}
+.tile-main{border:0;background:transparent;color:var(--ink);font:inherit;text-align:left;cursor:pointer;padding:14px;display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 10px;align-items:center;align-content:start}
 .tile-main:focus-visible{outline:3px solid var(--accent);outline-offset:-3px}
 .tile-main .ti{width:38px;height:38px;border-radius:10px;background:var(--bg);display:grid;place-items:center;color:var(--accent)}
 .tile-main .ti svg{width:22px;height:22px}
-.tile-main .tt{font-weight:700;font-size:16px}
+.tile-main .tt{font-weight:700;font-size:16px;overflow-wrap:anywhere;hyphens:auto}
 .tile-main .tc{grid-column:1/-1;font-family:var(--font-d);font-weight:700;font-size:34px;line-height:1;font-variant-numeric:tabular-nums}
-.tile-main .tl{grid-column:1/-1;font-size:13px;color:var(--muted)}
+.tile-main .tl{grid-column:1/-1;font-size:13px;color:var(--muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .tile-alert{border:0;border-top:1px solid var(--line);background:var(--warn-bg);color:var(--warn);font:700 13px var(--font-b);padding:9px 14px;text-align:left;cursor:pointer}
 .dnav{display:grid;gap:8px}
 .dnav > .btn{justify-self:start}
@@ -279,7 +284,7 @@ body.in-datos header.top{padding-bottom:8px}
 <div class="app">
   <header class="top">
     <div class="syncbar" id="syncBar" hidden aria-hidden="true"><i></i></div>
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="vmini" id="vMini"></span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.10.6</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="vmini" id="vMini"></span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.10.7</button></span></div>
     <div class="symsg" id="syncMsg" role="status" hidden></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
@@ -923,7 +928,7 @@ function renderCarrito() {
   h += cartPlanHTML();
   if (k.items.length > 1) h += sortBar('cart');
   const cby = sortState('cart').by, CL = sortList('cart', k.items.map((x, idx) => ({ ...x, idx }))), many = CL.length > 1;
-  h += `<div class="list">` + CL.map((x, i) => `${cby === 'cat' && (i === 0 || cartCat(CL[i - 1].p) !== cartCat(x.p)) ? cartCatHead(cartCat(x.p), CL.filter(y => cartCat(y.p) === cartCat(x.p))) : ''}<article class="item" data-pid="${x.p.id}">
+  h += `<div class="list" data-dragkind="cart">` + CL.map((x, i) => `${cby === 'cat' && (i === 0 || cartCat(CL[i - 1].p) !== cartCat(x.p)) ? cartCatHead(cartCat(x.p), CL.filter(y => cartCat(y.p) === cartCat(x.p))) : ''}<article class="item" data-dragitem="1" data-pid="${x.p.id}">
       <div class="it-head">${many ? `<button type="button" class="drag" data-drag="1" aria-label="Arrastrar para cambiar el orden" title="Arrastrar para ordenar">⠿</button>` : ''}<div><div class="it-title">${esc(presLabel(getPres(x.p.presId)))}</div>
       <div class="it-meta">${x.pr.on ? `<span class="tag">${esc(x.pr.label)}</span>` : ''}<span class="small muted">${money(x.p.precio)}${cu(getPres(x.p.presId))}</span></div></div></div>
       <div class="it-price"><div class="big" style="font-size:22px">${money(x.sub)}</div>${x.pr.on && x.pr.N > 1 ? `<span class="small muted">${x.groups} promo${x.groups === 1 ? '' : 's'}${x.rem ? ` + ${x.rem} suelta${x.rem === 1 ? '' : 's'}` : ''}</span>` : ''}</div>
@@ -970,29 +975,36 @@ function cartReorder(ids) {   // ids: priceIds visibles en el orden nuevo; ocupa
 }
 const cartCatHead = (c, xs) => `<div class="cathead"><b>${esc(c || 'Sin categoría')}</b> · [${xs.length}] · ${money(xs.reduce((a, x) => a + x.sub, 0))}</div>`;
 let DRAG = null;
+const dragItems = list => [...list.children].filter(c => c.matches('[data-dragitem]'));
+const dragId = c => c.dataset.pid || c.dataset.dk;
+function dragDone(list) { const ids = dragItems(list).map(dragId); if (list.dataset.dragkind === 'dtiles') dtilesReorder(ids); else cartReorder(ids); }
 document.addEventListener('pointerdown', e => {
   const hd = e.target.closest('[data-drag]'); if (!hd) return;
-  const card = hd.closest('article.item'), list = card?.parentElement; if (!list) return;
+  const card = hd.closest('[data-dragitem]'), list = card?.parentElement; if (!list) return;
   e.preventDefault();
-  DRAG = { card, list, y: e.clientY, id: e.pointerId, moved: false, vy: 0 };
+  DRAG = { card, list, id: e.pointerId, moved: false, vy: 0 };
   card.classList.add('dragging'); try { hd.setPointerCapture(e.pointerId); } catch (x) {}
   const tick = () => { if (!DRAG) return; if (DRAG.vy) window.scrollBy(0, DRAG.vy); requestAnimationFrame(tick); }; requestAnimationFrame(tick);
 });
 document.addEventListener('pointermove', e => {
   if (!DRAG || e.pointerId !== DRAG.id) return;
-  const { card, list } = DRAG, y = e.clientY;
+  const { card, list } = DRAG, x = e.clientX, y = e.clientY, lw = list.getBoundingClientRect().width;
   DRAG.vy = y < 70 ? -8 : y > innerHeight - 70 ? 8 : 0;
-  const cards = [...list.querySelectorAll('article.item')].filter(c => c !== card);
-  const next = cards.find(c => { const r = c.getBoundingClientRect(); return y < r.top + r.height / 2; });
+  const cards = dragItems(list).filter(c => c !== card);
+  // va antes de la primera tarjeta que el dedo todavía no pasó (en cuadrícula, cuenta la columna dentro de la fila)
+  const next = cards.find(c => { const r = c.getBoundingClientRect(); if (y < r.top) return true; if (y > r.bottom) return false; return r.width > lw * 0.9 ? y < r.top + r.height / 2 : x < r.left + r.width / 2; });
   if (next) { if (next !== card.nextElementSibling) { list.insertBefore(card, next); DRAG.moved = true; } }
   else if (cards.length && cards.at(-1).nextElementSibling !== card) { cards.at(-1).after(card); DRAG.moved = true; }
 });
 const dragEnd = e => {
   if (!DRAG || (e.pointerId !== undefined && e.pointerId !== DRAG.id)) return;
   const { card, list, moved } = DRAG; DRAG = null; card.classList.remove('dragging');
-  if (moved) cartReorder([...list.querySelectorAll('article.item')].map(c => c.dataset.pid));
+  if (moved) dragDone(list);
 };
-document.addEventListener('keydown', e => { const hd = e.target.closest?.('[data-drag]'); if (!hd || !/^Arrow(Up|Down)$/.test(e.key)) return; e.preventDefault(); const id = hd.closest('article.item')?.dataset.pid; ACT.cartmv({ dataset: { id, d: e.key === 'ArrowUp' ? '-1' : '1' } }); setTimeout(() => document.querySelector(`#view-carrito article.item[data-pid="${id}"] [data-drag]`)?.focus(), 0); });
+document.addEventListener('keydown', e => { const hd = e.target.closest?.('[data-drag]'); if (!hd || !/^Arrow(Up|Down|Left|Right)$/.test(e.key)) return; const card = hd.closest('[data-dragitem]'), list = card?.parentElement; if (!list) return; e.preventDefault();
+  const ids = dragItems(list).map(dragId), id = dragId(card), i = ids.indexOf(id), j = i + (/Up|Left/.test(e.key) ? -1 : 1); if (j < 0 || j >= ids.length) return; [ids[i], ids[j]] = [ids[j], ids[i]];
+  const kind = list.dataset.dragkind; if (kind === 'dtiles') dtilesReorder(ids); else cartReorder(ids);
+  setTimeout(() => document.querySelector(`[data-dragitem][data-${kind === 'dtiles' ? 'dk' : 'pid'}="${id}"] [data-drag]`)?.focus(), 0); });
 document.addEventListener('pointerup', dragEnd); document.addEventListener('pointercancel', dragEnd);
 function cartPlanHTML() {
   const L = cartHere().filter(it => it.plan).sort((a, b) => cartCatKey(getPrice(a.priceId)).localeCompare(cartCatKey(getPrice(b.priceId)), 'es', { sensitivity: 'base', numeric: true })); if (!L.length) return '';
@@ -1987,6 +1999,7 @@ const SORTS = {
   cmp: { def: 'best', o: { best: ['Mejor precio', r => r.c.best.per, 1], gond: ['Precio góndola', r => r.p.precio, 1], age: ['Más viejos', r => r.p.fecha, 1], store: ['Tienda', r => getStore(r.p.storeId)?.name || '', 1], marca: ['Marca', r => presLabel(r.pres), 1] } },
   cart: { def: 'cat', o: { cat: ['Categoría', x => cartCatKey(x.p), 1], man: ['Manual', x => x.idx, 1], add: ['Agregado', x => x.it.at || x.idx, 1], sub: ['Subtotal', x => x.sub, -1], name: ['Nombre', x => presLabel(getPres(x.p.presId)), 1] } },
   plan: { def: 'save', o: { save: ['Mayor ahorro', x => x.save, -1], az: ['Producto A-Z', x => x.prod.name, 1], cat: ['Categoría', x => String(catIdx(catOf(x.prod))).padStart(3, '0') + ' ' + x.prod.name, 1], store: ['Tienda y día', x => x.best ? (getStore(x.best.p.storeId)?.name || '') + ' ' + x.best.c.at.k : '~', 1] } },
+  dHome: { def: 'sug', o: { sug: ['Sugerido', x => DT_SUG.indexOf(x.k), 1], use: ['Más usadas', x => DT.use[x.k] || 0, -1], man: ['Manual', x => dtManIdx(x.k), 1] } },
   dStores: { def: 'az', o: { az: ['A-Z', s => s.name, 1], add: ['Orden de carga', s => S.stores.indexOf(s), 1] } },
   dPays: { def: 'az', o: { az: ['A-Z', p => p.name, 1], add: ['Orden de carga', p => S.pays.indexOf(p), 1] } },
   dProds: { def: 'az', o: { az: ['A-Z', p => p.name, 1], cat: ['Categoría', p => String(catIdx(catOf(p))).padStart(3, '0') + ' ' + p.name, 1], npres: ['Presentaciones', p => S.pres.filter(x => x.prodId === p.id).length, -1], mod: ['Modificados', p => p.upd || '', -1] } },
@@ -2002,9 +2015,10 @@ function sortList(k, arr) {
     return r * dir || a[2] - b[2];
   }).map(x => x[0]);
 }
+const SORT_FIX = ['man', 'sug'];   // órdenes que no se invierten
 function sortBar(k) {
   const { by, dir } = sortState(k);
-  return `<div class="sortbar" role="group" aria-label="Ordenar"><span class="small muted">Ordenar:</span>${Object.entries(SORTS[k].o).map(([b, [l]]) => `<button type="button" class="chip sm" aria-pressed="${b === by}" data-act="sort" data-k="${k}" data-by="${b}" title="${b === by ? 'Tocá de nuevo para invertir' : 'Ordenar por ' + l}">${l}${b === by ? (dir > 0 ? ' ↑' : ' ↓') : ''}</button>`).join('')}</div>`;
+  return `<div class="sortbar" role="group" aria-label="Ordenar"><span class="small muted">Ordenar:</span>${Object.entries(SORTS[k].o).map(([b, [l]]) => `<button type="button" class="chip sm" aria-pressed="${b === by}" data-act="sort" data-k="${k}" data-by="${b}" title="${b === by && !SORT_FIX.includes(b) ? 'Tocá de nuevo para invertir' : 'Ordenar por ' + l}">${l}${b === by && !SORT_FIX.includes(b) ? (dir > 0 ? ' ↑' : ' ↓') : ''}</button>`).join('')}</div>`;
 }
 const searchBox = (k, ph) => `<input type="search" class="search" data-q="${k}" value="${esc(Q[k])}" placeholder="${ph}" aria-label="${ph}" autocomplete="off">`;
 function presListHTML() {
@@ -2077,6 +2091,12 @@ function mergeStores(srcId, dstId) {
   S.stores = S.stores.filter(s => s.id !== srcId); tomb('stores', srcId);
   return { moved, merged };
 }
+/* Orden de las tarjetas de Datos: Sugerido, Más usadas (cuenta en este celular) o Manual (arrastrando) */
+const DT_LS = 'gondola.dtiles', DT_SUG = ['prices', 'pend', 'prods', 'pres', 'stores', 'pays'];
+let DT = { man: [], use: {} }; try { Object.assign(DT, JSON.parse(localStorage.getItem(DT_LS) || '{}')); } catch (e) {}
+const dtSave = () => { try { localStorage.setItem(DT_LS, JSON.stringify(DT)); } catch (e) {} };
+const dtManIdx = k => { const i = DT.man.indexOf(k); return i < 0 ? 100 + DT_SUG.indexOf(k) : i; };
+function dtilesReorder(ids) { DT.man = ids; dtSave(); SORT.dHome = { by: 'man', dir: 1 }; try { localStorage.setItem(SORT_LS, JSON.stringify(SORT)); } catch (e) {} renderDatos(); }
 function datosHome(demo) {
   const dow = new Date().getDay();
   const hoy = S.pays.filter(p => !p.dias?.length || p.dias.includes(dow)).length;
@@ -2085,17 +2105,19 @@ function datosHome(demo) {
   const fresh = S.prices.filter(p => ageDays(p.fecha) <= 7).length;
   const sinEan = S.pres.filter(x => !x.ean).length;
   const pend = pendientes(), on = !!(SYNC.url && SYNC.key);
-  const tile = (k, title, count, line, alert, wide) => `<div class="tile-d${wide ? ' wide' : ''}"><button class="tile-main" data-act="dgo" data-s="${k}"><span class="ti">${dIcon(k)}</span><span class="tt">${title}</span>${count !== '' ? `<span class="tc">${count}</span>` : ''}<span class="tl">${line}</span></button>${alert || ''}</div>`;
+  const tile = (k, title, count, line, alert, wide) => `<div class="tile-d${wide ? ' wide' : ''}"${wide ? '' : ` data-dragitem="1" data-dk="${k}"`}>${wide ? '' : '<button type="button" class="dhandle" data-drag="1" aria-label="Arrastrar para cambiar el orden" title="Arrastrar para ordenar">⠿</button>'}<button class="tile-main" data-act="dgo" data-s="${k}"><span class="ti">${dIcon(k)}</span><span class="tt">${title}</span>${count !== '' ? `<span class="tc">${count}</span>` : ''}<span class="tl">${line}</span></button>${alert || ''}</div>`;
   const alertBtn = (act, txt, s) => `<button class="tile-alert" data-act="${act}"${s ? ` data-s="${s}"` : ''}>${txt} →</button>`;
-  return demo + `<div class="dgrid">
-    ${tile('pays', 'Pagos', S.pays.length, `${hoy} aplica${hoy === 1 ? '' : 'n'} hoy`, topeBajo ? alertBtn('dgo', `${topeBajo} con tope casi agotado`, 'pays') : '')}
-    ${(() => { const a = activeStores().length, ar = S.stores.length - a; return tile('stores', 'Tiendas', a, `activa${a === 1 ? '' : 's'}${ar ? ` · ${ar} archivada${ar === 1 ? '' : 's'}` : ''} · ${S.prices.length} precios`); })()}
-    ${(() => { const sc = S.prods.filter(p => !catOf(p)).length; return tile('prods', 'Productos', S.prods.length, `${S.pres.length} presentaciones${sc ? ` · ${sc} sin categoría` : ''}`); })()}
-    ${(() => { const P = pendData(); return tile('pend', 'Pendientes', P.n, P.n ? `${P.pres.length} por completar · ${P.rem.length} precios para cargar` : 'Nada pendiente', P.n ? alertBtn('dgo', `${P.n} cargas pendientes`, 'pend') : ''); })()}
-    ${tile('pres', 'Presentaciones', S.pres.length, sinEan ? `${sinEan} sin código de barras` : 'Todas con código de barras')}
-    ${tile('prices', 'Precios', S.prices.length, `${fresh} actualizado${fresh === 1 ? '' : 's'} en la última semana`, old ? alertBtn('dold', `${old} con más de 3 semanas`) : '', true)}
-    ${tile('ajustes', 'Ajustes', '', `Sincronización: ${on ? (SYNC.conflicts ? `⚠ ${SYNC.conflicts} conflicto${SYNC.conflicts === 1 ? '' : 's'}` : `${agoTxt(SYNC.lastOk)}${pend ? ` · ${pend} sin enviar` : ''}`) : 'sin configurar'} · Respaldo · Cómo calcula`, '', true)}
-  </div>`;
+  const TL = {
+    pays: () => `${tile('pays', 'Pagos', S.pays.length, `${hoy} aplica${hoy === 1 ? '' : 'n'} hoy`, topeBajo ? alertBtn('dgo', `${topeBajo} con tope casi agotado`, 'pays') : '')}`,
+    stores: () => `${(() => { const a = activeStores().length, ar = S.stores.length - a; return tile('stores', 'Tiendas', a, `activa${a === 1 ? '' : 's'}${ar ? ` · ${ar} archivada${ar === 1 ? '' : 's'}` : ''} · ${S.prices.length} precios`); })()}`,
+    prods: () => `${(() => { const sc = S.prods.filter(p => !catOf(p)).length; return tile('prods', 'Productos', S.prods.length, `${S.pres.length} presentaciones${sc ? ` · ${sc} sin categoría` : ''}`); })()}`,
+    pend: () => `${(() => { const P = pendData(); return tile('pend', 'Pendientes', P.n, P.n ? `${P.pres.length} por completar · ${P.rem.length} precios para cargar` : 'Nada pendiente', P.n ? alertBtn('dgo', `${P.n} cargas pendientes`, 'pend') : ''); })()}`,
+    pres: () => `${tile('pres', 'Presentaciones', S.pres.length, sinEan ? `${sinEan} sin código de barras` : 'Todas con código de barras')}`,
+    prices: () => `${tile('prices', 'Precios', S.prices.length, `${fresh} actualizado${fresh === 1 ? '' : 's'} en la última semana`, old ? alertBtn('dold', `${old} con más de 3 semanas`) : '')}`
+  };
+  const keys = sortList('dHome', DT_SUG.map(k => ({ k })));
+  return demo + sortBar('dHome') + `<div class="dgrid" data-dragkind="dtiles">${keys.map(x => TL[x.k]()).join('')}</div>
+    <div class="dset">${tile('ajustes', 'Ajustes', '', `Sincronización: ${on ? (SYNC.conflicts ? `⚠ ${SYNC.conflicts} conflicto${SYNC.conflicts === 1 ? '' : 's'}` : `${agoTxt(SYNC.lastOk)}${pend ? ` · ${pend} sin enviar` : ''}`) : 'sin configurar'} · Respaldo · Cómo calcula`, '', true)}</div>`;
 }
 function datosSection(B, demo) {
   const k = DV.sec, meta = DSECS.find(x => x[0] === k);
@@ -3061,7 +3083,7 @@ const ACT = {
   spacego: () => { DV.sec = 'ajustes'; OPEN.add('space'); go('datos'); },
   spacecalc: () => { STEST = null; render(); },
   spacefree: () => { const n = compactar(); save(); STEST = null; render(); toast(n ? `${n} ${n === 1 ? 'compra quedó' : 'compras quedaron'} como resumen; el detalle sigue en la planilla.` : 'No hay compras para resumir'); },
-  cartmv: el => { const ids = [...document.querySelectorAll('#view-carrito article.item[data-pid]')].map(a => a.dataset.pid), i = ids.indexOf(el.dataset.id), j = i + +el.dataset.d; if (i < 0 || j < 0 || j >= ids.length) return; [ids[i], ids[j]] = [ids[j], ids[i]]; cartReorder(ids); },
+  cartmv: el => { const ids = [...document.querySelectorAll('#view-carrito article.item[data-dragitem]')].map(a => a.dataset.pid), i = ids.indexOf(el.dataset.id), j = i + +el.dataset.d; if (i < 0 || j < 0 || j >= ids.length) return; [ids[i], ids[j]] = [ids[j], ids[i]]; cartReorder(ids); },
   cadset: el => { setCad(el.dataset.id, el.dataset.v); save(); render(); },
   cadguessall: () => { activeStores().forEach(s => { if (!cadOf(s.id) && cadGuess(s)) setCad(s.id, cadGuess(s)); }); save(); render(); toast('Cadenas asignadas'); },
   cadmode: el => { tkmap()['cadmodo:' + fold(el.dataset.c)] = el.dataset.v; save(); render(); },
@@ -3288,7 +3310,7 @@ const ACT = {
   prefage: el => { PREF.maxAge = +el.dataset.v; savePref(); renderPlanificar(); },
   prefreset: () => { PREF = { ...PREF_DEF, open: true }; savePref(); renderPlanificar(); },
   sync: () => { if (SYUI.result === 'err' && !syncing) toast('Último intento: ' + SYUI.msg + '. Reintentando…', 3500); syncNow(false); },
-  dgo: el => { const s2 = el.dataset.s; if (s2 !== DV.sec) { ED = null; DV.adding = false; } if (s2 !== 'prices') DV.old = false; DV.suc = null; DV.ppres = ''; DV.back = null; if (s2 !== 'prices') DV.pcopy = false; DV.sec = s2; renderDatos(); window.scrollTo(0, 0); },
+  dgo: el => { const s2 = el.dataset.s; if (s2 !== 'ajustes') { DT.use[s2] = (DT.use[s2] || 0) + 1; dtSave(); } if (s2 !== DV.sec) { ED = null; DV.adding = false; } if (s2 !== 'prices') DV.old = false; DV.suc = null; DV.ppres = ''; DV.back = null; if (s2 !== 'prices') DV.pcopy = false; DV.sec = s2; renderDatos(); window.scrollTo(0, 0); },
   smerge: el => { SMERGE = el.dataset.id; renderDatos(); },
   smergex: () => { SMERGE = null; renderDatos(); },
   sdomerge: el => { const src = el.dataset.id, dst = $('#mergeDest')?.value; if (!dst) return; const n = getStore(src).name, r = mergeStores(src, dst); SMERGE = null; save(); render(); toast(`${n} se unió a ${getStore(dst).name}: ${r.moved} precio${r.moved === 1 ? '' : 's'} pasaron y ${r.merged} se combinaron.`, 4500); },
@@ -3312,7 +3334,7 @@ const ACT = {
     else if (k === 'stores' || k === 'prods') { DV.adding = true; ED = null; renderDatos(); window.scrollTo(0, 0); setTimeout(() => $(k === 'stores' ? '#newStore' : '#npName')?.focus(), 60); }
     else { resetForm(S.prods[0] ? (getProd(F.prodId) ? F.prodId : S.prods[0].id) : '__new'); lastSaved = null; go('cargar'); }
   },
-  sort: el => { const k = el.dataset.k, by = el.dataset.by, st = sortState(k); SORT[k] = st.by === by && by !== 'man' ? { by, dir: -st.dir } : { by, dir: SORTS[k].o[by][2] }; try { localStorage.setItem(SORT_LS, JSON.stringify(SORT)); } catch (e) {} render(); },
+  sort: el => { const k = el.dataset.k, by = el.dataset.by, st = sortState(k); SORT[k] = st.by === by && !SORT_FIX.includes(by) ? { by, dir: -st.dir } : { by, dir: SORTS[k].o[by][2] }; try { localStorage.setItem(SORT_LS, JSON.stringify(SORT)); } catch (e) {} render(); },
   cpick: el => { CONF.list[+el.dataset.i].pick = el.dataset.v; renderConf(); },
   cpickall: el => { CONF.list.forEach(x => x.pick = el.dataset.v); renderConf(); },
   capply: () => applyConf(),
