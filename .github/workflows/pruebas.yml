@@ -1,0 +1,24 @@
+name: Pruebas del lector de tickets
+
+# Lee los tickets reales de tests/tickets/ (sin datos personales) con el lector de la app y compara
+# con tests/esperado.json. Si algo cambia sin querer, el flujo falla y GitHub avisa por mail.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "index.html"
+      - "tests/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pruebas:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Leer los tickets de prueba
+        run: python3 tests/run_tests.py

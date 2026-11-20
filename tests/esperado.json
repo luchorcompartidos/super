@@ -1,0 +1,997 @@
+{
+ "carrefour-1": {
+  "cadena": "carrefour",
+  "sucursal": "182",
+  "fecha": "2026-09-23",
+  "factura": "10437-00401920",
+  "total": 46668.4,
+  "cierra": true,
+  "medio": "MODO",
+  "descuentoPago": "",
+  "productos": [
+   {
+    "ean": "7790742358608",
+    "cant": 1,
+    "precio": 2340,
+    "importe": 2340,
+    "descuento": 0,
+    "pago": false,
+    "promo": {
+     "t": "none"
+    }
+   },
+   {
+    "ean": "7790742358400",
+    "cant": 1,
+    "precio": 2340,
+    "importe": 2340,
+    "descuento": 0,
+    "pago": false,
+    "promo": {
+     "t": "none"
+    }
+   },
+   {
+    "ean": "7791720049693",
+    "cant": 2,
+    "precio": 1890,
+    "importe": 3780,
+    "descuento": 0,
+    "pago": false,
+    "promo": {
+     "t": "none"
+    }
+   },
+   {
+    "ean": "7798141715169",
+    "cant": 1,
+    "precio": 2350,
+    "importe": 2350,
+    "descuento": 260,
+    "pago": false,
+    "promo": {
+     "t": "fixed",
+     "v": 2090
+    }
+   },
+   {
+    "ean": "7790070335937",
+    "cant": 1,
+    "precio": 2399,
+    "importe": 2399,
+    "descuento": 839.65,
+    "pago": false,
+    "promo": {
+     "t": "pct",
+     "v": 35
+    }
+   },
+   {
+    "ean": "77940131",
+    "cant": 5,
+    "precio": 439,
+    "importe": 2195,
+    "descuento": 695,
+    "pago": false,
+    "promo": {
+     "t": "nfor",
+     "n": 5,
+     "v": 1500
+    }
+   },
+   {
+    "ean": "7794000006188",
+    "cant": 1,
+    "precio": 1960,
+    "importe": 1960,
+    "descuento": 0,
+    "pago": false,
+    "promo": {
+     "t": "none"
+    }
+   },
+   {
+    "ean": "7791337010017",
+    "cant": 1,
+    "precio": 5159,
+    "importe": 5159,
+    "descuento": 2063.6,
+    "pago": false,
+    "promo": {
+     "t": "pct",
+     "v": 40
+    }
+   },
+   {
+    "ean": "peso",
+    "cant": 0.386,
+    "precio": 12900,
+    "importe": 4979.4,
+    "descuento": 0,
+    "pago": false,
+    "promo": {
+     "t": "none"
+    }
+   },
+   {
+    "ean": "7798033337875",
+    "cant": 1,
+    "precio": 2860,
+    "importe": 2860,
+    "descuento": 0,
+    "pago": false,
+    "promo": {
+     "t": "none"
+    }
+   },
+   {
+    "ean": "0076625286228",
+    "cant": 1,
+    "precio": 5600,
+    "importe": 5600,
+    "descuento": 0,
+    "pago": false,
+    "promo": {
+     "t": "none"
+    }
+   },
+   {
+    "ean": "7798081515973",
+    "cant": 1,
+    "precio": 799,
+    "importe": 799,
+    "descuento": 0,
+    "pago": false,
+    "promo": {
+     "t": "none"
+    }
+   },
+   {
+    "ean": "7798159718961",
+    "cant": 2,
+    "precio": 3990,
+    "importe": 7980,
+    "descuento": 2394,
+    "pago": false,
+    "promo": {
+     "t": "pct",
+     "v": 30
+    }
+   },
+   {
+    "ean": "7791290795273",
+    "cant": 1,
+    "precio": 7239,
+    "importe": 7239,
+    "descuento": 1809.75,
+    "pago": false,
+    "promo": {
+     "t": "pct",
+     "v": 25
+    }
+   },
+   {
+    "ean": "7798033338452",
+    "cant": 1,
+    "precio": 3050,
+    "importe": 3050,
+    "descuento": 300,
+    "pago": false,
+    "promo": {
+     "t": "fixed",
+     "v": 2750
+    }
+   }
+  ]
+ },
+ "carrefour-2": {
+  "cadena": "carrefour",
+  "sucursal": "182",
+  "fecha": "2026-09-30",
+  "factura": "10433-00338353",
+  "total": 50590.35,
+  "cierra": true,
+  "medio": "",
+  "descuentoPago": "",
+  "productos": [
+   {
+    "ean": "7790550029127",
+    "cant": 1,
+    "precio": 24049,
+    "importe": 24049,
+    "descuento": 6012.25,
+    "pago": false,
+    "promo": {
+     "t": "pct",
+     "v": 25
+    }
+   },
+   {
+    "ean": "7798159717483",
+    "cant": 1,
+    "precio": 1790,
+    "importe": 1790,
+    "descuento": 140,
+    "pago": false,
+    "promo": {
+     "t": "fixed",
+     "v": 1650
+    }
+   },
+   {
+    "ean": "7790070318343",
+    "cant": 1,
+    "precio": 1749,
+    "importe": 1749,
+    "descuento": 612.15,
+    "pago": false,
+    "promo": {
+     "t": "pct",
+     "v": 35
+    }
+   },
+   {
+    "ean": "7791720049693",
+    "cant": 1,
+    "precio": 1890,
+    "importe": 1890,
+    "descuento": 0,
+    "pago": false,
+    "promo": {
+     "t": "none"
+    }
+   },
+   {
+    "ean": "7791720028506",
+    "cant": 1,
+    "precio": 2850,
+    "importe": 2850,
+    "descuento": 0,
+    "pago": false,
+    "promo": {
+     "t": "none"
+    }
+   },
+   {
+    "ean": "77940131",
+    "cant": 5,
+    "precio": 439,
+    "importe": 2195,
+    "descuento": 695,
+    "pago": false,
+    "promo": {
+     "t": "nfor",
+     "n": 5,
+     "v": 1500
+    }
+   },
+   {
+    "ean": "77958921",
+    "cant": 4,
+    "precio": 859,
+    "importe": 3436,
+    "descuento": 1436,
+    "pago": false,
+    "promo": {
+     "t": "nfor",
+     "n": 4,
+     "v": 2000
+    }
+   },
+   {
+    "ean": "7796746000062",
+    "cant": 1,
+    "precio": 4999,
+    "importe": 4999,
+    "descuento": 0,
+    "pago": false,
+    "promo": {
+     "t": "none"
+    }
+   },
+   {
+    "ean": "7798179070513",
+    "cant": 1,
+    "precio": 5730,
+    "importe": 5730,
+    "descuento": 0,
+    "pago": false,
+    "promo": {
+     "t": "none"
+    }
+   },
+   {
+    "ean": "7791231110066",
+    "cant": 1,
+    "precio": 11990,
+    "importe": 11990,
+    "descuento": 2398,
+    "pago": false,
+    "promo": {
+     "t": "pct",
+     "v": 20
+    }
+   },
+   {
+    "ean": "7791293049403",
+    "cant": 1,
+    "precio": 1855,
+    "importe": 1855,
+    "descuento": 649.25,
+    "pago": false,
+    "promo": {
+     "t": "pct",
+     "v": 35
+    }
+   }
+  ]
+ },
+ "coto-1": {
+  "cadena": "coto",
+  "sucursal": "44",
+  "fecha": "2026-11-19",
+  "factura": "044-06650753",
+  "total": 83645.08,
+  "cierra": true,
+  "medio": "TARJETA CRE/DES",
+  "descuentoPago": "caja",
+  "productos": [
+   {
+    "ean": "peso",
+    "cant": 0.75,
+    "precio": 5999,
+    "importe": 4499.25,
+    "descuento": 0,
+    "pago": false,
+    "promo": {
+     "t": "none"
+    }
+   },
+   {
+    "ean": "peso",
+    "cant": 0.135,
+    "precio": 2999.04,
+    "importe": 404.87,
+    "descuento": 0,
+    "pago": false,
+    "promo": {
+     "t": "none"
+    }
+   },
+   {
+    "ean": "peso",
+    "cant": 0.175,
+    "precio": 2299.03,
+    "importe": 402.33,
+    "descuento": 0,
+    "pago": false,
+    "promo": {
+     "t": "none"
+    }
+   },
+   {
+    "ean": "peso",
+    "cant": 0.68,
+    "precio": 2999,
+    "importe": 2039.32,
+    "descuento": 0,
+    "pago": false,
+    "promo": {
+     "t": "none"
+    }
+   },
+   {
+    "ean": "peso",
+    "cant": 0.45,
+    "precio": 1599,
+    "importe": 719.55,
+    "descuento": 0,
+    "pago": false,
+    "promo": {
+     "t": "none"
+    }
+   },
+   {
+    "ean": "peso",
+    "cant": 0.17,
+    "precio": 18999,
+    "importe": 3229.83,
+    "descuento": 0,
+    "pago": false,
+    "promo": {
+     "t": "none"
+    }
+   },
+   {
+    "ean": "peso",
+    "cant": 0.985,
+    "precio": 2899.01,
+    "importe": 2855.52,
+    "descuento": 0,
+    "pago": false,
+    "promo": {
+     "t": "none"
+    }
+   },
+   {
+    "ean": "2800000798512",
+    "cant": 1,
+    "precio": 2299,
+    "importe": 2299,
+    "descuento": 689.7,
+    "pago": true,
+    "promo": {
+     "t": "none"
+    }
+   },
+   {
+    "ean": "2800000428822",
+    "cant": 2,
+    "precio": 12500,
+    "importe": 25000,
+    "descuento": 12500,
+    "pago": false,
+    "promo": {
+     "t": "nxm",
+     "n": 2,
+     "m": 1
+    }
+   },
+   {
+    "ean": "7794903232424",
+    "cant": 6,
+    "precio": 572,
+    "importe": 3432,
+    "descuento": 1029.6,
+    "pago": true,
+    "promo": {
+     "t": "none"
+    }
+   },
+   {
+    "ean": "7791290792814",
+    "cant": 1,
+    "precio": 4744.99,
+    "importe": 4744.99,
+    "descuento": 1898,
+    "pago": false,
+    "promo": {
+     "t": "pct",
+     "v": 40
+    }
+   },
+   {
+    "ean": "7793360129940",
+    "cant": 1,
+    "precio": 3235,
+    "importe": 3235,
+    "descuento": 809.4,
+    "pago": false,
+    "promo": {
+     "t": "pct",
+     "v": 25
+    }
+   },
+   {
+    "ean": "7791599798500",
+    "cant": 2,
+    "precio": 2699,
+    "importe": 5398,
+    "descuento": 1619.4,
+    "pago": true,
+    "promo": {
+     "t": "none"
+    }
+   },
+   {
+    "ean": "7798332150045",
+    "cant": 2,
+    "precio": 3395,
+    "importe": 6790,
+    "descuento": 2716,
+    "pago": false,
+    "promo": {
+     "t": "pct",
+     "v": 40
+    }
+   },
+   {
+    "ean": "7798332150038",
+    "cant": 1,
+    "precio": 3395,
+    "importe": 3395,
+    "descuento": 1358,
+    "pago": false,
+    "promo": {
+     "t": "pct",
+     "v": 40
+    }
+   },
+   {
+    "ean": "7791250003271",
+    "cant": 3,
+    "precio": 4173,
+    "importe": 12519,
+    "descuento": 5007.6,
+    "pago": false,
+    "promo": {
+     "t": "pct",
+     "v": 40
+    }
+   },
+   {
+    "ean": "7792180142122",
+    "cant": 1,
+    "precio": 11245,
+    "importe": 11245,
+    "descuento": 4498,
+    "pago": false,
+    "promo": {
+     "t": "pct",
+     "v": 40
+    }
+   },
+   {
+    "ean": "7790071090125",
+    "cant": 2,
+    "precio": 1987,
+    "importe": 3974,
+    "descuento": 1390.9,
+    "pago": false,
+    "promo": {
+     "t": "pct",
+     "v": 35
+    }
+   },
+   {
+    "ean": "7790071070417",
+    "cant": 1,
+    "precio": 2289,
+    "importe": 2289,
+    "descuento": 801.15,
+    "pago": false,
+    "promo": {
+     "t": "pct",
+     "v": 35
+    }
+   },
+   {
+    "ean": "7790071090330",
+    "cant": 1,
+    "precio": 1987,
+    "importe": 1987,
+    "descuento": 695.45,
+    "pago": false,
+    "promo": {
+     "t": "pct",
+     "v": 35
+    }
+   },
+   {
+    "ean": "7790670052616",
+    "cant": 1,
+    "precio": 4079,
+    "importe": 4079,
+    "descuento": 1223.7,
+    "pago": true,
+    "promo": {
+     "t": "none"
+    }
+   },
+   {
+    "ean": "2800005827552",
+    "cant": 2,
+    "precio": 1299,
+    "importe": 2598,
+    "descuento": 649.5,
+    "pago": false,
+    "promo": {
+     "t": "pct",
+     "v": 25
+    }
+   },
+   {
+    "ean": "7791337010017",
+    "cant": 1,
+    "precio": 5405,
+    "importe": 5405,
+    "descuento": 1621.5,
+    "pago": true,
+    "promo": {
+     "t": "none"
+    }
+   },
+   {
+    "ean": "7793147574222",
+    "cant": 3,
+    "precio": 2830,
+    "importe": 8490,
+    "descuento": 4245,
+    "pago": false,
+    "promo": {
+     "t": "pct",
+     "v": 50
+    }
+   },
+   {
+    "ean": "7622202359934",
+    "cant": 4,
+    "precio": 625,
+    "importe": 2500,
+    "descuento": 1250,
+    "pago": false,
+    "promo": {
+     "t": "nxm",
+     "n": 2,
+     "m": 1
+    }
+   },
+   {
+    "ean": "7791290796935",
+    "cant": 1,
+    "precio": 5881.89,
+    "importe": 5881.89,
+    "descuento": 1764.57,
+    "pago": true,
+    "promo": {
+     "t": "none"
+    }
+   }
+  ]
+ },
+ "coto-2": {
+  "cadena": "coto",
+  "sucursal": "44",
+  "fecha": "2026-11-17",
+  "factura": "044-06646801",
+  "total": 70283.27,
+  "cierra": true,
+  "medio": "TARJETA CRE/DES",
+  "descuentoPago": "reintegro",
+  "productos": [
+   {
+    "ean": "peso",
+    "cant": 2.42,
+    "precio": 1199,
+    "importe": 2901.58,
+    "descuento": 0,
+    "pago": false,
+    "promo": {
+     "t": "none"
+    }
+   },
+   {
+    "ean": "peso",
+    "cant": 0.355,
+    "precio": 4699.01,
+    "importe": 1668.15,
+    "descuento": 0,
+    "pago": false,
+    "promo": {
+     "t": "none"
+    }
+   },
+   {
+    "ean": "peso",
+    "cant": 0.964,
+    "precio": 4999,
+    "importe": 4819.04,
+    "descuento": 0,
+    "pago": false,
+    "promo": {
+     "t": "none"
+    }
+   },
+   {
+    "ean": "peso",
+    "cant": 1.015,
+    "precio": 2899,
+    "importe": 2942.49,
+    "descuento": 0,
+    "pago": false,
+    "promo": {
+     "t": "none"
+    }
+   },
+   {
+    "ean": "2800000798512",
+    "cant": 1,
+    "precio": 2299,
+    "importe": 2299,
+    "descuento": 574.75,
+    "pago": true,
+    "promo": {
+     "t": "none"
+    }
+   },
+   {
+    "ean": "77958921",
+    "cant": 6,
+    "precio": 856.99,
+    "importe": 5141.94,
+    "descuento": 1722.01,
+    "pago": false,
+    "promo": {
+     "t": "nxm",
+     "n": 3,
+     "m": 2
+    }
+   },
+   {
+    "ean": "77958631",
+    "cant": 1,
+    "precio": 898.99,
+    "importe": 898.99,
+    "descuento": 224.75,
+    "pago": true,
+    "promo": {
+     "t": "none"
+    }
+   },
+   {
+    "ean": "2800002176349",
+    "cant": 2,
+    "precio": 8799,
+    "importe": 17598,
+    "descuento": 8799,
+    "pago": false,
+    "promo": {
+     "t": "nxm",
+     "n": 2,
+     "m": 1
+    }
+   },
+   {
+    "ean": "77958655",
+    "cant": 1,
+    "precio": 898.99,
+    "importe": 898.99,
+    "descuento": 224.75,
+    "pago": true,
+    "promo": {
+     "t": "none"
+    }
+   },
+   {
+    "ean": "7794058702025",
+    "cant": 1,
+    "precio": 5249,
+    "importe": 5249,
+    "descuento": 1312.25,
+    "pago": true,
+    "promo": {
+     "t": "none"
+    }
+   },
+   {
+    "ean": "7802107000876",
+    "cant": 1,
+    "precio": 4800,
+    "importe": 4800,
+    "descuento": 2400,
+    "pago": false,
+    "promo": {
+     "t": "pct",
+     "v": 50
+    }
+   },
+   {
+    "ean": "7794903232424",
+    "cant": 3,
+    "precio": 572,
+    "importe": 1716,
+    "descuento": 429,
+    "pago": true,
+    "promo": {
+     "t": "none"
+    }
+   },
+   {
+    "ean": "7791250003271",
+    "cant": 3,
+    "precio": 4173,
+    "importe": 12519,
+    "descuento": 4381.65,
+    "pago": false,
+    "promo": {
+     "t": "pct",
+     "v": 35
+    }
+   },
+   {
+    "ean": "7841503000172",
+    "cant": 2,
+    "precio": 959.99,
+    "importe": 1919.98,
+    "descuento": 767.99,
+    "pago": false,
+    "promo": {
+     "t": "pct",
+     "v": 40
+    }
+   },
+   {
+    "ean": "7790040143937",
+    "cant": 1,
+    "precio": 1031.99,
+    "importe": 1031.99,
+    "descuento": 362.13,
+    "pago": false,
+    "promo": {
+     "t": "pct",
+     "v": 35
+    }
+   },
+   {
+    "ean": "7790550029127",
+    "cant": 1,
+    "precio": 26694,
+    "importe": 26694,
+    "descuento": 9342.9,
+    "pago": false,
+    "promo": {
+     "t": "pct",
+     "v": 35
+    }
+   },
+   {
+    "ean": "727373294941",
+    "cant": 1,
+    "precio": 4799,
+    "importe": 4799,
+    "descuento": 1679.65,
+    "pago": false,
+    "promo": {
+     "t": "pct",
+     "v": 35
+    }
+   },
+   {
+    "ean": "7792798015146",
+    "cant": 1,
+    "precio": 2833,
+    "importe": 2833,
+    "descuento": 991.55,
+    "pago": false,
+    "promo": {
+     "t": "pct",
+     "v": 35
+    }
+   }
+  ]
+ },
+ "dia-1": {
+  "cadena": "dia",
+  "sucursal": "611",
+  "fecha": "2026-11-17",
+  "factura": "02984-00604611",
+  "total": 11312,
+  "cierra": true,
+  "medio": "TARJETA",
+  "descuentoPago": "",
+  "productos": [
+   {
+    "ean": "8480017233592",
+    "cant": 1,
+    "precio": 3090,
+    "importe": 3090,
+    "descuento": 618,
+    "pago": false,
+    "promo": {
+     "t": "pct",
+     "v": 20
+    }
+   },
+   {
+    "ean": "77958921",
+    "cant": 4,
+    "precio": 890,
+    "importe": 3560,
+    "descuento": 960,
+    "pago": false,
+    "promo": {
+     "t": "nfor",
+     "n": 2,
+     "v": 1300
+    }
+   },
+   {
+    "ean": "8480017183989",
+    "cant": 1,
+    "precio": 1060,
+    "importe": 1060,
+    "descuento": 212,
+    "pago": false,
+    "promo": {
+     "t": "pct",
+     "v": 20
+    }
+   },
+   {
+    "ean": "8480017163479",
+    "cant": 3,
+    "precio": 1150,
+    "importe": 3450,
+    "descuento": 690,
+    "pago": false,
+    "promo": {
+     "t": "pct",
+     "v": 20
+    }
+   },
+   {
+    "ean": "8480017242099",
+    "cant": 1,
+    "precio": 1395,
+    "importe": 1395,
+    "descuento": 279,
+    "pago": false,
+    "promo": {
+     "t": "pct",
+     "v": 20
+    }
+   },
+   {
+    "ean": "7793890258790",
+    "cant": 1,
+    "precio": 1895,
+    "importe": 1895,
+    "descuento": 379,
+    "pago": false,
+    "promo": {
+     "t": "pct",
+     "v": 20
+    }
+   }
+  ]
+ },
+ "leyendas": [
+  [
+   "2do al 70%",
+   {
+    "t": "nth",
+    "n": 2,
+    "v": 70
+   }
+  ],
+  [
+   "3x2 hasta 25/11",
+   {
+    "t": "nxm",
+    "n": 3,
+    "m": 2
+   }
+  ],
+  [
+   "2 x $5.000.",
+   {
+    "t": "nfor",
+    "n": 2,
+    "v": 5000
+   }
+  ],
+  [
+   "25% OFF",
+   {
+    "t": "pct",
+    "v": 25
+   }
+  ],
+  [
+   "Llevando 4 paga 3",
+   {
+    "t": "nxm",
+    "n": 4,
+    "m": 3
+   }
+  ],
+  [
+   "70% de descuento en la segunda unidad",
+   {
+    "t": "nth",
+    "n": 2,
+    "v": 70
+   }
+  ]
+ ]
+}
