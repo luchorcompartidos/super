@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.9.0">
+<meta name="app-version" content="v0.10.0">
 <title>Góndola Comparador</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#132033">
@@ -273,7 +273,7 @@ body.in-datos header.top{padding-bottom:8px}
 <div class="app">
   <header class="top">
     <div class="syncbar" id="syncBar" hidden aria-hidden="true"><i></i></div>
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="vmini" id="vMini"></span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.9.0</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="vmini" id="vMini"></span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.10.0</button></span></div>
     <div class="symsg" id="syncMsg" role="status" hidden></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
@@ -694,6 +694,7 @@ function renderCargar() {
     <div id="preview" class="preview" aria-live="polite"></div>
     <label class="fl" for="fNota">Nota (opcional)<input id="fNota" data-f="nota" value="${esc(F.nota || '')}" placeholder="Ej.: góndola 5, al lado de los vermut" autocomplete="off"></label>
     ${F.toCart ? '<div class="small" style="color:var(--accent);font-weight:700">Al guardar, este producto queda en el carrito.</div>' : ''}
+    ${F.fromTicket && TK ? '<div class="small" style="color:var(--accent);font-weight:700">Producto del ticket: al guardar volvés al ticket. <button type="button" class="btn sm ghost" data-act="tkreturn">Volver sin guardar</button></div>' : ''}
     <button class="btn primary block" data-act="save">Guardar precio</button>
     <button class="btn ghost block" data-act="savepend">Guardar como pendiente</button>
     <div class="small muted">"Pendiente" guarda lo que tengas (alcanza con el producto) para completarlo después desde Datos → Pendientes.</div></div>`;
@@ -831,7 +832,11 @@ function cartCalc() {
   return { items, lista, promoSave, base, d, raw, desc, rest, capped: !faltaMin && raw > rest + 0.5, pay, neto, minimo, faltaMin, caja: neto - (pay.modo === 'reintegro' ? 0 : desc), final: neto - desc };
 }
 function renderCarrito() {
-  const el = $('#view-carrito'), k = cartCalc(), store = getStore(S.visit.storeId);
+  const el = $('#view-carrito');
+  if (CVIEW === 'hist') { el.innerHTML = histHTML(); return; }
+  if (CVIEW === 'ticket') { el.innerHTML = ticketHTML(); return; }
+  const k = cartCalc(), store = getStore(S.visit.storeId);
+  if (CVIEW === 'pay') { if (k.items.length) { el.innerHTML = cajaHTML(k); return; } CVIEW = 'cart'; }
   if (!k.items.length) { el.innerHTML = cartTopHTML() + cartPlanHTML() + `<div class="card"><h2>Carrito en ${esc(store?.name || '')}</h2><span class="muted">${cartHere().some(it => it.plan) ? 'Todavía no marcaste nada como agarrado.' : 'Vacío. Escaneá un producto, o agregalo desde Comparar o al guardar un precio.'}</span></div>`; return; }
   const ahorro = k.promoSave + k.desc;
   let h = cartTopHTML() + `<div class="tiles"><div class="tile main"><span class="lbl">Pagás en caja</span><span class="val">${money(k.caja)}</span></div>
@@ -875,7 +880,8 @@ const cartHere = () => S.cart.filter(it => getPrice(it.priceId)?.storeId === S.v
 function cartTopHTML() {
   return `<div class="card" style="gap:8px"><div class="row"><button type="button" class="btn primary" data-act="cartscan">Escanear al carrito</button>
     <input id="cartCode" data-cartcode="1" inputmode="numeric" value="${esc(CARTCODE)}" placeholder="o tipeá el código" aria-label="Código de barras" class="grow"><button type="button" class="btn" data-act="cartcode">Agregar</button></div>
-    <div class="small muted">Si el producto ya tiene precio en ${esc(getStore(S.visit.storeId)?.name || 'esta tienda')}, entra directo. Si no, se abre Cargar y al guardar el precio queda en el carrito.</div></div>`;
+    <div class="small muted">Si el producto ya tiene precio en ${esc(getStore(S.visit.storeId)?.name || 'esta tienda')}, entra directo. Si no, se abre Cargar y al guardar el precio queda en el carrito.</div>
+    <div class="btns">${cartHere().some(it => !it.plan) ? '<button type="button" class="btn" data-act="cview" data-v="pay">Ir a pagar</button>' : ''}<button type="button" class="btn ghost" data-act="cview" data-v="hist">Mis compras (${compras().length})</button><button type="button" class="btn ghost" data-act="cview" data-v="ticket">Pegar ticket</button></div></div>`;
 }
 function cartPlanHTML() {
   const L = cartHere().filter(it => it.plan); if (!L.length) return '';
@@ -911,6 +917,224 @@ function cartAddCode(code) {
   if (pres) fillFromPres(pres); else F.ean = code;
   lastSaved = null; go('cargar');
   setTimeout(() => { if (!pres) onEan(true); toast('No tiene precio en esta tienda: cargalo y queda en el carrito', 4000); $('#fPrecio')?.focus(); }, 80);
+}
+
+/* ============ Caja y ticket: control de lo cobrado, actualización de precios e historial de compras ============
+   Lee el texto del ticket electrónico de Coto (pegado desde "TU TICKET DE COMPRA"). Reconoce cada dato por su forma
+   y no por su posición, porque al copiar el texto puede quedar en una o varias líneas. Los descuentos de medios de pago
+   (VISA NFC, MODO, bancos) se separan de las promos de la tienda. La primera vez se asocian la sucursal y los productos
+   por peso, y la app lo recuerda. El historial queda en el celular (y en el respaldo). */
+let CVIEW = 'cart', TK = null, TKTXT = '', HOPEN = null;
+const compras = () => (S.compras ||= []);
+const tkmap = () => (S.tkmap ||= {});
+const MNY = '-?\\$?\\s?-?[\\d.]+,\\d{2}';
+const mny = t => num(String(t).replace(/[$\s]/g, ''));
+const PAYRX = /visa|master|amex|cabal|naranja|\bmodo\b|mercado ?pago|cuenta ?dni|d[eé]bito|cr[eé]dito|\bnfc\b|banco|bna\b|galicia|santander|macro|bbva|icbc|supervielle|patagonia|ual[aá]|brubank|personal pay|naranja x/i;
+function eanFrom(code) {
+  const c = String(code || '').replace(/^0+/, '');
+  if (/^25\d{10,11}$/.test(c)) return '';   // código de balanza (peso)
+  for (const x of [c, c.padStart(13, '0'), c.padStart(12, '0'), c.padStart(8, '0')]) if (eanOk(x)) return x;
+  return '';
+}
+function parseCoto(text) {
+  const L = String(text || '').replace(/ /g, ' ').split(/\r?\n/).map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  const all = L.join('\n');
+  if (!/TICKET|COTO|Factura/i.test(all)) return { err: 'No parece un ticket de Coto. Copiá el texto completo, desde "TU TICKET DE COMPRA".' };
+  const g = rx => (all.match(rx) || [])[1] || '';
+  const suc = g(/SUC\s*(\d+)/i), dir = (L.find((l, i) => /SUC\s*\d+/i.test(L[i - 1] || '')) || '').replace(/^CUIT.*/i, '');
+  const f = all.match(/Fecha:\s*(\d{1,2})\/(\d{1,2})\/(\d{2,4})/i);
+  const fecha = f ? `${f[3].length === 2 ? '20' + f[3] : f[3]}-${f[2].padStart(2, '0')}-${f[1].padStart(2, '0')}` : todayISO();
+  const factura = g(/N[º°o]\s*Factura:\s*([\d-]+)/i), hora = g(/Hora:\s*([\d:]+)/i);
+  const items = [], amtOnly = new RegExp(`^${MNY}$`), descAmt = new RegExp(`^(.*?\\D)\\s*(${MNY})$`), qtyRx = /^(\d+(?:[.,]\d+)?)\s*x\s*\$\s*([\d.]+,\d{2})/i, ivaRx = /^\(\d+(?:,\d+)?%\)$/;
+  for (let c = 0; c < L.length; c++) {
+    const cm = L[c].match(/^(\d{11,14})\s+(\d{11,14})$/); if (!cm) continue;
+    let desc = '', gross = NaN;
+    const prev = L[c - 1] || '';
+    if (amtOnly.test(prev)) { gross = mny(prev); desc = L[c - 2] || ''; }
+    else { const m = prev.match(descAmt); if (m) { desc = m[1]; gross = mny(m[2]); } else desc = prev; }
+    desc = desc.replace(/^\*\s*/, '').trim();
+    const discs = []; let qty = NaN, unit = NaN, k = c + 1;
+    for (; k < L.length && k < c + 10; k++) {
+      const l = L[k]; let m;
+      if (/^(\d{11,14})\s+(\d{11,14})$/.test(l)) break;
+      if ((m = l.match(qtyRx))) { qty = num(m[1]); unit = mny(m[2]); break; }
+      if (ivaRx.test(l)) continue;
+      if ((m = l.match(new RegExp(`^(.*?\\D)\\s*(-[\\d.]+,\\d{2})$`))) && m[1].trim()) { discs.push({ label: m[1].trim(), amt: Math.abs(mny(m[2])) }); continue; }
+      if (/^-[\d.]+,\d{2}$/.test(L[k + 1] || '')) { discs.push({ label: l, amt: Math.abs(mny(L[k + 1])) }); k++; continue; }
+    }
+    if (!(qty > 0) || !(unit > 0)) continue;
+    if (!(gross > 0)) gross = Math.round(qty * unit * 100) / 100;
+    const plu = cm[1].replace(/^0+/, ''), bar = cm[2].replace(/^0+/, ''), peso = /^25\d{11}$/.test(bar) || !Number.isInteger(qty);
+    discs.forEach(d => { d.pago = PAYRX.test(d.label) || S.pays.some(p => p.name && fold(d.label).includes(fold(p.name))); });
+    items.push({ desc, gross, qty, unit, discs, plu, bar, ean: peso ? '' : eanFrom(bar), peso });
+    c = k;
+  }
+  if (!items.length) return { err: 'No se encontraron productos en el texto. Revisá que esté el ticket completo.' };
+  const subtotal = mny(g(new RegExp(`Subtotal sin descuentos\\s*(${MNY})`, 'i')) || NaN);
+  const total = mny(g(new RegExp(`(?:^|\\n)TOTAL\\s*(${MNY})`, 'i')) || NaN);
+  const ahorro = Math.abs(mny(g(new RegExp(`Ahorro por l[ií]nea de cajas\\s*(${MNY})`, 'i')) || 0));
+  const sumG = items.reduce((a, x) => a + x.gross, 0), sumD = items.reduce((a, x) => a + x.discs.reduce((b, d) => b + d.amt, 0), 0);
+  // El descuento de pago puede descontarse en caja (VISA NFC) o figurar y devolverse después como reintegro (MODO):
+  // en el segundo caso el TOTAL no lo descuenta.
+  const storeD = items.reduce((a, x) => a + x.discs.filter(d => !d.pago).reduce((b, d) => b + d.amt, 0), 0), payD = sumD - storeD;
+  const tol = Math.max(2, items.length * 0.02), near = v => total && Math.abs(total - v) <= tol;
+  const payMode = !payD ? '' : near(sumG - sumD) ? 'caja' : near(sumG - storeD) ? 'reintegro' : 'caja';
+  const cuadra = (near(sumG - sumD) || (payD > 0 && near(sumG - storeD))) && (!subtotal || Math.abs(subtotal - sumG) <= tol);
+  return { suc, dir: dir.trim(), fecha, hora, factura, items, subtotal, total: total || Math.round((sumG - sumD) * 100) / 100, ahorro, sumG, sumD, storeD, payD, payMode, cuadra };
+}
+/* Asociaciones: sucursal → tienda; código → presentación */
+const tkStoreKey = t => 'coto:' + (t.suc || t.dir);
+function tkPres(it) {
+  if (it.ean) { const x = S.pres.find(p => p.ean === it.ean); if (x) return x; }
+  const id = tkmap()['plu:' + it.plu] || (it.ean && tkmap()['ean:' + it.ean]); return id ? getPres(id) : null;
+}
+/* Promo de la tienda a partir del descuento del ticket */
+function tkPromo(it) {
+  const sd = it.discs.filter(d => !d.pago); if (!sd.length) return { t: 'none' };
+  const amt = sd.reduce((a, d) => a + d.amt, 0), lbl = sd.map(d => d.label).join(' '), ratio = amt / it.gross;
+  const pp = refPromo({ l1: lbl, lista: it.unit, p1: 0 }).promo;
+  if (pp.t === 'nxm' || pp.t === 'nth' || pp.t === 'nfor') return pp;
+  if (pp.t === 'pct' && Math.abs(pp.v / 100 - ratio) < 0.03) return pp;
+  for (const [n, m] of [[2, 1], [3, 2], [4, 3], [6, 5]]) if (Math.abs(ratio - (n - m) / n) < 0.01 && it.qty % n === 0) return { t: 'nxm', n, m };
+  const v = Math.round(ratio * 100); return v > 0 && v < 100 ? { t: 'pct', v } : { t: 'none' };
+}
+function tkProposals(t) {
+  const sid = tkmap()[tkStoreKey(t)]; if (!sid) return [];
+  return t.items.map((it, i) => {
+    const pres = tkPres(it); if (!pres || !presOk(pres)) return null;
+    const precio = Math.round((it.peso ? it.unit * contentOf(pres) : it.unit) * 100) / 100, promoN = tkPromo(it);
+    const ex = S.prices.find(p => p.presId === pres.id && p.storeId === sid);
+    const same = ex && ex.precio === precio && JSON.stringify(canon(ex.promo)) === JSON.stringify(canon(promoN));
+    const older = ex && (ex.fecha || '') > t.fecha;
+    return { i, it, pres, precio, promo: promoN, ex, same, older, comu: it.discs.some(d => !d.pago && /COMU/i.test(d.label)) };
+  }).filter(Boolean);
+}
+/* Control contra el carrito (lo agarrado de esa tienda) */
+function tkControl(t) {
+  const sid = tkmap()[tkStoreKey(t)]; if (!sid) return null;
+  const items = S.cart.filter(it => !it.plan && getPrice(it.priceId)?.storeId === sid); if (!items.length) return null;
+  const used = new Set(), rows = [];
+  items.forEach(ci => {
+    const p = getPrice(ci.priceId), pres = getPres(p.presId);
+    const idx = t.items.findIndex((it, i) => !used.has(i) && tkPres(it)?.id === pres.id);
+    if (idx < 0) { rows.push({ k: 'nocob', pres, p, ci }); return; }
+    used.add(idx); const it = t.items[idx];
+    const esp = it.peso ? p.precio / contentOf(pres) : p.precio, du = it.unit - esp;
+    const tol = Math.max(1, esp * 0.005);
+    rows.push({ k: Math.abs(du) > tol ? 'precio' : !it.peso && Math.abs(it.qty - ci.qty) > 0.001 ? 'cant' : 'ok', pres, p, ci, it, esp, du });
+  });
+  const extra = t.items.filter((_, i) => !used.has(i));
+  const k = cartCalc();
+  return { rows, extra, esperado: k.caja, dif: t.total - k.caja };
+}
+const tkPays = t => { const m = new Map(); t.items.forEach(it => it.discs.filter(d => d.pago).forEach(d => { const x = m.get(d.label) || { label: d.label, amt: 0, base: 0 }; x.amt += d.amt; x.base += it.gross; m.set(d.label, x); })); return [...m.values()]; };
+function cajaHTML(k) {
+  const sid = S.visit.storeId, st = getStore(sid), plan = cartHere().filter(it => it.plan).length;
+  const av = [];
+  k.items.forEach(x => { if (x.hint) av.push(`${esc(presLabel(getPres(x.p.presId)))}: ${esc(x.hint)}`); if (ageDays(x.p.fecha) > 21) av.push(`${esc(presLabel(getPres(x.p.presId)))}: precio de ${ageTxt(x.p.fecha)}`); });
+  if (k.faltaMin) av.push(`Te faltan ${money(k.faltaMin)} para la compra mínima de ${esc(k.pay.name)}`);
+  if (plan) av.push(`${plan} ${plan === 1 ? 'producto sigue' : 'productos siguen'} "por agarrar" y no ${plan === 1 ? 'suma' : 'suman'} en el total`);
+  const u = k.items.reduce((a, x) => a + x.it.qty, 0);
+  return `<div class="btns"><button type="button" class="btn sm ghost" data-act="cview" data-v="cart">← Carrito</button></div>
+    <div class="card"><h2 style="margin:0">En la caja · ${esc(st?.name || '')}</h2>
+      <div class="tiles"><div class="tile main"><span class="lbl">Deberías pagar</span><span class="val">${money(k.caja)}</span></div><div class="tile"><span class="lbl">Unidades</span><span class="val">${nfx.format(u)}</span></div></div>
+      <div class="small">Pagá con <b>${esc(k.pay.name)}</b>${k.d > 0 ? ` (${k.pay.pct}%${k.pay.modo === 'reintegro' ? ', reintegro' : ''})` : ''}.</div>
+      ${av.length ? `<div class="note" style="border:2px solid var(--warn);color:var(--ink)"><b>Antes de pagar</b><ul style="margin:6px 0 0;padding-left:18px">${av.map(a => `<li>${a}</li>`).join('')}</ul></div>` : '<div class="small" style="color:var(--good);font-weight:700">Nada para revisar antes de pagar.</div>'}
+    </div>${ticketInHTML()}`;
+}
+function ticketInHTML() {
+  return `<div class="card"><h3>Pegá el ticket</h3>
+    <div class="small muted">Abrí tu ticket electrónico de Coto, seleccioná todo el texto, copialo y pegalo acá. La app controla lo cobrado, te propone actualizar precios y guarda la compra. Por ahora lee tickets de Coto; para otros comercios, el control manual llega en la próxima versión.</div>
+    <textarea id="tkTxt" data-tktxt="1" placeholder="TU TICKET DE COMPRA…" style="min-height:120px">${esc(TKTXT)}</textarea>
+    <div class="btns"><button type="button" class="btn primary" data-act="tkread">Leer ticket</button>${TKTXT ? '<button type="button" class="btn ghost" data-act="tkclear">Borrar</button>' : ''}</div></div>`;
+}
+function ticketHTML() {
+  const t = TK; if (!t) return ticketInHTML();
+  const sid = tkmap()[tkStoreKey(t)], dup = compras().find(c => c.factura && c.factura === t.factura && c.suc === t.suc);
+  let h = `<div class="btns"><button type="button" class="btn sm ghost" data-act="tkback">← Volver</button></div>
+    <div class="card"><h2 style="margin:0">Ticket ${esc(t.factura || '')}</h2>
+      <div class="small muted">Coto suc. ${esc(t.suc)}${t.dir ? ' · ' + esc(t.dir) : ''} · ${ddmm(t.fecha)}${t.hora ? ' ' + esc(t.hora) : ''} · ${t.items.length} productos</div>
+      <div class="tiles"><div class="tile main"><span class="lbl">Total cobrado</span><span class="val">${money(t.total)}</span></div><div class="tile"><span class="lbl">Ahorro en el ticket</span><span class="val" style="color:var(--good)">${money(t.sumD)}</span></div></div>
+      ${t.payMode === 'reintegro' ? `<div class="small"><b>${money(t.payD)} de descuento de pago no se restaron del total:</b> se devuelven después como reintegro.</div>` : ''}
+      ${t.cuadra ? '<div class="small" style="color:var(--good);font-weight:700">✓ Se leyó completo: la suma de los productos coincide con el total.</div>' : '<div class="small" style="color:var(--warn);font-weight:700">La suma de los productos no coincide exactamente con el total: puede faltar parte del texto. Revisá antes de guardar.</div>'}
+      ${dup ? `<div class="note" style="border:2px solid var(--warn);color:var(--ink)">Este ticket ya está guardado (compra del ${ddmm(dup.fecha)}). Podés revisarlo, pero no se vuelve a guardar.</div>` : ''}
+      <label class="fl" for="tkStore">Tu tienda para esta sucursal<select id="tkStore" data-chg="tkstore"><option value="">Elegí…</option>${activeStores().slice().sort((a, b) => a.name.localeCompare(b.name, 'es')).map(s => `<option value="${s.id}" ${s.id === sid ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></label>
+      ${sid ? '' : '<div class="small muted">Se recuerda para los próximos tickets de esta sucursal.</div>'}</div>`;
+  if (!sid) return h;
+  // Control contra el carrito
+  const C = tkControl(t);
+  if (C) {
+    const bad = C.rows.filter(r => r.k !== 'ok');
+    h += `<div class="card"><h3>Control contra tu carrito</h3>
+      <div class="pv-row"><span>Esperabas pagar <b>${money(C.esperado)}</b> · te cobraron <b>${money(t.total)}</b></span>${Math.abs(C.dif) < 1 ? '<span class="pill p-good">Coincide</span>' : `<span class="pill ${C.dif > 0 ? 'p-bad' : 'p-good'}">${C.dif > 0 ? '+' : '−'}${money(Math.abs(C.dif))}</span>`}</div>
+      ${!bad.length && !C.extra.length ? '<div class="small" style="color:var(--good);font-weight:700">Cada producto del carrito se cobró al precio y en la cantidad esperados.</div>' : ''}
+      ${bad.map(r => r.k === 'nocob' ? `<div class="drow"><span><b>${esc(presLabel(r.pres))}</b><br><span class="small">Estaba en el carrito (× ${r.ci.qty}) y no figura en el ticket.</span></span></div>`
+        : r.k === 'precio' ? `<div class="drow"><span><b>${esc(presLabel(r.pres))}</b><br><span class="small">Esperabas ${money(r.esp)}${r.it.peso ? '/kg' : ''} y figura <b>${money(r.it.unit)}</b> (${r.du > 0 ? '+' : '−'}${money(Math.abs(r.du))}${r.it.peso ? '/kg' : ' c/u'}).</span></span><span class="pill ${r.du > 0 ? 'p-bad' : 'p-good'}">${r.du > 0 ? 'Cobrado de más' : 'Más barato'}</span></div>`
+        : `<div class="drow"><span><b>${esc(presLabel(r.pres))}</b><br><span class="small">Llevabas ${r.ci.qty} y te cobraron ${nfx.format(r.it.qty)}.</span></span><span class="pill p-warn">Cantidad</span></div>`).join('')}
+      ${C.extra.length ? `<div class="small muted" style="margin-top:6px">En el ticket y no en el carrito: ${C.extra.map(x => esc(x.desc)).join(', ')}.</div>` : ''}
+      ${bad.some(r => r.k === 'precio' && r.du > 0) ? `<details><summary class="small">Texto para reclamar en caja</summary><textarea readonly style="min-height:80px">${esc(bad.filter(r => r.k === 'precio' && r.du > 0).map(r => `${presLabel(r.pres)}: el precio de góndola es ${money(r.esp)}${r.it.peso ? ' por kg' : ''} y me cobraron ${money(r.it.unit)}.`).join('\n'))}</textarea></details>` : ''}</div>`;
+  }
+  // Precios a actualizar
+  const P = tkProposals(t), sel = t.sel ||= {};
+  P.forEach(x => { if (sel[x.i] === undefined) sel[x.i] = !x.older; });
+  const nSel = P.filter(x => sel[x.i]).length;
+  h += `<div class="card"><h3>Actualizar tus precios (${nSel} de ${P.length})</h3>
+    <div class="small muted">Con la fecha del ticket. El precio anterior pasa al historial. Los descuentos de medios de pago no se guardan como promo de la tienda.</div>
+    ${P.length ? `<div class="btns"><button type="button" class="btn sm ghost" data-act="tkselall">${nSel === P.length ? 'Quitar todos' : 'Marcar todos'}</button></div>` : '<div class="small muted">Ningún producto del ticket coincide todavía con tus presentaciones.</div>'}
+    ${P.map(x => `<div class="drow"><span><input type="checkbox" class="cpysel" data-chg="tksel" data-i="${x.i}" ${sel[x.i] ? 'checked' : ''} aria-label="Actualizar"><b>${esc(presLabel(x.pres))}</b><br>
+      <span class="small">${money(x.precio)}${cu(x.pres)}${x.promo.t !== 'none' ? ` · <span class="tag">${esc(promo({ precio: x.precio, promo: x.promo }).label)}</span>` : ''}${x.comu ? ' · <span class="small muted">con Comunidad Coto</span>' : ''}</span><br>
+      <span class="small muted">${!x.ex ? 'Nuevo en esta tienda' : x.same ? `Igual que el tuyo: se confirma con fecha ${ddmm(t.fecha)}` : `Tenías ${money(x.ex.precio)}${x.ex.promo?.t !== 'none' ? ' · ' + promoTxt(x.ex) : ''} (${ageTxt(x.ex.fecha)})`}${x.older ? ' · el tuyo es más nuevo: va al historial' : ''}</span></span></div>`).join('')}</div>`;
+  // Sin asociar
+  const un = t.items.map((it, i) => ({ it, i })).filter(({ it }) => !tkPres(it));
+  if (un.length) {
+    const opts = sortList('selProd', S.prods).map(pr => { const ps = S.pres.filter(x => x.prodId === pr.id && presOk(x)); return ps.length ? `<optgroup label="${esc(pr.name)}">${ps.map(x => `<option value="${x.id}">${esc(presLabel(x))}</option>`).join('')}</optgroup>` : ''; }).join('');
+    h += `<div class="card"><h3>Sin asociar (${un.length})</h3>
+      <div class="small muted">Elegí a qué presentación corresponde (se recuerda) o agregalo como producto nuevo.</div>
+      ${un.map(({ it, i }) => `<div class="paybox"><b>${esc(titleCase(it.desc))}</b><span class="small">${it.peso ? `${nfx.format(it.qty)} kg × ${money(it.unit)}/kg` : `${nfx.format(it.qty)} × ${money(it.unit)}`}${it.ean ? ' · ' + it.ean : ' · por peso'}</span>
+        <div class="row"><select data-chg="tkassoc" data-i="${i}" aria-label="Presentación"><option value="">Es…</option>${opts}</select>${it.ean ? `<button type="button" class="btn sm" data-act="tknew" data-i="${i}">Nuevo</button>` : ''}</div></div>`).join('')}</div>`;
+  }
+  // Descuentos de medios de pago
+  const pays = tkPays(t);
+  if (pays.length) h += `<div class="card"><h3>Descuentos de medios de pago</h3><div class="small muted">${t.payMode === 'reintegro' ? 'Se devuelven como reintegro (no se descontaron en caja).' : 'Se descontaron en la caja.'}</div>${pays.map(p => { const pct = Math.round(p.amt / p.base * 100), known = S.pays.find(x => fold(p.label).includes(fold(x.name)) || (x.pct === pct && (!x.stores?.length || x.stores.includes(sid)))); return `<div class="drow"><span><b>${esc(p.label)}</b><br><span class="small">${money(p.amt)} · ${pct}% sobre ${money(p.base)}${known ? ` · es tu medio "${esc(known.name)}"` : ''}</span></span>${known ? '' : `<button type="button" class="btn sm" data-act="tkaddpay" data-l="${esc(p.label)}" data-p="${pct}" data-m="${t.payMode || 'caja'}">Agregar a Pagos</button>`}</div>`; }).join('')}</div>`;
+  h += `<div class="card"><button type="button" class="btn primary block" data-act="tksave" ${dup ? 'disabled' : ''}>${dup ? 'Ya guardado' : `Guardar compra${nSel ? ` y actualizar ${nSel} ${nSel === 1 ? 'precio' : 'precios'}` : ''}`}</button>
+    <div class="small muted">${C ? 'También se vacía lo agarrado del carrito de esta tienda y se suma el descuento de pago al tope usado.' : 'Se suma el descuento de pago al tope usado del medio correspondiente.'}</div></div>`;
+  return h;
+}
+function tkSave() {
+  const t = TK; if (!t) return;
+  const sid = tkmap()[tkStoreKey(t)]; if (!sid) return toast('Elegí tu tienda para esta sucursal');
+  if (compras().some(c => c.factura && c.factura === t.factura && c.suc === t.suc)) return toast('Este ticket ya está guardado');
+  let act = 0;
+  tkProposals(t).filter(x => t.sel?.[x.i]).forEach(x => {
+    const np = { precio: x.precio, promo: x.promo, acum: false, hasta: '', fecha: t.fecha, src: '' };
+    if (!x.ex) { S.prices.push(touch({ ...np, id: uid(), presId: x.pres.id, storeId: sid, hist: [] })); act++; }
+    else if (x.older) { x.ex.hist = [...(x.ex.hist || []), { precio: x.precio, fecha: t.fecha }].sort((a, b) => (a.fecha < b.fecha ? -1 : 1)).slice(-12); touch(x.ex); act++; }
+    else { if (!x.same) x.ex.hist = [...(x.ex.hist || []), { precio: x.ex.precio, fecha: x.ex.fecha }].slice(-12); Object.assign(x.ex, np); touch(x.ex); act++; }
+  });
+  // Descuento de pago real del ticket → tope usado del medio que coincida
+  const dow = new Date(t.fecha + 'T12:00:00').getDay();
+  tkPays(t).forEach(p => { const pct = Math.round(p.amt / p.base * 100); const pay = S.pays.find(x => fold(p.label).includes(fold(x.name))) || S.pays.find(x => x.pct === pct && (!x.stores?.length || x.stores.includes(sid)) && (!x.dias?.length || x.dias.includes(dow))); if (pay && pay.tope) { pay.usado = (pay.usado || 0) + p.amt; touch(pay); } });
+  const promoSave = t.items.reduce((a, it) => a + it.discs.filter(d => !d.pago).reduce((b, d) => b + d.amt, 0), 0), paySave = t.sumD - promoSave;
+  compras().unshift({ id: uid(), fuente: 'coto', fecha: t.fecha, hora: t.hora, storeId: sid, suc: t.suc, factura: t.factura, total: t.total, subtotal: t.sumG, ahorroPromo: Math.round(promoSave * 100) / 100, ahorroPago: Math.round(paySave * 100) / 100, payMode: t.payMode || '',
+    reintegros: t.payMode === 'reintegro' ? tkPays(t).map(p => ({ label: p.label, amt: Math.round(p.amt * 100) / 100, estado: 'pendiente' })) : [],
+    lines: t.items.map(it => ({ desc: it.desc, ean: it.ean, plu: it.plu, qty: it.qty, unit: it.unit, gross: it.gross, discs: it.discs, presId: tkPres(it)?.id || null })) });
+  S.cart = S.cart.filter(it => it.plan || getPrice(it.priceId)?.storeId !== sid);
+  save(); TK = null; TKTXT = ''; CVIEW = 'hist'; render(); window.scrollTo(0, 0);
+  toast(`Compra guardada${act ? ` · ${act} ${act === 1 ? 'precio actualizado' : 'precios actualizados'}` : ''}`, 4000);
+  if (autoOn()) setTimeout(() => syncNow(true), 800);
+}
+function histHTML() {
+  const L = compras();
+  let h = `<div class="btns"><button type="button" class="btn sm ghost" data-act="cview" data-v="cart">← Carrito</button><button type="button" class="btn sm" data-act="cview" data-v="ticket">Pegar un ticket</button></div>
+    <div class="card"><h2 style="margin:0">Mis compras (${L.length})</h2><div class="small muted">Guardadas en este celular y en el respaldo.</div></div>`;
+  if (!L.length) return h + `<div class="card"><span class="muted">Todavía no guardaste compras. Después de pagar en Coto, pegá el ticket y queda acá.</span></div>`;
+  return h + L.map(c => {
+    const st = getStore(c.storeId), open = HOPEN === c.id, n = c.lines.length;
+    return `<div class="card" style="gap:8px"><div class="pv-row"><span><b>${ddmm(c.fecha)} · ${esc(st?.name || 'Coto suc. ' + c.suc)}</b><br><span class="small muted">${n} productos${c.factura ? ' · ticket ' + esc(c.factura) : ''}</span></span><span class="big" style="font-size:20px">${money(c.total)}</span></div>
+      <div class="small">Ahorro: <b style="color:var(--good)">${money(c.ahorroPromo + c.ahorroPago)}</b> (promos ${money(c.ahorroPromo)} · medios de pago ${money(c.ahorroPago)}${c.payMode === 'reintegro' ? ', como reintegro' : ''})</div>
+      <div class="btns"><button type="button" class="btn sm ghost" data-act="hopen" data-id="${c.id}">${open ? 'Ocultar detalle' : 'Ver detalle'}</button><button type="button" class="btn sm danger" data-act="hdel" data-id="${c.id}" data-confirm="1">Eliminar</button></div>
+      ${open ? c.lines.map(l => `<div class="drow"><span>${esc(titleCase(l.desc))}<br><span class="small muted">${nfx.format(l.qty)} × ${money(l.unit)}${l.discs.length ? ' · ' + l.discs.map(d => `${esc(d.label)} −${money(d.amt)}`).join(' · ') : ''}</span></span><b>${money(l.gross - l.discs.reduce((a, d) => a + d.amt, 0))}</b></div>`).join('') : ''}</div>`;
+  }).join('');
 }
 
 /* ============ vista DATOS ============ */
@@ -2323,7 +2547,7 @@ const ACT = {
   sepafresh: () => { SUCS = null; SUCST = ''; if (NOMBRES) { NOMBRES = null; NOMST = ''; } loadRefs(true).then(() => toast('Precios de referencia actualizados')); toast('Actualizando…'); },
   save: () => {
     const t = buildTemp(); if (t.err) return toast(t.err);
-    const toCart = !!F.toCart;
+    const toCart = !!F.toCart, fromTk = !!F.fromTicket;
     let pres = F.presId !== 'new' ? getPres(F.presId) : S.pres.find(x => x.prodId === t.pres.prodId && x.marca.toLowerCase() === t.pres.marca.toLowerCase() && (x.desc || '').toLowerCase() === t.pres.desc.toLowerCase() && x.cont === t.pres.cont && x.unit === t.pres.unit && x.pack === t.pres.pack);
     if (t.pres.ean && S.pres.some(x => x.ean === t.pres.ean && x.id !== pres?.id)) return toast('Ese código de barras ya pertenece a otra presentación');
     const notaF = (F.nota || '').trim();
@@ -2345,6 +2569,7 @@ const ACT = {
     if (toCart && price.fecha === t.price.fecha && price.precio === t.price.precio) { const it = S.cart.find(x => x.priceId === price.id); if (it) { if (it.plan) it.plan = false; else it.qty += 1; } else S.cart.push({ priceId: price.id, qty: 1 }); }
     if (F.setVisit && t.price.storeId !== S.visit.storeId) { S.visit.storeId = t.price.storeId; F.storeId = t.price.storeId; }
     save(); setLastProd(pres.prodId); lastSaved = price.id; CMP.prodId = pres.prodId; resetForm(pres.prodId); render(); window.scrollTo(0, 0);
+    if (fromTk && TK) { CVIEW = 'ticket'; setTimeout(() => go('carrito'), 600); }
     if (msg) toast(msg, 5000);
   },
   fsetstore: el => { F.storeId = el.dataset.id; F.setVisit = false; const keep = F.presId; if (keep !== 'new') fillFromPres(getPres(keep)); renderCargar(); $('#fPrecio')?.focus(); },
@@ -2457,6 +2682,17 @@ const ACT = {
     toast(cambio ? `Precio actualizado a ${money(v)}: el anterior quedó en el historial` : 'Precio confirmado con fecha de hoy');
   },
   cartpfull: el => { const p = getPrice(el.dataset.id), x = p && getPres(p.presId); if (!x) return; CARTED = null; resetForm(x.prodId); F.storeId = p.storeId; fillFromPres(x); F.precio = nfx.format(p.precio); lastSaved = null; go('cargar'); setTimeout(() => $('#fPrecio')?.focus(), 80); },
+  cview: el => { CVIEW = el.dataset.v; if (CVIEW !== 'ticket') TK = null; render(); window.scrollTo(0, 0); },
+  tkread: () => { const r = parseCoto($('#tkTxt')?.value ?? TKTXT); if (r.err) return toast(r.err, 5000); TK = r; CVIEW = 'ticket'; render(); window.scrollTo(0, 0); },
+  tkclear: () => { TKTXT = ''; render(); },
+  tkback: () => { TK = null; CVIEW = 'cart'; render(); window.scrollTo(0, 0); },
+  tkselall: () => { if (!TK) return; const P = tkProposals(TK), all = P.every(x => TK.sel?.[x.i]); P.forEach(x => { TK.sel[x.i] = !all; }); render(); },
+  tknew: el => { if (!TK) return; const it = TK.items[+el.dataset.i]; if (!it) return; resetForm(); F.storeId = tkmap()[tkStoreKey(TK)] || S.visit.storeId; F.ean = it.ean; F.precio = nfx.format(it.unit); if (TK.fecha <= todayISO()) F.fecha = TK.fecha; F.fromTicket = true; lastSaved = null; go('cargar'); setTimeout(() => { onEan(true); $('#fPrecio')?.focus(); }, 80); },
+  tkreturn: () => { CVIEW = 'ticket'; go('carrito'); },
+  tkaddpay: el => { if (!TK) return; const sid = tkmap()[tkStoreKey(TK)]; const dow = new Date(TK.fecha + 'T12:00:00').getDay(); S.pays.push(touch({ id: uid(), name: titleCase(el.dataset.l), pct: +el.dataset.p, tope: null, usado: 0, minimo: null, dias: [dow], stores: sid ? [sid] : [], modo: el.dataset.m === 'reintegro' ? 'reintegro' : 'caja' })); save(); render(); toast('Agregado a Pagos: revisá días, tiendas y tope en Datos → Pagos', 5000); },
+  tksave: () => tkSave(),
+  hopen: el => { HOPEN = HOPEN === el.dataset.id ? null : el.dataset.id; render(); },
+  hdel: el => { S.compras = compras().filter(c => c.id !== el.dataset.id); save(); render(); toast('Compra eliminada del historial (los precios no cambian)'); },
   editstart: el => { startEdit(el.dataset.k, el.dataset.id); renderDatos(); scrollForm(); },
   editprice: el => { startEdit('price', el.dataset.id); go('datos'); scrollForm(); },
   editpres: el => { startEdit('pres', el.dataset.id); go('datos'); scrollForm(); },
@@ -2662,6 +2898,7 @@ document.addEventListener('input', e => {
   else if (t.dataset.ppq) { PP.q = t.value; const o = $('#ppOv'); const pos = t.selectionStart; o.innerHTML = prodPickerHTML(); const i = $('#ppSearch'); if (i) { i.focus(); try { i.setSelectionRange(pos, pos); } catch (e) {} } }
   else if (t.dataset.catnew) { CATNEW = t.value; }
   else if (t.dataset.cartcode) { CARTCODE = t.value; }
+  else if (t.dataset.tktxt) { TKTXT = t.value; }
   else if (t.dataset.svq) { SV.q = t.value; const c = $('#svRes'), st = getStore(DV.suc), d = st && REF.get(st.sepa)?.d; if (c && d && NOMBRES) c.innerHTML = sucAllRes(st, d); }
   else if (t.dataset.sepaq) { SQ = t.value; const c = $('#sepaRes'); if (c && SUCS) c.innerHTML = sucResHTML(); }
   else if (t.dataset.planq) { PREF.q = t.value; savePref(); const c2 = $('#planList'); if (c2) c2.innerHTML = planListHTML(); }
@@ -2693,6 +2930,9 @@ document.addEventListener('change', e => {
   if (a === 'vstore') { S.visit.storeId = t.value; F.storeId = t.value; save(); lastSaved = null; render(); }
   else if (t.dataset.f === 'fecha' || t.dataset.f === 'hasta') { renderCargar(); }
   else if (t.dataset.ed === 'hasta' && ED) { renderDatos(); }
+  else if (a === 'tkstore') { if (TK) { if (t.value) tkmap()[tkStoreKey(TK)] = t.value; else delete tkmap()[tkStoreKey(TK)]; TK.sel = {}; save(); render(); } }
+  else if (a === 'tksel') { if (TK) { (TK.sel ||= {})[t.dataset.i] = t.checked; render(); } }
+  else if (a === 'tkassoc') { if (TK && t.value) { const it = TK.items[+t.dataset.i], x = getPres(t.value); if (it && x) { if (it.ean && !x.ean && !S.pres.some(o => o.ean === it.ean)) { x.ean = it.ean; touch(x); } else if (it.ean) tkmap()['ean:' + it.ean] = x.id; else tkmap()['plu:' + it.plu] = x.id; save(); render(); toast('Asociado: se recuerda para los próximos tickets'); } } }
   else if (a === 'pcopy') { DV.pcopy = t.checked; SELC.clear(); renderDatos(); }
   else if (a === 'cpysel') { if (t.checked) SELC.add(t.dataset.id); else SELC.delete(t.dataset.id); const c = $('#list-prices'); if (c) c.innerHTML = priceListHTML(); }
   else if (a === 'cpypromo') { if (ED?.copy) ED.copy.promo = t.checked; }
