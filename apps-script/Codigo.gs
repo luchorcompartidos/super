@@ -1,5 +1,5 @@
 /**
- * Góndola · sincronización con Google Sheets (script v0.8.0: base del descuento y días de devolución en Pagos; v0.7.0: vínculo con Precios Claros; v0.6.0: categorías; v0.5.11: pendientes y notas; v0.3.0: vigencia de promos; v0.2.1: tiendas archivadas; v0.1.3: acción "pull" para conflictos)
+ * Góndola · sincronización con Google Sheets (script v0.9.0: compras, asociaciones, listas y pestaña Renglones; v0.8.0: base del descuento y días de devolución en Pagos; v0.7.0: vínculo con Precios Claros; v0.6.0: categorías; v0.5.11: pendientes y notas; v0.3.0: vigencia de promos; v0.2.1: tiendas archivadas; v0.1.3: acción "pull" para conflictos)
  * Repo: https://github.com/luchorcompartidos/super
  *
  * Instalación (una sola vez):
@@ -12,14 +12,20 @@
  */
 const CLAVE = 'cambiá-esta-clave';
 
-const TABS = { stores: 'Tiendas', pays: 'MediosPago', prods: 'Productos', pres: 'Presentaciones', prices: 'Precios' };
+const TABS = { stores: 'Tiendas', pays: 'MediosPago', prods: 'Productos', pres: 'Presentaciones', prices: 'Precios', compras: 'Compras', assoc: 'Asociaciones', docs: 'ListasYAjustes' };
 const FIELDS = {
   stores: ['id', 'name', 'archived', 'sepa', 'upd'],
   pays:   ['id', 'name', 'pct', 'minimo', 'tope', 'usado', 'dias', 'stores', 'modo', 'base', 'dev', 'upd'],
   prods:  ['id', 'name', 'base', 'cat', 'upd'],
   pres:   ['id', 'prodId', 'marca', 'desc', 'cont', 'unit', 'pack', 'ean', 'pend', 'nota', 'upd'],
-  prices: ['id', 'presId', 'storeId', 'precio', 'promo', 'acum', 'fecha', 'hasta', 'hist', 'src', 'upd']
+  prices: ['id', 'presId', 'storeId', 'precio', 'promo', 'acum', 'fecha', 'hasta', 'hist', 'src', 'upd'],
+  compras: ['id', 'fecha', 'hora', 'storeId', 'chain', 'suc', 'factura', 'fuente', 'total', 'subtotal', 'ahorroPromo', 'ahorroPago', 'payMode', 'payName', 'payId', 'dif', 'reintegros', 'lines', 'upd'],
+  assoc:  ['id', 'v', 'upd'],
+  docs:   ['id', 'v', 'upd']
 };
+// Pestaña de solo lectura para analizar en la planilla: un renglón por producto comprado (se regenera en cada sincronización)
+const RENG_TAB = 'Renglones';
+const RENG_FIELDS = ['fecha', 'tienda', 'producto', 'ean', 'cantidad', 'precio', 'importe', 'descuento', 'neto', 'promos', 'compra'];
 const TOMBS_TAB = 'Borrados';
 const TOMB_FIELDS = ['c', 'id', 'upd'];
 
@@ -39,7 +45,7 @@ function doPost(e) {
   try { req = JSON.parse(e.postData.contents); } catch (err) { return json_({ ok: false, error: 'Pedido inválido' }); }
   if (req.token !== CLAVE) return json_({ ok: false, error: 'Clave incorrecta' });
   const ss = SpreadsheetApp.getActive();
-  if (req.action === 'ping') return json_({ ok: true, planilla: ss.getName(), script: '0.8.0' });
+  if (req.action === 'ping') return json_({ ok: true, planilla: ss.getName(), script: '0.9.0' });
   if (req.action === 'pull') {
     // Solo lectura: la app compara y te pregunta qué hacer con los conflictos antes de enviar.
     const out = {};
@@ -69,6 +75,7 @@ function doPost(e) {
       data[c] = Object.keys(map).map(id => map[id]);
       escribir_(ss, TABS[c], FIELDS[c], data[c]);
     });
+    renglones_(ss, data);
     escribir_(ss, TOMBS_TAB, TOMB_FIELDS, Object.keys(tombs).map(k => { const i = k.indexOf('|'); return { c: k.slice(0, i), id: k.slice(i + 1), upd: tombs[k] }; }));
     // Se devuelven los datos como texto plano (igual que se ven en la planilla)
     const out = {};
@@ -115,6 +122,24 @@ function escribir_(ss, name, fields, rows) {
   if (last > 1) sh.getRange(2, 1, last - 1, Math.max(fields.length, sh.getLastColumn())).clearContent();
   if (!rows.length) return;
   sh.getRange(2, 1, rows.length, fields.length).setValues(rows.map(r => fields.map(f => celda_(r[f]))));
+}
+function renglones_(ss, data) {
+  const st = {}; (data.stores || []).forEach(r => { st[r.id] = r.name; });
+  const pr = {}; (data.pres || []).forEach(r => { pr[r.id] = [r.marca, r.desc, r.cont ? r.cont + ' ' + (r.unit || '') : ''].filter(Boolean).join(' '); });
+  const n = v => { const x = parseFloat(String(v).replace(',', '.')); return isNaN(x) ? '' : Math.round(x * 1000) / 1000; };
+  const rows = [];
+  (data.compras || []).forEach(c => {
+    let L = c.lines; if (typeof L === 'string') { try { L = JSON.parse(L || '[]'); } catch (e) { L = []; } }
+    (L || []).forEach(l => {
+      const ds = Array.isArray(l.discs) ? l.discs : [], d = ds.reduce((a, x) => a + (+x.amt || 0), 0);
+      rows.push([c.fecha, st[c.storeId] || c.storeId || '', (l.presId && pr[l.presId]) || l.desc || '', l.ean || '', n(l.qty), n(l.unit), n(l.gross), Math.round(d * 100) / 100, Math.round(((+l.gross || 0) - d) * 100) / 100, ds.map(x => x.label).join(' · '), c.id]);
+    });
+  });
+  rows.sort((a, b) => String(b[0]).localeCompare(String(a[0])));
+  let sh = ss.getSheetByName(RENG_TAB); if (!sh) sh = ss.insertSheet(RENG_TAB);
+  sh.clearContents();
+  sh.getRange(1, 1, 1, RENG_FIELDS.length).setValues([RENG_FIELDS]).setFontWeight('bold'); sh.setFrozenRows(1);
+  if (rows.length) sh.getRange(2, 1, rows.length, RENG_FIELDS.length).setValues(rows);
 }
 function celda_(v) {
   if (v === null || v === undefined) return '';

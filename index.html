@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.10.1">
+<meta name="app-version" content="v0.10.2">
 <title>Góndola Comparador</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#132033">
@@ -273,7 +273,7 @@ body.in-datos header.top{padding-bottom:8px}
 <div class="app">
   <header class="top">
     <div class="syncbar" id="syncBar" hidden aria-hidden="true"><i></i></div>
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="vmini" id="vMini"></span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.10.1</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="vmini" id="vMini"></span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.10.2</button></span></div>
     <div class="symsg" id="syncMsg" role="status" hidden></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
@@ -484,12 +484,15 @@ function load() {
 function save() { try { localStorage.setItem(LS, JSON.stringify(S)); } catch (e) {} }
 /* Preparado para sincronizar: cada registro lleva "upd" (última modificación)
    y los borrados quedan como marcas en S.tomb {c: colección, id, upd}. */
-const COLLS = ['stores', 'pays', 'prods', 'pres', 'prices'];
+const COLLS = ['stores', 'pays', 'prods', 'pres', 'prices', 'compras', 'assoc', 'docs'];
 const nowISO = () => new Date().toISOString();
 const touch = r => { if (r) r.upd = nowISO(); return r; };
 const tomb = (c, id) => { S.tomb.push({ c, id, upd: nowISO() }); };
 function migrate(d) {
   const t = nowISO();
+  // Asociaciones de tickets: de objeto a registros sincronizables
+  if (d.tkmap && !(d.assoc && d.assoc.length)) { d.assoc = Object.entries(d.tkmap).map(([id, v]) => ({ id, v, upd: t })); }
+  delete d.tkmap;
   COLLS.forEach(c => (d[c] = d[c] || []).forEach(r => { r.upd = r.upd || t; }));
   d.pays.forEach(p => { if (p.minimo === undefined) p.minimo = null; });
   d.tomb = d.tomb || []; d.need = d.need || []; d.remind = d.remind || [];
@@ -928,10 +931,17 @@ function cartAddCode(code) {
    por peso, y la app lo recuerda. El historial queda en el celular (y en el respaldo). */
 let CVIEW = 'cart', TK = null, TKTXT = '', HOPEN = null;
 const compras = () => (S.compras ||= []);
-const tkmap = () => (S.tkmap ||= {});
+/* Asociaciones (sucursal → tienda, código → presentación, medio de pago del ticket → tu medio): registros sincronizables */
+const tkmap = () => new Proxy({}, {
+  get: (_, k) => (S.assoc ||= []).find(x => x.id === k)?.v,
+  set: (_, k, v) => { let r = (S.assoc ||= []).find(x => x.id === k); if (!r) { r = { id: k }; S.assoc.push(r); } if (r.v !== v) { r.v = v; touch(r); } return true; },
+  deleteProperty: (_, k) => { const i = (S.assoc ||= []).findIndex(x => x.id === k); if (i >= 0) { S.assoc.splice(i, 1); tomb('assoc', k); } return true; }
+});
 const MNY = '-?\\$?\\s?-?[\\d.]+,\\d{2}';
 const mny = t => num(String(t).replace(/[$\s]/g, ''));
 const PAYRX = /visa|master|amex|cabal|naranja|\bmodo\b|mercado ?pago|cuenta ?dni|d[eé]bito|cr[eé]dito|\bnfc\b|banco|bna\b|galicia|santander|macro|bbva|icbc|supervielle|patagonia|ual[aá]|brubank|personal pay|naranja x/i;
+const SECCAT = [[/almac/, 'Almacén'], [/fiambr|lacte|quesos/, 'Lácteos y frescos'], [/carnic|pescad/, 'Carnes'], [/verdul|fruter/, 'Frutas y verduras'], [/panad/, 'Panadería'], [/congel/, 'Congelados'], [/limpieza/, 'Limpieza'], [/perfum/, 'Perfumería e higiene'], [/bebida/, 'Bebidas'], [/mascota/, 'Mascotas'], [/hogar|bazar|electro|textil/, 'Otros']];
+const secCat = sec => { const f = fold(sec || '').replace('flambr', 'fiambr'); if (!f) return ''; const m = SECCAT.find(([rx]) => rx.test(f)); const c = m ? m[1] : titleCase(sec); return (S.cats || []).find(x => fold(x) === fold(c)) || c; };
 function eanFrom(code) {
   const c = String(code || '').replace(/^0+/, '');
   if (/^25\d{10,11}$/.test(c)) return '';   // código de balanza (peso)
@@ -1258,6 +1268,7 @@ function manSave() {
   compras().unshift({ id: uid(), fuente: 'manual', chain: '', fecha: hoy, hora: new Date().toTimeString().slice(0, 5), storeId: sid, suc: '', factura: '', total: tot, subtotal: k.lista, ahorroPromo: Math.round(k.promoSave * 100) / 100, ahorroPago: pay ? Math.round(k.desc * 100) / 100 : 0,
     payMode: pay ? pay.modo : '', payId: pay?.id || '', dif: Math.round((tot - k.caja) * 100) / 100, lines,
     reintegros: pay && pay.modo === 'reintegro' ? [reintRec(pay, k.desc, hoy, true)] : [] });
+  touch(compras()[0]);
   S.cart = S.cart.filter(it => it.plan || getPrice(it.priceId)?.storeId !== sid);
   MAN = null; save(); CVIEW = 'hist'; HMES = null; render(); window.scrollTo(0, 0);
   toast(`Compra guardada${act ? ` · ${act} ${act === 1 ? 'precio actualizado' : 'precios actualizados'}` : ''}`, 4000);
@@ -1286,6 +1297,27 @@ function histSummaryHTML(L) {
       <div class="row"><input id="ri-${c.id}-${i}" inputmode="decimal" value="${esc(nfx.format(r.amt))}" aria-label="Monto recibido" style="max-width:140px"><button type="button" class="btn sm primary" data-act="rok" data-c="${c.id}" data-i="${i}">Recibido</button><button type="button" class="btn sm ghost" data-act="rno" data-c="${c.id}" data-i="${i}">No llegó</button></div></div>`).join('')}</div>` : ''}`;
 }
 
+const tkName = it => (tkPres(it) ? presLabel(tkPres(it)) : it.descCat || titleCase(it.desc));
+async function tkFillNames(t) {
+  const L = t.items.filter(it => it.ean && !it.descCat && !tkPres(it));
+  await Promise.all(L.map(async it => { try { const r = await sepaFind(it.ean); if (r) it.descCat = [r.name, r.brand].filter(Boolean).join(' · '); } catch (e) {} }));
+  if (L.some(it => it.descCat) && TK === t && cur() === 'carrito' && CVIEW === 'ticket') render();
+}
+/* Sucursal del ticket ↔ Precios Claros (Coto 44, DIA 611, Carrefour 182…) */
+function tkSepaSug(t) {
+  if (!SUCS) { if (!SUCST) setTimeout(() => loadSucs(), 0); return null; }
+  const ch = { coto: /coto/i, dia: /\bdia\b/i, carrefour: /carrefour|express|market|maxi/i }[t.chain]; if (!ch || !t.suc) return null;
+  const n = String(t.suc).replace(/^0+/, ''), w = fold(t.dir || '').split(/\s+/).filter(x => x.length > 3);
+  const L = SUCS.s.filter(x => ch.test(x.b + ' ' + x.n) && String(x.k).split('-').pop().replace(/^0+/, '') === n);
+  return L.sort((a, b) => w.filter(x => fold(b.d + ' ' + b.n).includes(x)).length - w.filter(x => fold(a.d + ' ' + a.n).includes(x)).length)[0] || null;
+}
+function tkSepaHTML(t, sid) {
+  const x = tkSepaSug(t); if (!x) return '';
+  const st = sid && getStore(sid);
+  if (st && st.sepa) return '';
+  if (st) return `<div class="note" style="color:var(--ink)">En Precios Claros esta sucursal es <b>${esc(sucName(x))}</b>${x.d ? ' · ' + esc(x.d) : ''}. <button type="button" class="btn sm" data-act="tksepalink" data-k="${esc(x.k)}">Vincular con ${esc(st.name)}</button></div>`;
+  return `<div class="note" style="color:var(--ink)">En Precios Claros: <b>${esc(sucName(x))}</b>${x.d ? ' · ' + esc(x.d) : ''}. <button type="button" class="btn sm" data-act="tksepanew" data-k="${esc(x.k)}">Crear la tienda vinculada</button></div>`;
+}
 function ticketHTML() {
   const t = TK; if (!t) return ticketInHTML();
   const sid = tkmap()[tkStoreKey(t)], dup = compras().find(c => c.factura && c.factura === t.factura && (c.chain || 'coto') === (t.chain || 'coto') && c.suc === t.suc);
@@ -1298,12 +1330,12 @@ function ticketHTML() {
       ${t.cuadra ? '<div class="small" style="color:var(--good);font-weight:700">✓ Las sumas cierran: productos, descuentos y total coinciden.</div>' : `<div class="small" style="color:var(--warn);font-weight:700">Las sumas no cierran (productos ${money(t.sumG)}${t.subtotal > 0 ? ' vs subtotal ' + money(t.subtotal) : ''} · descuentos ${money(t.sumD)}${t.descTot > 0 ? ' vs ' + money(t.descTot) : ''}). Revisá los renglones marcados.</div>`}
       ${dup ? `<div class="note" style="border:2px solid var(--warn);color:var(--ink)">Este ticket ya está guardado (compra del ${ddmm(dup.fecha)}). Podés revisarlo, pero no se vuelve a guardar.</div>` : ''}
       <label class="fl" for="tkStore">Tu tienda para esta sucursal<select id="tkStore" data-chg="tkstore"><option value="">Elegí…</option>${activeStores().slice().sort((a, b) => a.name.localeCompare(b.name, 'es')).map(s => `<option value="${s.id}" ${s.id === sid ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></label>
-      ${sid ? '' : '<div class="small muted">Se recuerda para los próximos tickets de esta sucursal.</div>'}</div>`;
+      ${sid ? '' : '<div class="small muted">Se recuerda para los próximos tickets de esta sucursal.</div>'}${tkSepaHTML(t, sid)}</div>`;
   // Revisión de lo leído (tickets de foto, o renglones dudosos)
   if (t.ocr || warnN) {
     h += `<details class="card" ${t.ocr && (!t.cuadra || warnN) ? 'open' : ''}><summary><b>Revisá lo leído</b> <span class="small muted">${warnN ? `· ${warnN} ${warnN === 1 ? 'renglón dudoso' : 'renglones dudosos'}` : '· todo cierra'}</span></summary>
       <div class="small muted" style="margin:6px 0">${t.ocr ? 'Viene de una foto: el reconocimiento de texto puede equivocarse. ' : ''}Corregí cantidad, precio o descuento si no coinciden con el ticket; las sumas se recalculan.</div>
-      ${t.items.map((it, i) => { const nm = tkPres(it) ? presLabel(tkPres(it)) : titleCase(it.desc); return `<div class="paybox" ${it.warn?.length ? 'style="border:2px solid var(--warn)"' : ''}><div class="pv-row"><b>${esc(nm)}</b><button type="button" class="btn sm ghost" data-act="tkdel" data-i="${i}" aria-label="Quitar renglón">×</button></div>
+      ${t.items.map((it, i) => { const nm = tkName(it); return `<div class="paybox" ${it.warn?.length ? 'style="border:2px solid var(--warn)"' : ''}><div class="pv-row"><b>${esc(nm)}</b><button type="button" class="btn sm ghost" data-act="tkdel" data-i="${i}" aria-label="Quitar renglón">×</button></div>
         <span class="small muted">${esc(it.ean || (it.peso ? 'por peso' : it.bar || ''))}${it.discs.length ? ' · ' + it.discs.map(d => esc(d.label)).join(' · ') : ''}${it.warn?.length ? ` · <b style="color:var(--warn)">${esc(it.warn.join(', '))}</b>` : ''}</span>
         <div class="row"><input data-chg="tkf" data-i="${i}" data-f="q" inputmode="decimal" value="${esc(nfx.format(it.qty))}" aria-label="Cantidad" style="max-width:80px"><span class="muted">×</span><input data-chg="tkf" data-i="${i}" data-f="u" inputmode="decimal" value="${isNaN(it.unit) ? '' : esc(nfx.format(it.unit))}" aria-label="Precio unitario" style="max-width:110px"><span class="muted">−</span><input data-chg="tkf" data-i="${i}" data-f="d" inputmode="decimal" value="${esc(nfx.format(it.discs.reduce((a, d) => a + d.amt, 0)))}" aria-label="Descuento" style="max-width:100px"></div>
         <span class="small">= ${money((it.gross || 0) - it.discs.reduce((a, d) => a + d.amt, 0))}</span></div>`; }).join('')}
@@ -1320,7 +1352,7 @@ function ticketHTML() {
       ${bad.map(r => r.k === 'nocob' ? `<div class="drow"><span><b>${esc(presLabel(r.pres))}</b><br><span class="small">Estaba en el carrito (× ${r.ci.qty}) y no figura en el ticket.</span></span></div>`
         : r.k === 'precio' ? `<div class="drow"><span><b>${esc(presLabel(r.pres))}</b><br><span class="small">Esperabas ${money(r.esp)}${r.it.peso ? '/kg' : ''} y figura <b>${money(r.it.unit)}</b> (${r.du > 0 ? '+' : '−'}${money(Math.abs(r.du))}${r.it.peso ? '/kg' : ' c/u'}).</span></span><span class="pill ${r.du > 0 ? 'p-bad' : 'p-good'}">${r.du > 0 ? 'Cobrado de más' : 'Más barato'}</span></div>`
         : `<div class="drow"><span><b>${esc(presLabel(r.pres))}</b><br><span class="small">Llevabas ${r.ci.qty} y te cobraron ${nfx.format(r.it.qty)}.</span></span><span class="pill p-warn">Cantidad</span></div>`).join('')}
-      ${C.extra.length ? `<div class="small muted" style="margin-top:6px">En el ticket y no en el carrito: ${C.extra.map(x => esc(tkPres(x) ? presLabel(tkPres(x)) : titleCase(x.desc))).join(', ')}.</div>` : ''}
+      ${C.extra.length ? `<div class="small muted" style="margin-top:6px">En el ticket y no en el carrito: ${C.extra.map(x => esc(tkName(x))).join(', ')}.</div>` : ''}
       ${bad.some(r => r.k === 'precio' && r.du > 0) ? `<details><summary class="small">Texto para reclamar en caja</summary><textarea readonly style="min-height:80px">${esc(bad.filter(r => r.k === 'precio' && r.du > 0).map(r => `${presLabel(r.pres)}: el precio de góndola es ${money(r.esp)}${r.it.peso ? ' por kg' : ''} y me cobraron ${money(r.it.unit)}.`).join('\n'))}</textarea></details>` : ''}</div>`;
   }
   // Medio de pago y reintegro
@@ -1350,7 +1382,7 @@ function ticketHTML() {
     const opts = sortList('selProd', S.prods).map(pr => { const ps = S.pres.filter(x => x.prodId === pr.id && presOk(x)); return ps.length ? `<optgroup label="${esc(pr.name)}">${ps.map(x => `<option value="${x.id}">${esc(presLabel(x))}</option>`).join('')}</optgroup>` : ''; }).join('');
     h += `<div class="card"><h3>Sin asociar (${un.length})</h3>
       <div class="small muted">Elegí a qué presentación corresponde (se recuerda) o agregalo como producto nuevo.</div>
-      ${un.map(({ it, i }) => `<div class="paybox"><b>${esc(titleCase(it.desc))}</b><span class="small">${it.peso ? `${nfx.format(it.qty)} kg × ${money(it.unit)}/kg` : `${nfx.format(it.qty)} × ${money(it.unit)}`}${it.ean ? ' · ' + it.ean : ' · por peso'}${it.sec ? ' · ' + esc(it.sec) : ''}</span>
+      ${un.map(({ it, i }) => `<div class="paybox"><b>${esc(tkName(it))}</b>${it.descCat ? `<span class="small muted">En el ticket: ${esc(titleCase(it.desc))}</span>` : ''}<span class="small">${it.peso ? `${nfx.format(it.qty)} kg × ${money(it.unit)}/kg` : `${nfx.format(it.qty)} × ${money(it.unit)}`}${it.ean ? ' · ' + it.ean : ' · por peso'}${it.sec ? ' · ' + esc(it.sec) : ''}</span>
         <div class="row"><select data-chg="tkassoc" data-i="${i}" aria-label="Presentación"><option value="">Es…</option>${opts}</select>${it.ean ? `<button type="button" class="btn sm" data-act="tknew" data-i="${i}">Nuevo</button>` : ''}</div></div>`).join('')}</div>`;
   }
   const needRev = t.ocr && !t.revisado;
@@ -1377,7 +1409,8 @@ function tkSave() {
   compras().unshift({ id: uid(), fuente: t.chain || 'coto', chain: t.chain || 'coto', fecha: t.fecha, hora: t.hora, storeId: sid, suc: t.suc, factura: t.factura, total: t.total, subtotal: t.sumG,
     ahorroPromo: Math.round(promoSave * 100) / 100, ahorroPago: Math.round(paySave * 100) / 100, payMode: E2 ? E2.modo || t.payMode : t.payMode || '', payName: t.payName || '', payId: E2?.pay.id || '',
     dif: C ? Math.round(C.dif * 100) / 100 : null, reintegros: reint,
-    lines: t.items.map(it => ({ desc: it.desc, ean: it.ean, plu: it.plu, qty: it.qty, unit: it.unit, gross: it.gross, discs: it.discs, presId: tkPres(it)?.id || null })) });
+    lines: t.items.map(it => ({ desc: it.descCat || it.desc, ean: it.ean, plu: it.plu, qty: it.qty, unit: it.unit, gross: it.gross, discs: it.discs, presId: tkPres(it)?.id || null })) });
+  touch(compras()[0]);
   S.cart = S.cart.filter(it => it.plan || getPrice(it.priceId)?.storeId !== sid);
   save(); TK = null; TKTXT = ''; CVIEW = 'hist'; HMES = null; render(); window.scrollTo(0, 0);
   toast(`Compra guardada${act ? ` · ${act} ${act === 1 ? 'precio actualizado' : 'precios actualizados'}` : ''}${reint.length ? ` · reintegro ${reint[0].estado === 'recibido' ? 'registrado' : 'pendiente'}: ${money(reint[0].amt)}` : ''}`, 5000);
@@ -1569,9 +1602,9 @@ let SYNC = { url: '', key: '', last: '', planilla: '' };
 try { Object.assign(SYNC, JSON.parse(localStorage.getItem(SYNC_LS) || '{}')); } catch (e) {}
 const saveSync = () => { try { localStorage.setItem(SYNC_LS, JSON.stringify(SYNC)); } catch (e) {} };
 let syncing = false;
-const NUMF = { pays: ['pct', 'tope', 'usado', 'minimo'], pres: ['cont', 'pack'], prices: ['precio'] };
+const NUMF = { pays: ['pct', 'tope', 'usado', 'minimo'], pres: ['cont', 'pack'], prices: ['precio'], compras: ['total', 'subtotal', 'ahorroPromo', 'ahorroPago'] };
 const NULLF = ['tope', 'minimo'];
-const JSONF = { pays: ['dias', 'stores'], prices: ['promo', 'hist'] };
+const JSONF = { pays: ['dias', 'stores'], prices: ['promo', 'hist'], compras: ['reintegros', 'lines'] };
 function norm(c, r) {
   const o = { ...r };
   (NUMF[c] || []).forEach(k => { const v = num(o[k]); o[k] = isNaN(v) ? (NULLF.includes(k) ? null : 0) : (NULLF.includes(k) && v <= 0 ? null : v); });
@@ -1581,9 +1614,22 @@ function norm(c, r) {
   if (c === 'stores') o.archived = o.archived === true || /^(true|verdadero|si|sí)$/i.test(String(o.archived));
   if (c === 'pres') { o.pack = Math.max(1, Math.round(o.pack || 1)); o.pend = o.pend === true || /^(true|verdadero)$/i.test(String(o.pend)); o.nota = String(o.nota || ''); }
   if (c === 'pays' && !o.modo) o.modo = 'caja';
+  if (c === 'pays') o.dev = o.dev === '' || o.dev == null || isNaN(+o.dev) ? null : +o.dev;
+  if (c === 'compras') { o.dif = o.dif === '' || o.dif == null || isNaN(+o.dif) ? null : +o.dif; o.fecha = String(o.fecha || '').slice(0, 10); }
+  if (c === 'assoc' || c === 'docs') o.v = o.v == null ? '' : String(o.v);
   return o;
 }
-const pendientes = () => COLLS.reduce((a, c) => a + S[c].filter(r => !SYNC.last || (r.upd || '') > SYNC.last).length, 0) + S.tomb.filter(t => !SYNC.last || t.upd > SYNC.last).length;
+const DOCS = { need: () => [], remind: () => [], cats: () => DEFAULT_CATS };
+function docsPrep() {   // registra los cambios de listas, recordatorios y categorías para sincronizarlos
+  S.docs ||= [];
+  Object.entries(DOCS).forEach(([k, def]) => {
+    const v = JSON.stringify(S[k] || []); let r = S.docs.find(x => x.id === k);
+    if (!r) { if (v === JSON.stringify(def())) return; r = { id: k, v: '' }; S.docs.push(r); }
+    if (r.v !== v) { r.v = v; touch(r); }
+  });
+}
+function docsApply() { (S.docs || []).forEach(r => { if (!DOCS[r.id] || !r.v || r.v === JSON.stringify(S[r.id] || [])) return; try { S[r.id] = JSON.parse(r.v); } catch (e) {} }); }
+const pendientes = () => (docsPrep(), COLLS.filter(c => !(SYNC.full || []).includes(c)).reduce((a, c) => a + S[c].filter(r => !SYNC.last || (r.upd || '') > SYNC.last).length, 0) + S.tomb.filter(t => !SYNC.last || t.upd > SYNC.last).length);
 async function callSync(body) {
   const r = await fetch(SYNC.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ token: SYNC.key, ...body }) });
   let j; try { j = await r.json(); } catch (e) { throw new Error('la URL no respondió como el script de Góndola'); }
@@ -1604,8 +1650,8 @@ async function syncTest() {
   catch (e) { toast('No se pudo conectar: ' + e.message + '.', 5000); }
 }
 /* Sincronizar: 1) leer la planilla, 2) detectar conflictos y preguntar, 3) enviar y recibir todo */
-const SFIELDS = { stores: ['name', 'archived', 'sepa'], pays: ['name', 'pct', 'minimo', 'tope', 'usado', 'dias', 'stores', 'modo', 'base', 'dev'], prods: ['name', 'base', 'cat'], pres: ['prodId', 'marca', 'desc', 'cont', 'unit', 'pack', 'ean', 'pend', 'nota'], prices: ['presId', 'storeId', 'precio', 'promo', 'acum', 'fecha', 'hasta', 'hist', 'src'] };
-const ENT = { stores: 'Tienda', pays: 'Medio de pago', prods: 'Producto', pres: 'Presentación', prices: 'Precio' };
+const SFIELDS = { stores: ['name', 'archived', 'sepa'], pays: ['name', 'pct', 'minimo', 'tope', 'usado', 'dias', 'stores', 'modo', 'base', 'dev'], compras: ['fecha', 'hora', 'storeId', 'chain', 'suc', 'factura', 'fuente', 'total', 'subtotal', 'ahorroPromo', 'ahorroPago', 'payMode', 'payName', 'payId', 'dif', 'reintegros', 'lines'], assoc: ['v'], docs: ['v'], prods: ['name', 'base', 'cat'], pres: ['prodId', 'marca', 'desc', 'cont', 'unit', 'pack', 'ean', 'pend', 'nota'], prices: ['presId', 'storeId', 'precio', 'promo', 'acum', 'fecha', 'hasta', 'hist', 'src'] };
+const ENT = { stores: 'Tienda', pays: 'Medio de pago', prods: 'Producto', pres: 'Presentación', prices: 'Precio', compras: 'Compra', assoc: 'Asociación de ticket', docs: 'Listas y ajustes' };
 /* Comparación tolerante: vacío = inexistente, "35" = 35, mismo objeto aunque cambie el orden de sus claves */
 function canon(v) {
   if (v === undefined || v === null || v === '' || v === false) return null;
@@ -1614,7 +1660,7 @@ function canon(v) {
   if (typeof v === 'object') { const o = {}; Object.keys(v).sort().forEach(k => { const c2 = canon(v[k]); if (c2 !== null) o[k] = c2; }); return Object.keys(o).length ? o : null; }
   return v;
 }
-const FIELD_TXT = { name: 'nombre', archived: 'archivada', pct: '%', minimo: 'compra mínima', tope: 'tope', usado: 'tope usado', dias: 'días', stores: 'tiendas', modo: 'forma de aplicar', base: 'unidad', prodId: 'producto', marca: 'marca', desc: 'detalle', cont: 'contenido', unit: 'unidad', pack: 'pack', ean: 'código de barras', presId: 'presentación', storeId: 'tienda', precio: 'precio', promo: 'promo', acum: 'acumula', fecha: 'fecha', hasta: 'vigencia de la promo', hist: 'historial', sepa: 'sucursal de Precios Claros', src: 'origen', nota: 'nota', base: 'base del descuento', dev: 'días de devolución' };
+const FIELD_TXT = { name: 'nombre', archived: 'archivada', pct: '%', minimo: 'compra mínima', tope: 'tope', usado: 'tope usado', dias: 'días', stores: 'tiendas', modo: 'forma de aplicar', base: 'unidad', prodId: 'producto', marca: 'marca', desc: 'detalle', cont: 'contenido', unit: 'unidad', pack: 'pack', ean: 'código de barras', presId: 'presentación', storeId: 'tienda', precio: 'precio', promo: 'promo', acum: 'acumula', fecha: 'fecha', hasta: 'vigencia de la promo', hist: 'historial', sepa: 'sucursal de Precios Claros', src: 'origen', nota: 'nota', base: 'base del descuento', dev: 'días de devolución', total: 'total', lines: 'renglones', reintegros: 'reintegros', v: 'valor', storeId: 'tienda', hora: 'hora' };
 const diffFields = (c, a, b) => SFIELDS[c].filter(f => JSON.stringify(canon(a[f])) !== JSON.stringify(canon(b[f])));
 const sameRec = (c, a, b) => diffFields(c, a, b).length === 0;
 let CONF = null;
@@ -1647,6 +1693,7 @@ async function syncNow(auto) {
   syncing = true; syPhase('Leyendo planilla…');
   let keepOpen = false;
   try {
+    docsPrep();
     const pj = await callSync({ action: 'pull' });
     const conf = findConflicts(pj, SYNC.last || '');
     if (conf.length) {
@@ -1663,13 +1710,16 @@ async function syncNow(auto) {
 }
 async function pushSync(auto) {
   const t0 = nowISO(), last = SYNC.last || '', old = [];
-  const data = {}; COLLS.forEach(c => { data[c] = S[c].filter(r => !last || (r.upd || '') > last); });
+  // Si la planilla todavía no tenía una colección (script anterior), se mandan todos sus registros
+  const data = {}; COLLS.forEach(c => { data[c] = (SYNC.full || []).includes(c) ? S[c].slice() : S[c].filter(r => !last || (r.upd || '') > last); });
   const tombs = S.tomb.filter(t => !last || t.upd > last);
   const sent = COLLS.reduce((a, c) => a + data[c].length, 0) + tombs.length;
   syPhase(sent ? `Enviando ${sent} cambio${sent === 1 ? '' : 's'}…` : 'Recibiendo planilla…');
   const j = await callSync({ action: 'sync', data, tombs });
   syPhase('Actualizando…');
+  const full = [];
   COLLS.forEach(c => {
+    if (!j.data || j.data[c] === undefined) { full.push(c); old.push(ENT[c]); return; }   // script anterior: se conservan los del celular
     const local = S[c].filter(r => (r.upd || '') > t0); // cambios hechos mientras se sincronizaba
     // Si la planilla no tiene alguna columna (script viejo), se conserva el dato del celular
     const miss = missingCols(c, j.data[c]), loc = new Map(S[c].map(r => [r.id, r]));
@@ -1678,7 +1728,8 @@ async function pushSync(auto) {
     local.forEach(r => m.set(r.id, r));
     S[c] = [...m.values()];
   });
-  S.tomb = S.tomb.filter(t => t.upd > t0);
+  S.tomb = S.tomb.filter(t => t.upd > t0 || full.includes(t.c));
+  SYNC.full = full; docsApply();
   S.cart = S.cart.filter(it => getPrice(it.priceId));
   if (!S.stores.length) { S.stores.push(touch({ id: uid(), name: 'Mi súper' })); }
   if (!getStore(S.visit.storeId)) S.visit.storeId = S.stores[0].id;
@@ -1692,12 +1743,18 @@ async function pushSync(auto) {
 }
 function recName(c, r) {
   if (!r) return '';
+  if (c === 'compras') return `Compra del ${ddmm(r.fecha)} · ${getStore(r.storeId)?.name || ''}`;
+  if (c === 'assoc') return `Asociación ${r.id}`;
+  if (c === 'docs') return { need: 'Qué necesito', remind: 'Recordatorios', cats: 'Orden de categorías' }[r.id] || r.id;
   if (c === 'prices') { const pr = getPres(r.presId); return `${pr ? presLabel(pr) : 'Presentación ' + r.presId} · ${getStore(r.storeId)?.name || r.storeId}`; }
   if (c === 'pres') return presLabel({ ...r, cont: r.cont });
   return r.name;
 }
 function recSummary(c, r) {
   if (c === 'stores') return esc(r.name);
+  if (c === 'compras') return `${money(r.total)} · ${(r.lines || []).length} renglones${(r.reintegros || []).map(x => ' · reintegro ' + x.estado).join('')}`;
+  if (c === 'assoc') return esc(String(r.v || '(sin valor)'));
+  if (c === 'docs') { try { return `${JSON.parse(r.v || '[]').length} elementos`; } catch (e) { return ''; } }
   if (c === 'pays') return `${esc(r.name)} · ${r.pct}%${r.minimo ? ' · mín ' + money(r.minimo) : ''}${r.tope ? ' · tope ' + money(r.tope) : ''} · usado ${money(r.usado || 0)}${r.dias?.length ? ' · ' + r.dias.map(d => DOW[d]).join(' ') : ''}`;
   if (c === 'prods') return `${esc(r.name)} · por ${esc(r.base)}`;
   if (c === 'pres') return `${esc(presLabel(r))}${r.ean ? ' · EAN ' + esc(r.ean) : ''}`;
@@ -2353,6 +2410,7 @@ async function loadSucs(fresh = false) {
   try { const d = await getJSON(SEPA_ROOT + 'precios/sucursales.json', fresh); SUCS = d && d.s ? d : null; SUCST = SUCS ? 'ok' : 'none'; }
   catch (e) { SUCST = 'err'; }
   if (cur() === 'datos' && DV.sec === 'stores') render();
+  else if (cur() === 'carrito' && CVIEW === 'ticket') render();
 }
 /* Datos de la sucursal: de la lista de sucursales o del archivo de precios ya descargado */
 function sucInfo(k) {
@@ -2674,7 +2732,7 @@ async function lookupFill(manual) {
       else {
         // Ningún producto coincide: "+ Nuevo producto…" con nombre por categoría y unidad por envase (si se conoce)
         const nm = res.catEs ? res.catEs.replace(/^es:/, '').replace(/-/g, ' ') : ((res.name.split(/\s+/).find(w => w.length > 2 && !/\d/.test(w)) || res.name).toLowerCase());
-        NP = { name: nm.charAt(0).toUpperCase() + nm.slice(1), base: res.qty ? res.qty.fam : (prev?.base || 'un'), custom: '', cat: suggestCat(`${res.name} ${res.cats}`) }; F.prodId = '__new';
+        NP = { name: nm.charAt(0).toUpperCase() + nm.slice(1), base: res.qty ? res.qty.fam : (prev?.base || 'un'), custom: '', cat: secCat(F.catHint) || suggestCat(`${res.name} ${res.cats}`) }; F.prodId = '__new';
         notes.push(`Ningún producto tuyo coincide con este artículo${prev ? ` (estaba "${prev.name}")` : ''}: revisá el nombre${res.qty ? '' : ' y la unidad de comparación'} sugeridos y tocá "Crear producto", o elegí otro en el desplegable.`);
       }
     }
@@ -2949,25 +3007,27 @@ const ACT = {
   },
   cartpfull: el => { const p = getPrice(el.dataset.id), x = p && getPres(p.presId); if (!x) return; CARTED = null; resetForm(x.prodId); F.storeId = p.storeId; fillFromPres(x); F.precio = nfx.format(p.precio); lastSaved = null; go('cargar'); setTimeout(() => $('#fPrecio')?.focus(), 80); },
   cview: el => { CVIEW = el.dataset.v; if (CVIEW !== 'ticket') TK = null; render(); window.scrollTo(0, 0); },
-  tkread: () => { const r = parseTicket($('#tkTxt')?.value ?? TKTXT); if (r.err) { if (r.manual && cartCalc().items.length) { MAN = null; CVIEW = 'manual'; render(); } return toast(r.err, 5000); } TK = r; CVIEW = 'ticket'; render(); window.scrollTo(0, 0); },
+  tkread: () => { const r = parseTicket($('#tkTxt')?.value ?? TKTXT); if (!r.err) setTimeout(() => tkFillNames(r), 0); if (r.err) { if (r.manual && cartCalc().items.length) { MAN = null; CVIEW = 'manual'; render(); } return toast(r.err, 5000); } TK = r; CVIEW = 'ticket'; render(); window.scrollTo(0, 0); },
   tkclear: () => { TKTXT = ''; render(); },
   tkback: () => { TK = null; CVIEW = 'cart'; render(); window.scrollTo(0, 0); },
   tkselall: () => { if (!TK) return; const P = tkProposals(TK), all = P.every(x => TK.sel?.[x.i]); P.forEach(x => { TK.sel[x.i] = !all; }); render(); },
-  tknew: el => { if (!TK) return; const it = TK.items[+el.dataset.i]; if (!it) return; resetForm(); F.storeId = tkmap()[tkStoreKey(TK)] || S.visit.storeId; F.ean = it.ean; F.precio = nfx.format(it.unit); if (TK.fecha <= todayISO()) F.fecha = TK.fecha; F.fromTicket = true; lastSaved = null; go('cargar'); setTimeout(() => { onEan(true); $('#fPrecio')?.focus(); }, 80); },
+  tknew: el => { if (!TK) return; const it = TK.items[+el.dataset.i]; if (!it) return; resetForm(); F.storeId = tkmap()[tkStoreKey(TK)] || S.visit.storeId; F.ean = it.ean; F.precio = nfx.format(it.unit); if (TK.fecha <= todayISO()) F.fecha = TK.fecha; F.fromTicket = true; F.catHint = it.sec || ''; if (it.sec) NP = { ...NP, cat: secCat(it.sec) }; lastSaved = null; go('cargar'); setTimeout(() => { onEan(true); $('#fPrecio')?.focus(); }, 80); },
   tkreturn: () => { CVIEW = 'ticket'; go('carrito'); },
   tkaddpay: el => { if (!TK) return; const sid = tkmap()[tkStoreKey(TK)]; const dow = new Date(TK.fecha + 'T12:00:00').getDay(); S.pays.push(touch({ id: uid(), name: titleCase(el.dataset.l), pct: +el.dataset.p, tope: null, usado: 0, minimo: null, dias: [dow], stores: sid ? [sid] : [], modo: el.dataset.m === 'reintegro' ? 'reintegro' : 'caja' })); save(); render(); toast('Agregado a Pagos: revisá días, tiendas y tope en Datos → Pagos', 5000); },
   tksave: () => tkSave(),
+  tksepalink: el => { const sid = TK && tkmap()[tkStoreKey(TK)], st = getStore(sid); if (!st) return; if (!st.sepa && linkedStores().length >= SEPA_MAX) return toast(`Podés vincular hasta ${SEPA_MAX} tiendas con Precios Claros.`); st.sepa = el.dataset.k; touch(st); save(); loadRefs(); render(); toast(`${st.name} vinculada con Precios Claros`); },
+  tksepanew: el => { if (!TK) return; const x = SUCS?.s.find(y => y.k === el.dataset.k); if (!x) return; if (linkedStores().length >= SEPA_MAX) return toast(`Podés vincular hasta ${SEPA_MAX} tiendas con Precios Claros.`); const st = touch({ id: uid(), name: sucName(x), sepa: x.k }); S.stores.push(st); tkmap()[tkStoreKey(TK)] = st.id; TK.sel = {}; save(); loadRefs(); render(); toast(`Tienda creada: ${st.name}`); },
   tkdel: el => { if (!TK) return; TK.items.splice(+el.dataset.i, 1); TK.sel = {}; tkSums(TK); render(); },
   hmes: el => { HMES = el.dataset.m; render(); },
-  rok: el => { const c = compras().find(x => x.id === el.dataset.c), r = c?.reintegros?.[+el.dataset.i]; if (!r) return; const v = num($(`#ri-${c.id}-${el.dataset.i}`)?.value); if (v >= 0) { r.amt = v; r.estimado = false; } r.estado = 'recibido'; r.fechaRec = todayISO(); save(); render(); toast('Reintegro registrado'); },
-  rno: el => { const c = compras().find(x => x.id === el.dataset.c), r = c?.reintegros?.[+el.dataset.i]; if (!r) return; r.estado = 'no'; save(); render(); toast('Marcado como no recibido: conviene reclamarlo al banco o billetera', 5000); },
+  rok: el => { const c = compras().find(x => x.id === el.dataset.c), r = c?.reintegros?.[+el.dataset.i]; if (!r) return; const v = num($(`#ri-${c.id}-${el.dataset.i}`)?.value); if (v >= 0) { r.amt = v; r.estimado = false; } r.estado = 'recibido'; r.fechaRec = todayISO(); touch(c); save(); render(); toast('Reintegro registrado'); },
+  rno: el => { const c = compras().find(x => x.id === el.dataset.c), r = c?.reintegros?.[+el.dataset.i]; if (!r) return; r.estado = 'no'; touch(c); save(); render(); toast('Marcado como no recibido: conviene reclamarlo al banco o billetera', 5000); },
   mancmp: () => { if (!MAN) return; MAN.total = $('#manTot')?.value ?? MAN.total; if (!(num(MAN.total) > 0)) return toast('Ingresá el total del ticket'); MAN.step = 'cmp'; render(); },
   manst: el => { if (!MAN) return; (MAN.l[el.dataset.id] ||= { st: 'ok', cob: '' }).st = el.dataset.v; render(); },
   manxadd: () => { if (!MAN) return; MAN.extra.push({ desc: '', monto: '' }); render(); },
   manxdel: el => { if (!MAN) return; MAN.extra.splice(+el.dataset.i, 1); render(); },
   mansave: () => manSave(),
   hopen: el => { HOPEN = HOPEN === el.dataset.id ? null : el.dataset.id; render(); },
-  hdel: el => { S.compras = compras().filter(c => c.id !== el.dataset.id); save(); render(); toast('Compra eliminada del historial (los precios no cambian)'); },
+  hdel: el => { S.compras = compras().filter(c => c.id !== el.dataset.id); tomb('compras', el.dataset.id); save(); render(); toast('Compra eliminada del historial (los precios no cambian)'); },
   editstart: el => { startEdit(el.dataset.k, el.dataset.id); renderDatos(); scrollForm(); },
   editprice: el => { startEdit('price', el.dataset.id); go('datos'); scrollForm(); },
   editpres: el => { startEdit('pres', el.dataset.id); go('datos'); scrollForm(); },
