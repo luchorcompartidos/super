@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.10.5">
+<meta name="app-version" content="v0.10.6">
 <title>Góndola Comparador</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#132033">
@@ -110,10 +110,16 @@ h3{font-size:15px;margin:0}
 .item.s-good{border-left-color:var(--good)} .item.s-warn{border-left-color:var(--warn)} .item.s-bad{border-left-color:var(--bad)}
 .item.here{box-shadow:inset 0 0 0 1px var(--accent)}
 .it-title{font-weight:700}
+.it-head{display:flex;gap:8px;align-items:flex-start}
+.drag{touch-action:none;cursor:grab;border:0;background:none;color:var(--muted);font-size:22px;line-height:1;padding:2px 4px;margin:-2px 0 0 -4px;min-width:30px;min-height:36px;border-radius:8px}
+.drag:focus-visible{outline:2px solid var(--accent)}
+.item.dragging{opacity:.85;box-shadow:0 6px 18px rgba(0,0,0,.25);position:relative;z-index:5;border-left-color:var(--accent)}
+.cathead{font-size:14px;color:var(--muted);padding:8px 2px 0;border-bottom:1px solid var(--line)}
+.cathead b{color:var(--ink)}
 .it-meta{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:3px}
 .it-sub{grid-column:1/-1;font-size:13px;color:var(--muted)}
 .it-price{text-align:right;display:grid;gap:3px;justify-items:end;align-content:start}
-.it-actions{grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px}
+.it-actions{grid-column:1/-1;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}
 .store{font-size:12px;font-weight:700;color:var(--muted)}
 .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 .tile{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px;display:grid;gap:2px}
@@ -273,7 +279,7 @@ body.in-datos header.top{padding-bottom:8px}
 <div class="app">
   <header class="top">
     <div class="syncbar" id="syncBar" hidden aria-hidden="true"><i></i></div>
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="vmini" id="vMini"></span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.10.5</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="vmini" id="vMini"></span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.10.6</button></span></div>
     <div class="symsg" id="syncMsg" role="status" hidden></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
@@ -916,12 +922,13 @@ function renderCarrito() {
   }
   h += cartPlanHTML();
   if (k.items.length > 1) h += sortBar('cart');
-  h += `<div class="list">` + sortList('cart', k.items.map((x, idx) => ({ ...x, idx }))).map(x => `<article class="item">
-      <div><div class="it-title">${esc(presLabel(getPres(x.p.presId)))}</div>
-      <div class="it-meta">${x.pr.on ? `<span class="tag">${esc(x.pr.label)}</span>` : ''}<span class="small muted">${money(x.p.precio)}${cu(getPres(x.p.presId))}</span></div></div>
+  const cby = sortState('cart').by, CL = sortList('cart', k.items.map((x, idx) => ({ ...x, idx }))), many = CL.length > 1;
+  h += `<div class="list">` + CL.map((x, i) => `${cby === 'cat' && (i === 0 || cartCat(CL[i - 1].p) !== cartCat(x.p)) ? cartCatHead(cartCat(x.p), CL.filter(y => cartCat(y.p) === cartCat(x.p))) : ''}<article class="item" data-pid="${x.p.id}">
+      <div class="it-head">${many ? `<button type="button" class="drag" data-drag="1" aria-label="Arrastrar para cambiar el orden" title="Arrastrar para ordenar">⠿</button>` : ''}<div><div class="it-title">${esc(presLabel(getPres(x.p.presId)))}</div>
+      <div class="it-meta">${x.pr.on ? `<span class="tag">${esc(x.pr.label)}</span>` : ''}<span class="small muted">${money(x.p.precio)}${cu(getPres(x.p.presId))}</span></div></div></div>
       <div class="it-price"><div class="big" style="font-size:22px">${money(x.sub)}</div>${x.pr.on && x.pr.N > 1 ? `<span class="small muted">${x.groups} promo${x.groups === 1 ? '' : 's'}${x.rem ? ` + ${x.rem} suelta${x.rem === 1 ? '' : 's'}` : ''}</span>` : ''}</div>
       <div class="it-actions" style="justify-content:space-between;align-items:center">${x.hint ? `<span class="pill p-warn">${esc(x.hint)}</span>` : '<span></span>'}
-        <button type="button" class="btn sm ghost" data-act="cartped" data-id="${x.p.id}" title="El precio en góndola es distinto">Precio</button><div class="stepper"><button aria-label="Quitar uno" data-act="qty" data-id="${x.p.id}" data-d="-1">−</button><span>${x.it.qty}</span><button aria-label="Sumar uno" data-act="qty" data-id="${x.p.id}" data-d="1">+</button></div></div>
+        ${cby === 'man' && many ? `<span class="btns"><button type="button" class="btn sm ghost" aria-label="Subir" data-act="cartmv" data-id="${x.p.id}" data-d="-1" ${i === 0 ? 'disabled' : ''}>↑</button><button type="button" class="btn sm ghost" aria-label="Bajar" data-act="cartmv" data-id="${x.p.id}" data-d="1" ${i === CL.length - 1 ? 'disabled' : ''}>↓</button></span>` : ''}<button type="button" class="btn sm ghost" data-act="cartped" data-id="${x.p.id}" title="El precio en góndola es distinto">Precio</button><div class="stepper"><button aria-label="Quitar uno" data-act="qty" data-id="${x.p.id}" data-d="-1">−</button><span>${x.it.qty}</span><button aria-label="Sumar uno" data-act="qty" data-id="${x.p.id}" data-d="1">+</button></div></div>
       ${CARTED === x.p.id ? cartEditHTML(x.p) : ''}
     </article>`).join('') + `</div>`;
   h += `<div class="card"><h3>Detalle del cálculo</h3><table class="calc">
@@ -943,8 +950,52 @@ function cartTopHTML() {
     <div class="small muted">Si el producto ya tiene precio en ${esc(getStore(S.visit.storeId)?.name || 'esta tienda')}, entra directo. Si no, se abre Cargar y al guardar el precio queda en el carrito.</div>
     <div class="btns">${cartHere().some(it => !it.plan) ? '<button type="button" class="btn" data-act="cview" data-v="pay">Ir a pagar</button>' : ''}<button type="button" class="btn ghost" data-act="cview" data-v="hist">Mis compras (${compras().length})</button><button type="button" class="btn ghost" data-act="cview" data-v="ticket">Pegar ticket</button></div></div>`;
 }
+/* ============ Carrito: orden por categoría y manual ============
+   "Categoría" sigue el orden de Datos → Productos → Categorías y después A→Z por presentación.
+   "Manual" es el orden del carrito en el celular: se cambia arrastrando la manija ⠿ (o con ↑↓). */
+const cartCat = p => catOf(getProd(getPres(p?.presId)?.prodId));
+const cartCatKey = p => String(catIdx(cartCat(p))).padStart(3, '0') + ' ' + presLabel(getPres(p.presId));
+function cartInsert(it) {   // los nuevos van junto a los de su categoría
+  it.at = Date.now();
+  const c = cartCat(getPrice(it.priceId));
+  let j = -1; S.cart.forEach((x, i) => { if (cartCat(getPrice(x.priceId)) === c) j = i; });
+  if (c && j >= 0) S.cart.splice(j + 1, 0, it); else S.cart.push(it);
+}
+function cartReorder(ids) {   // ids: priceIds visibles en el orden nuevo; ocupan los mismos lugares en S.cart
+  const set = new Set(ids), slots = []; S.cart.forEach((x, i) => { if (set.has(x.priceId) && !x.plan) slots.push(i); });
+  const byId = new Map(S.cart.map(x => [x.priceId, x]));
+  slots.forEach((pos, k) => { S.cart[pos] = byId.get(ids[k]); });
+  SORT.cart = { by: 'man', dir: 1 }; try { localStorage.setItem(SORT_LS, JSON.stringify(SORT)); } catch (e) {}
+  save(); render();
+}
+const cartCatHead = (c, xs) => `<div class="cathead"><b>${esc(c || 'Sin categoría')}</b> · [${xs.length}] · ${money(xs.reduce((a, x) => a + x.sub, 0))}</div>`;
+let DRAG = null;
+document.addEventListener('pointerdown', e => {
+  const hd = e.target.closest('[data-drag]'); if (!hd) return;
+  const card = hd.closest('article.item'), list = card?.parentElement; if (!list) return;
+  e.preventDefault();
+  DRAG = { card, list, y: e.clientY, id: e.pointerId, moved: false, vy: 0 };
+  card.classList.add('dragging'); try { hd.setPointerCapture(e.pointerId); } catch (x) {}
+  const tick = () => { if (!DRAG) return; if (DRAG.vy) window.scrollBy(0, DRAG.vy); requestAnimationFrame(tick); }; requestAnimationFrame(tick);
+});
+document.addEventListener('pointermove', e => {
+  if (!DRAG || e.pointerId !== DRAG.id) return;
+  const { card, list } = DRAG, y = e.clientY;
+  DRAG.vy = y < 70 ? -8 : y > innerHeight - 70 ? 8 : 0;
+  const cards = [...list.querySelectorAll('article.item')].filter(c => c !== card);
+  const next = cards.find(c => { const r = c.getBoundingClientRect(); return y < r.top + r.height / 2; });
+  if (next) { if (next !== card.nextElementSibling) { list.insertBefore(card, next); DRAG.moved = true; } }
+  else if (cards.length && cards.at(-1).nextElementSibling !== card) { cards.at(-1).after(card); DRAG.moved = true; }
+});
+const dragEnd = e => {
+  if (!DRAG || (e.pointerId !== undefined && e.pointerId !== DRAG.id)) return;
+  const { card, list, moved } = DRAG; DRAG = null; card.classList.remove('dragging');
+  if (moved) cartReorder([...list.querySelectorAll('article.item')].map(c => c.dataset.pid));
+};
+document.addEventListener('keydown', e => { const hd = e.target.closest?.('[data-drag]'); if (!hd || !/^Arrow(Up|Down)$/.test(e.key)) return; e.preventDefault(); const id = hd.closest('article.item')?.dataset.pid; ACT.cartmv({ dataset: { id, d: e.key === 'ArrowUp' ? '-1' : '1' } }); setTimeout(() => document.querySelector(`#view-carrito article.item[data-pid="${id}"] [data-drag]`)?.focus(), 0); });
+document.addEventListener('pointerup', dragEnd); document.addEventListener('pointercancel', dragEnd);
 function cartPlanHTML() {
-  const L = cartHere().filter(it => it.plan); if (!L.length) return '';
+  const L = cartHere().filter(it => it.plan).sort((a, b) => cartCatKey(getPrice(a.priceId)).localeCompare(cartCatKey(getPrice(b.priceId)), 'es', { sensitivity: 'base', numeric: true })); if (!L.length) return '';
   let est = 0;
   const rows = L.map(it => {
     const p = getPrice(it.priceId), pres = getPres(p.presId), c = calc(p, NOPAY, pres), sub = c.one.total * it.qty; est += sub;
@@ -969,7 +1020,7 @@ function cartAddCode(code) {
     const it = S.cart.find(x => x.priceId === p.id);
     if (it && it.plan) { it.plan = false; toast(`Agarrado: ${presLabel(pres)}`); }
     else if (it) { it.qty += 1; toast(`${presLabel(pres)}: ahora ${it.qty}`); }
-    else { S.cart.push({ priceId: p.id, qty: 1 }); toast(`Al carrito: ${presLabel(pres)} · ${money(p.precio)}${ageDays(p.fecha) > 7 ? ` (precio de ${ageTxt(p.fecha)}: si cambió, tocá "Precio")` : ''}`, 4500); }
+    else { cartInsert({ priceId: p.id, qty: 1 }); toast(`Al carrito: ${presLabel(pres)} · ${money(p.precio)}${ageDays(p.fecha) > 7 ? ` (precio de ${ageTxt(p.fecha)}: si cambió, tocá "Precio")` : ''}`, 4500); }
     save(); render(); return;
   }
   // Sin precio en esta tienda: a Cargar con el código; al guardar, queda en el carrito
@@ -1934,7 +1985,7 @@ const SORTS = {
   selProd: { def: 'rec', o: { rec: ['Recientes', lastUseProd, -1], az: ['A-Z', p => p.name, 1] } },
   selPres: { def: 'rec', o: { rec: ['Recientes', lastUsePres, -1], az: ['A-Z', presLabel, 1], cont: ['Contenido', contentOf, 1] } },
   cmp: { def: 'best', o: { best: ['Mejor precio', r => r.c.best.per, 1], gond: ['Precio góndola', r => r.p.precio, 1], age: ['Más viejos', r => r.p.fecha, 1], store: ['Tienda', r => getStore(r.p.storeId)?.name || '', 1], marca: ['Marca', r => presLabel(r.pres), 1] } },
-  cart: { def: 'add', o: { add: ['Agregado', x => x.idx, 1], sub: ['Subtotal', x => x.sub, -1], name: ['Nombre', x => presLabel(getPres(x.p.presId)), 1] } },
+  cart: { def: 'cat', o: { cat: ['Categoría', x => cartCatKey(x.p), 1], man: ['Manual', x => x.idx, 1], add: ['Agregado', x => x.it.at || x.idx, 1], sub: ['Subtotal', x => x.sub, -1], name: ['Nombre', x => presLabel(getPres(x.p.presId)), 1] } },
   plan: { def: 'save', o: { save: ['Mayor ahorro', x => x.save, -1], az: ['Producto A-Z', x => x.prod.name, 1], cat: ['Categoría', x => String(catIdx(catOf(x.prod))).padStart(3, '0') + ' ' + x.prod.name, 1], store: ['Tienda y día', x => x.best ? (getStore(x.best.p.storeId)?.name || '') + ' ' + x.best.c.at.k : '~', 1] } },
   dStores: { def: 'az', o: { az: ['A-Z', s => s.name, 1], add: ['Orden de carga', s => S.stores.indexOf(s), 1] } },
   dPays: { def: 'az', o: { az: ['A-Z', p => p.name, 1], add: ['Orden de carga', p => S.pays.indexOf(p), 1] } },
@@ -3010,6 +3061,7 @@ const ACT = {
   spacego: () => { DV.sec = 'ajustes'; OPEN.add('space'); go('datos'); },
   spacecalc: () => { STEST = null; render(); },
   spacefree: () => { const n = compactar(); save(); STEST = null; render(); toast(n ? `${n} ${n === 1 ? 'compra quedó' : 'compras quedaron'} como resumen; el detalle sigue en la planilla.` : 'No hay compras para resumir'); },
+  cartmv: el => { const ids = [...document.querySelectorAll('#view-carrito article.item[data-pid]')].map(a => a.dataset.pid), i = ids.indexOf(el.dataset.id), j = i + +el.dataset.d; if (i < 0 || j < 0 || j >= ids.length) return; [ids[i], ids[j]] = [ids[j], ids[i]]; cartReorder(ids); },
   cadset: el => { setCad(el.dataset.id, el.dataset.v); save(); render(); },
   cadguessall: () => { activeStores().forEach(s => { if (!cadOf(s.id) && cadGuess(s)) setCad(s.id, cadGuess(s)); }); save(); render(); toast('Cadenas asignadas'); },
   cadmode: el => { tkmap()['cadmodo:' + fold(el.dataset.c)] = el.dataset.v; save(); render(); },
@@ -3053,7 +3105,7 @@ const ACT = {
     S.remind = S.remind.filter(m => !(m.presId === pres.id && m.storeId === t.price.storeId));
     LASTCAD = null;
     if (price.fecha === t.price.fecha && price.precio === t.price.precio && cadPeers(price.storeId).length && cadMode(cadOf(price.storeId)) === 'auto') LASTCAD = { id: price.id, res: copyPriceTo(price, cadPeers(price.storeId).map(x => x.id)) };
-    if (toCart && price.fecha === t.price.fecha && price.precio === t.price.precio) { const it = S.cart.find(x => x.priceId === price.id); if (it) { if (it.plan) it.plan = false; else it.qty += 1; } else S.cart.push({ priceId: price.id, qty: 1 }); }
+    if (toCart && price.fecha === t.price.fecha && price.precio === t.price.precio) { const it = S.cart.find(x => x.priceId === price.id); if (it) { if (it.plan) it.plan = false; else it.qty += 1; } else cartInsert({ priceId: price.id, qty: 1 }); }
     if (F.setVisit && t.price.storeId !== S.visit.storeId) { S.visit.storeId = t.price.storeId; F.storeId = t.price.storeId; }
     save(); setLastProd(pres.prodId); lastSaved = price.id; CMP.prodId = pres.prodId; resetForm(pres.prodId); render(); window.scrollTo(0, 0);
     if (fromTk && TK) { CVIEW = 'ticket'; setTimeout(() => go('carrito'), 600); }
@@ -3096,7 +3148,7 @@ const ACT = {
   catdel: el => { const c = S.cats[+el.dataset.i]; S.cats.splice(+el.dataset.i, 1); S.prods.forEach(p => { if (p.cat === c) { p.cat = ''; touch(p); } }); save(); renderDatos(); toast(`Categoría "${c}" eliminada`); },
   catadd: () => { const v = (CATNEW || '').trim(); if (!v) return toast('Escribí el nombre de la categoría'); if (S.cats.some(c => fold(c) === fold(v))) return toast('Esa categoría ya existe'); S.cats.push(v); CATNEW = ''; save(); renderDatos(); },
   cmode: el => { CMP.mode = el.dataset.m; renderComparar(); },
-  addcart: el => { const id = el.dataset.id, q = +el.dataset.q || 1; const it = S.cart.find(x => x.priceId === id); if (it && it.plan) it.plan = false; else if (it) it.qty += q; else S.cart.push({ priceId: id, qty: q }); save(); renderVisit(); toast(`Agregado al carrito (${q})`); },
+  addcart: el => { const id = el.dataset.id, q = +el.dataset.q || 1; const it = S.cart.find(x => x.priceId === id); if (it && it.plan) it.plan = false; else if (it) it.qty += q; else cartInsert({ priceId: id, qty: q }); save(); renderVisit(); toast(`Agregado al carrito (${q})`); },
   qty: el => { const it = S.cart.find(x => x.priceId === el.dataset.id); if (!it) return; it.qty += +el.dataset.d; if (it.qty <= 0) S.cart = S.cart.filter(x => x !== it); save(); render(); },
   clearcart: () => { S.cart = S.cart.filter(it => getPrice(it.priceId)?.storeId !== S.visit.storeId); save(); render(); },
   closevisit: () => { const k = cartCalc(); if (k.pay.id !== 'none' && k.desc > 0) { const p = touch(S.pays.find(x => x.id === k.pay.id)); p.usado = (p.usado || 0) + k.desc; } ACT.clearcart(); toast('Visita cerrada. Se sumó el descuento al tope usado.'); if (autoOn()) setTimeout(() => syncNow(true), 600); },
@@ -3203,7 +3255,7 @@ const ACT = {
     S.visit.storeId = x.v.st.id; S.visit.payId = x.ev.d > 0 ? x.ev.pay.id : 'none'; S.visit.payByStore = { ...(S.visit.payByStore || {}), [x.v.st.id]: S.visit.payId };
     let mat = 0;
     x.ev.lines.forEach(({ l }) => { if (l.p.virt) { const r = refFor(getPres(l.p.presId)?.ean, l.p.storeId); if (r) { l.p = refMaterialize(l.p.presId, l.p.storeId, r); mat++; } }
-      const it = S.cart.find(c2 => c2.priceId === l.p.id); if (it) it.qty = Math.max(it.qty, l.units); else S.cart.push({ priceId: l.p.id, qty: l.units, plan: true }); });
+      const it = S.cart.find(c2 => c2.priceId === l.p.id); if (it) it.qty = Math.max(it.qty, l.units); else cartInsert({ priceId: l.p.id, qty: l.units, plan: true }); });
     PLANP = null; save(); go('carrito');
     if (mat) setTimeout(() => toast(`${mat} ${mat === 1 ? 'precio tomado' : 'precios tomados'} de Precios Claros: verificalos en góndola.`, 4500), 5200);
     toast(x.v.at.k === 0 ? `Lista pasada al carrito de ${x.v.st.name}.` : `Lista pasada al carrito de ${x.v.st.name}. Es para ${dayTxt(x.v.at)}: hoy el descuento puede no aplicar.`, 5000);
@@ -3260,7 +3312,7 @@ const ACT = {
     else if (k === 'stores' || k === 'prods') { DV.adding = true; ED = null; renderDatos(); window.scrollTo(0, 0); setTimeout(() => $(k === 'stores' ? '#newStore' : '#npName')?.focus(), 60); }
     else { resetForm(S.prods[0] ? (getProd(F.prodId) ? F.prodId : S.prods[0].id) : '__new'); lastSaved = null; go('cargar'); }
   },
-  sort: el => { const k = el.dataset.k, by = el.dataset.by, st = sortState(k); SORT[k] = st.by === by ? { by, dir: -st.dir } : { by, dir: SORTS[k].o[by][2] }; try { localStorage.setItem(SORT_LS, JSON.stringify(SORT)); } catch (e) {} render(); },
+  sort: el => { const k = el.dataset.k, by = el.dataset.by, st = sortState(k); SORT[k] = st.by === by && by !== 'man' ? { by, dir: -st.dir } : { by, dir: SORTS[k].o[by][2] }; try { localStorage.setItem(SORT_LS, JSON.stringify(SORT)); } catch (e) {} render(); },
   cpick: el => { CONF.list[+el.dataset.i].pick = el.dataset.v; renderConf(); },
   cpickall: el => { CONF.list.forEach(x => x.pick = el.dataset.v); renderConf(); },
   capply: () => applyConf(),
