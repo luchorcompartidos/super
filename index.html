@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="v0.10.4">
+<meta name="app-version" content="v0.10.5">
 <title>Góndola Comparador</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#132033">
@@ -273,7 +273,7 @@ body.in-datos header.top{padding-bottom:8px}
 <div class="app">
   <header class="top">
     <div class="syncbar" id="syncBar" hidden aria-hidden="true"><i></i></div>
-    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="vmini" id="vMini"></span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.10.4</button></span></div>
+    <div class="brand"><span class="dot" aria-hidden="true"></span><h1>Góndola</h1><span class="muted small sub">comparador de precios</span><span class="vmini" id="vMini"></span><span class="ver"><button id="syncBtn" class="vs-ver" data-act="sync" type="button" hidden>⟳</button><button id="verBtn" class="vs-ver" type="button">v0.10.5</button></span></div>
     <div class="symsg" id="syncMsg" role="status" hidden></div>
     <div class="visit">
       <label for="vStore">Estoy en<select id="vStore" data-chg="vstore"></select></label>
@@ -481,7 +481,62 @@ function load() {
   try { const raw = localStorage.getItem(LS); if (raw) { const d = JSON.parse(raw); if (d && d.stores && d.prices) return d; } } catch (e) {}
   return seed();
 }
-function save() { try { localStorage.setItem(LS, JSON.stringify(S)); } catch (e) {} }
+/* ============ Espacio en el celular ============
+   Los datos viven en el almacenamiento del navegador (~5 millones de caracteres). Si se llena, save() avisa en vez de
+   fallar en silencio y, con la sincronización activa, libera espacio guardando solo el resumen de las compras viejas
+   (el detalle de renglones queda en la planilla y vuelve si hace falta enviarlas). */
+const LS_CAP = 5e6, SPACE_AUTO = 0.7, LITE_MESES = 12;
+let SAVEERR = false, saveWarnAt = 0;
+const lsSize = () => { try { return JSON.stringify(S).length; } catch (e) { return 0; } };
+const otherLS = () => { let n = 0; try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k !== LS) n += k.length + (localStorage.getItem(k) || '').length; } } catch (e) {} return n; };
+const canLite = () => { try { return !!(SYNC.url && SYNC.key && SYNC.last); } catch (e) { return false; } };
+function liteCands() {
+  if (!canLite()) return [];
+  const d = new Date(); d.setMonth(d.getMonth() - LITE_MESES); const lim = d.toISOString().slice(0, 10);
+  return compras().filter(c => !c.lite && (c.lines || []).length && (c.fecha || '') < lim && (c.upd || '') <= SYNC.last && !(c.reintegros || []).some(r => r.estado === 'pendiente'));
+}
+function compactar() {   // no toca "upd": la planilla conserva el detalle completo
+  let n = 0; liteCands().forEach(c => { c.nl = c.lines.length; c.lines = []; c.lite = true; n++; }); return n;
+}
+function writeLS() { localStorage.setItem(LS, JSON.stringify(S)); }
+function save() {
+  try { writeLS(); if (SAVEERR) { SAVEERR = false; spaceBanner(); } return true; }
+  catch (e) {
+    const quota = e && (e.name === 'QuotaExceededError' || e.code === 22 || e.code === 1014 || /quota/i.test(e.message || ''));
+    if (quota && compactar()) { try { writeLS(); SAVEERR = false; spaceBanner(); setTimeout(() => toast('El celular se estaba quedando sin espacio: las compras de hace más de un año quedaron solo como resumen (el detalle sigue en la planilla).', 6000), 300); return true; } catch (e2) {} }
+    SAVEERR = true; spaceBanner();
+    if (Date.now() - saveWarnAt > 60000) { saveWarnAt = Date.now(); setTimeout(() => toast(quota ? '⚠ No hay más espacio para guardar en el celular: los últimos cambios se pueden perder al cerrar. Mirá Datos → Ajustes → Espacio.' : '⚠ No se pudieron guardar los cambios en el celular (' + (e && e.message || e) + ').', 7000), 300); }
+    return false;
+  }
+}
+function spaceBanner() {
+  let b = $('#spaceWarn');
+  if (!SAVEERR) { if (b) b.remove(); return; }
+  if (!b) { b = document.createElement('div'); b.id = 'spaceWarn'; b.className = 'note'; b.setAttribute('role', 'alert'); b.style.cssText = 'border:2px solid var(--bad);margin:8px 0'; $('main')?.prepend(b); }
+  b.innerHTML = `<b>⚠ Los cambios no se están guardando en el celular</b> (no hay espacio). ${canLite() ? 'Tocá "Liberar espacio" o ' : 'Sincronizá con la planilla, '}copiá un respaldo antes de cerrar la app. <button type="button" class="btn sm" data-act="spacego">Ver espacio</button>`;
+}
+let STEST = null;   // estimación del navegador (incluye la copia del catálogo de Precios Claros)
+async function spaceEstimate() {
+  try { const e = await navigator.storage?.estimate?.(); const p = await navigator.storage?.persisted?.(); STEST = { usage: e?.usage || 0, quota: e?.quota || 0, persisted: !!p }; } catch (e) { STEST = { usage: 0, quota: 0, persisted: false }; }
+}
+function spaceSection() {
+  const tot = lsSize(), oth = otherLS(), pct = Math.min(100, Math.round((tot + oth) / LS_CAP * 100));
+  const parts = [['Precios', 'prices'], ['Compras', 'compras'], ['Presentaciones', 'pres'], ['Productos', 'prods'], ['Tiendas', 'stores'], ['Asociaciones', 'assoc'], ['Listas y ajustes', 'docs'], ['Medios de pago', 'pays']]
+    .map(([l, c]) => [l, JSON.stringify(S[c] || []).length]).sort((a, b) => b[1] - a[1]);
+  const kb = n => n >= 1e6 ? nfx.format(Math.round(n / 1e5) / 10) + ' MB' : Math.max(1, Math.round(n / 1e3)) + ' KB';
+  const lite = compras().filter(c => c.lite).length, cand = liteCands().length;
+  const col = pct >= 85 ? 'var(--bad)' : pct >= 70 ? 'var(--warn)' : 'var(--good)';
+  if (!STEST) spaceEstimate().then(() => { if (DV.sec === 'ajustes') renderDatos(); });
+  return sec('space', `Espacio en el celular · ${pct}%`, `
+    <div class="small">Datos de la app: <b>${kb(tot + oth)}</b> de ~${kb(LS_CAP)} disponibles.</div>
+    <div style="height:10px;border-radius:6px;background:var(--line);overflow:hidden" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-label="Espacio usado"><div style="height:100%;width:${Math.max(2, pct)}%;background:${col}"></div></div>
+    ${SAVEERR ? '<div class="small" style="color:var(--bad);font-weight:700">⚠ El último guardado falló por falta de espacio.</div>' : ''}
+    <div class="small muted">${parts.filter(p => p[1] > 2).map(([l, n]) => `${l} ${kb(n)}`).join(' · ')}${oth > 1000 ? ` · Otros ${kb(oth)}` : ''}</div>
+    ${STEST && STEST.usage ? `<div class="small muted">Total del navegador para Góndola (incluye la app sin señal y el catálogo de Precios Claros): ${kb(STEST.usage)}${STEST.quota ? ` de ${kb(STEST.quota)}` : ''}. ${STEST.persisted ? 'Almacenamiento protegido: el navegador no lo borra solo.' : 'El navegador podría borrarlo si el celular se queda sin espacio: sincronizá o copiá respaldos.'}</div>` : ''}
+    ${lite ? `<div class="small">${lite} ${lite === 1 ? 'compra vieja quedó' : 'compras viejas quedaron'} solo como resumen; el detalle está en la planilla (pestaña Renglones).</div>` : ''}
+    <div class="btns">${cand ? `<button type="button" class="btn sm" data-act="spacefree">Liberar espacio (${cand} ${cand === 1 ? 'compra' : 'compras'} de hace más de un año)</button>` : ''}<button type="button" class="btn sm ghost" data-act="spacecalc">Recalcular</button></div>
+    <div class="small muted">${canLite() ? `Si el espacio pasa del ${SPACE_AUTO * 100}%, al sincronizar las compras de hace más de un año quedan solo como resumen (el detalle sigue en la planilla).` : 'Con la sincronización activa, la app puede liberar espacio sola dejando el detalle de las compras viejas en la planilla.'} Para tener una copia aparte: Respaldo → Copiar respaldo.</div>`);
+}
 /* Preparado para sincronizar: cada registro lleva "upd" (última modificación)
    y los borrados quedan como marcas en S.tomb {c: colección, id, upd}. */
 const COLLS = ['stores', 'pays', 'prods', 'pres', 'prices', 'compras', 'assoc', 'docs'];
@@ -1428,12 +1483,12 @@ function histHTML() {
   h += histSummaryHTML(L);
   const M = L.filter(c => !HMES || c.fecha.startsWith(HMES));
   return h + M.map(c => {
-    const st = getStore(c.storeId), open = HOPEN === c.id, n = c.lines.length;
+    const st = getStore(c.storeId), open = HOPEN === c.id, n = c.lite ? c.nl || 0 : c.lines.length;
     return `<div class="card" style="gap:8px"><div class="pv-row"><span><b>${ddmm(c.fecha)} · ${esc(st?.name || (CHAIN[c.chain] || '') + ' suc. ' + c.suc)}</b><br><span class="small muted">${n} renglones${c.factura ? ' · ticket ' + esc(c.factura) : ''}${c.fuente === 'manual' ? ' · control manual' : ''}${c.payName ? ' · ' + esc(c.payName) : ''}</span></span><span class="big" style="font-size:20px">${money(c.total)}</span></div>
       <div class="small">Ahorro: <b style="color:var(--good)">${money(c.ahorroPromo + c.ahorroPago)}</b> (promos ${money(c.ahorroPromo)} · medios de pago ${money(c.ahorroPago)}${c.payMode === 'reintegro' ? ', como reintegro' : ''})${c.dif > 1 ? ` · <b style="color:var(--bad)">cobrado de más ${money(c.dif)}</b>` : ''}</div>
       ${(c.reintegros || []).map(r => `<div class="small">Reintegro ${esc(r.label)}: <b>${money(r.amt)}</b> · ${r.estado === 'recibido' ? '<span style="color:var(--good)">recibido</span>' : r.estado === 'no' ? '<span style="color:var(--bad)">no llegó</span>' : 'pendiente'}${r.estimado && r.estado !== 'recibido' ? ' (estimado)' : ''}</div>`).join('')}
       <div class="btns"><button type="button" class="btn sm ghost" data-act="hopen" data-id="${c.id}">${open ? 'Ocultar detalle' : 'Ver detalle'}</button><button type="button" class="btn sm danger" data-act="hdel" data-id="${c.id}" data-confirm="1">Eliminar</button></div>
-      ${open ? c.lines.map(l => `<div class="drow"><span>${esc(l.presId && getPres(l.presId) ? presLabel(getPres(l.presId)) : titleCase(l.desc))}<br><span class="small muted">${nfx.format(l.qty)} × ${money(l.unit)}${l.discs.length ? ' · ' + l.discs.map(d => `${esc(d.label)} −${money(d.amt)}`).join(' · ') : ''}</span></span><b>${money(l.gross - l.discs.reduce((a, d) => a + d.amt, 0))}</b></div>`).join('') : ''}</div>`;
+      ${open && c.lite ? '<div class="small muted">El detalle de esta compra está en tu planilla (pestaña Renglones): se resumió en el celular para ahorrar espacio. Vuelve completo en la próxima sincronización si hace falta.</div>' : ''}${open ? c.lines.map(l => `<div class="drow"><span>${esc(l.presId && getPres(l.presId) ? presLabel(getPres(l.presId)) : titleCase(l.desc))}<br><span class="small muted">${nfx.format(l.qty)} × ${money(l.unit)}${l.discs.length ? ' · ' + l.discs.map(d => `${esc(d.label)} −${money(d.amt)}`).join(' · ') : ''}</span></span><b>${money(l.gross - l.discs.reduce((a, d) => a + d.amt, 0))}</b></div>`).join('') : ''}</div>`;
   }).join('');
 }
 
@@ -1705,17 +1760,23 @@ async function syncNow(auto) {
       if (auto) { toast(`Hay ${conf.length} conflicto${conf.length === 1 ? '' : 's'} con la planilla: tocá ⚠ arriba para elegir qué versión queda.`, 5000); return; }
       CONF = { list: conf }; keepOpen = true; openConf(); return;
     }
-    await pushSync(auto);
+    await pushSync(auto, pj);
   } catch (e) {
     const m = /desconocida/.test(e.message) ? 'el script de la planilla es de una versión anterior: actualizalo (ver apps-script/LEEME.md)' : e.message;
     syDone(false, m);
     toast((auto ? 'No se pudo sincronizar automáticamente: ' : 'No se pudo sincronizar: ') + m + '. Tus datos siguen guardados en el celular.', 5500);
   } finally { if (!keepOpen) { syncing = false; render(); } }
 }
-async function pushSync(auto) {
-  const t0 = nowISO(), last = SYNC.last || '', old = [];
+async function pushSync(auto, pj) {
+  const t0 = nowISO(), last = SYNC.last || '', old = [], wasLite = compras().some(c => c.lite);
   // Si la planilla todavía no tenía una colección (script anterior), se mandan todos sus registros
   const data = {}; COLLS.forEach(c => { data[c] = (SYNC.full || []).includes(c) ? S[c].slice() : S[c].filter(r => !last || (r.upd || '') > last); });
+  // Compras resumidas en el celular: se envían con el detalle que tiene la planilla, para no borrarlo
+  if (data.compras.some(r => r.lite)) {
+    if (!pj) pj = await callSync({ action: 'pull' });
+    const rem = new Map(((pj.data || {}).compras || []).map(x => [x.id, norm('compras', x)]));
+    data.compras = data.compras.map(r => { if (!r.lite) return r; const x = { ...r, lines: rem.get(r.id)?.lines || [] }; delete x.lite; delete x.nl; return x; });
+  }
   const tombs = S.tomb.filter(t => !last || t.upd > last);
   const sent = COLLS.reduce((a, c) => a + data[c].length, 0) + tombs.length;
   syPhase(sent ? `Enviando ${sent} cambio${sent === 1 ? '' : 's'}…` : 'Recibiendo planilla…');
@@ -1739,7 +1800,9 @@ async function pushSync(auto) {
   if (!getStore(S.visit.storeId)) S.visit.storeId = S.stores[0].id;
   if (S.visit.payId !== 'none' && !S.pays.some(p => p.id === S.visit.payId)) S.visit.payId = 'none';
   if (ED && !(ED.kind === 'price' ? getPrice(ED.id) : ED.kind === 'pres' ? getPres(ED.id) : getProd(ED.id))) ED = null;
-  SYNC.last = t0; SYNC.planilla = j.planilla; SYNC.lastOk = nowISO(); SYNC.conflicts = 0; SYNC.oldScript = [...new Set(old)]; saveSync(); save();
+  SYNC.last = t0; SYNC.planilla = j.planilla; SYNC.lastOk = nowISO(); SYNC.conflicts = 0; SYNC.oldScript = [...new Set(old)]; saveSync();
+  if (wasLite || lsSize() + otherLS() > LS_CAP * SPACE_AUTO) compactar();   // la planilla devuelve el detalle completo
+  save();
   if (SYNC.oldScript.length) setTimeout(() => toast(`El script de la planilla está desactualizado: no guarda ${SYNC.oldScript.join(', ')}. Los datos quedan en el celular; actualizalo (Ajustes → Sincronización).`, 7000), 3600);
   syDone(true);
   const n = COLLS.reduce((a, c) => a + S[c].length, 0);
@@ -1990,7 +2053,7 @@ function datosSection(B, demo) {
   const add = { pays: '+ Agregar medio', stores: '+ Agregar tienda', prods: '+ Agregar producto', pres: '+ Agregar en Cargar', prices: '+ Cargar precio' }[k];
   h += `<div class="dhead"><h2>${dIcon(k)}${meta[2]}${counts[k] != null ? ` <span class="cnt">${counts[k]}</span>` : ''}</h2>${add ? `<button class="btn sm primary" data-act="dadd">${add}</button>` : ''}</div></div>`;
   if (DV.back && DV.back.sec !== k) h += `<div class="btns" style="margin-bottom:6px"><button class="btn sm ghost" data-act="dback">← Volver a ${esc(DSECS.find(x => x[0] === DV.back.sec)?.[1] || 'la lista')}</button></div>`;
-  if (k === 'ajustes') return h + demo + B.sync + B.calc + B.backup;
+  if (k === 'ajustes') return h + demo + B.sync + spaceSection() + B.calc + B.backup;
   if (k === 'pend') return h + `<div class="card dbody">${pendBody()}</div>`;
   if (k === 'prices' && DV.old) h += `<div class="note">Mostrando solo precios con más de 3 semanas, los más viejos primero. <button class="btn sm ghost" data-act="dold0">Ver todos</button></div>`;
   if (DV.adding && k === 'stores') h += `<div class="paybox card"><h3>Nueva tienda</h3><input id="newStore" aria-label="Nombre de la tienda nueva" placeholder="Cadena · sucursal"><div class="btns"><button class="btn sm primary" data-act="addstore">Agregar tienda</button><button class="btn sm ghost" data-act="daddx">Cancelar</button></div></div>`;
@@ -2944,6 +3007,9 @@ const ACT = {
   sucback: () => { DV.suc = null; render(); window.scrollTo(0, 0); },
   svtab: el => { SV.tab = el.dataset.t; render(); if (SV.tab === 'all') setTimeout(() => $('#svQ')?.focus(), 60); },
   svf: el => { SV.f = el.dataset.f; render(); },
+  spacego: () => { DV.sec = 'ajustes'; OPEN.add('space'); go('datos'); },
+  spacecalc: () => { STEST = null; render(); },
+  spacefree: () => { const n = compactar(); save(); STEST = null; render(); toast(n ? `${n} ${n === 1 ? 'compra quedó' : 'compras quedaron'} como resumen; el detalle sigue en la planilla.` : 'No hay compras para resumir'); },
   cadset: el => { setCad(el.dataset.id, el.dataset.v); save(); render(); },
   cadguessall: () => { activeStores().forEach(s => { if (!cadOf(s.id) && cadGuess(s)) setCad(s.id, cadGuess(s)); }); save(); render(); toast('Cadenas asignadas'); },
   cadmode: el => { tkmap()['cadmodo:' + fold(el.dataset.c)] = el.dataset.v; save(); render(); },
@@ -3384,6 +3450,7 @@ document.addEventListener('change', e => {
 $('#confDlg').addEventListener('close', () => { if (CONF) { SYNC.conflicts = CONF.list.length; saveSync(); CONF = null; syncing = false; render(); } });
 window.addEventListener('online', () => { if (linkedStores().length) loadRefs(); renderVisit(); if (autoOn() && pendientes()) syncNow(true); });
 window.addEventListener('offline', () => renderVisit());
+try { navigator.storage?.persist?.().catch(() => {}); } catch (e) {}
 /* Uso sin señal: la app queda guardada en el celular desde la primera vez que se abre con conexión */
 try {
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
